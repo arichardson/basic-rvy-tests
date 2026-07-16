@@ -86,4 +86,11 @@ run test-branches 0
 run test-branches 3 -cpu any,x-rvy-strict-branches=on
 run test-loadstore-x0 0
 
+if [ "$TARGET" = riscv64 ]; then
+    # Svyrg (and the pte.rvy field it redefines) is RV64-only. Note: the
+    # "any" CPU has no supervisor mode, so use the default CPU model.
+    build test-svyrg
+    run test-svyrg 0 -cpu rv64,Svyrg=on
+fi
+
 echo "All RVY tests passed ($TARGET)"

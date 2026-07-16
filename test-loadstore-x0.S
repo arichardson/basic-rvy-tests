@@ -30,6 +30,7 @@
 _start:
     la   t0, trap_handler
     csrw CSR_MTVEC, t0
+    li   s10, 99                 /* id for traps outside any test */
     li   s11, 0                  /* illegal-instruction count (unexpected) */
     li   s6, 0                   /* generic (non-CHERI) fault count */
     li   s7, 0                   /* CHERI exception count */
