@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
  * RVY misa.Y enable/disable and Xenvcfg.CRE tests:
- *  - misa.Y is set at reset
+ *  - misa.Y is set (1) at reset
  *  - menvcfg resets to 0 and its CRE bit is bit 9 (bit 28 is not writable)
- *  - misa.Y cannot be cleared while a trap vector is not a root capability
+ *  - misa.Y can only be cleared while pcc, ddc, and every implemented
+ *    xtvec/xepc (mtvecc/mepcc, stvecc/sepcc, vstvecc/vsepcc) are currently
+ *    root capabilities; each is checked individually below
  *  - once cleared, RVY instructions and YLEN CSRs raise illegal instruction
  *  - misa.Y can be set again
  *  - S-mode CHERI enable is gated by menvcfg.CRE
@@ -16,7 +18,7 @@
 _start:
     SETUP_TRAP_HANDLER
 
-    /* Test 1: misa.Y is set at reset */
+    /* Test 1: misa.Y is set (1) at reset */
     li   s10, 1
     csrr t0, CSR_MISA
     li   t1, MISA_Y
@@ -37,22 +39,69 @@ _start:
     bne  t1, t0, fail
     csrc CSR_MENVCFG, t1         /* back to the reset value */
 
-    /* Test 3: misa.Y writes of 0 are ignored while mtvecc is not a root
-     * capability. Capability CSR writes need capability pointer mode. */
+    /*
+     * Test 3: misa.Y writes of 0 are ignored while pcc, ddc, or any
+     * xtvec/xepc is not currently a root capability. Each register is
+     * corrupted (replaced with the NULL capability, or -- for pcc -- a
+     * tightly bounded derived capability), the clear attempt is checked
+     * to fail, and the register is restored to root before moving on so
+     * later checks are unaffected. Capability CSR writes need capability
+     * pointer mode.
+     */
     li   s10, 3
-    .insn r 0x7b, 0, 0x2b, x0, x0, x0    /* ymodesw.y (to cap mode) */
-    csrrw s2, CSR_MTVEC, x0      /* cs2 = root mtvecc, write NULL cap */
-    li   t1, MISA_Y
-    csrc CSR_MISA, t1
-    csrr t0, CSR_MISA
-    and  t2, t0, t1
-    beqz t2, fail                /* Y must still be set */
-    csrrw x0, CSR_MTVEC, s2      /* restore the root trap vector */
-    .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* ymodesw.i (back to int mode) */
+    .insn r 0x7b, 0, 0x2b, x0, x0, x0    /* ymodesw.y (enter cap mode) */
+
+    /*
+     * Corrupt \csr_num (saving its root value in \save_creg), verify
+     * clearing misa.Y is rejected, then restore \csr_num.
+     */
+.macro CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT csr_num, save_creg
+    csrrw \save_creg, \csr_num, x0
+    li    t5, MISA_Y
+    csrc  CSR_MISA, t5
+    csrr  t6, CSR_MISA
+    and   t6, t6, t5
+    beqz  t6, fail
+    csrrw x0, \csr_num, \save_creg
+.endm
+
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_DDC, s2
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_MTVEC, s2
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_MEPC, s2
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_STVEC, s2
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_SEPC, s2
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSTVEC, s2
+    CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSEPC, s2
+
+    /*
+     * pcc itself must also be root. There is no CSR to overwrite it
+     * directly, so derive a tightly bounded (non-root) capability from
+     * the current (root) pcc and briefly make it the active pcc via a
+     * capability jump (JALR in capability mode takes its new pcc from
+     * cs1), then jump back using a second, unmodified root-derived
+     * capability. Every instruction below is exactly 4 bytes
+     * (.option norvc is in effect for the whole file), so the jump
+     * offsets are simple compile-time byte counts -- annotated with the
+     * offset of each instruction relative to the first "auipc t0, 0".
+     */
+    auipc t0, 0                          /* +0:  ct0 = root, cursor = here */
+    auipc t1, 0                          /* +4:  ct1 = root, cursor = here */
+    addi  t2, x0, 64                     /* +8:  requested bounds length */
+    .insn r 0x7b, 0, 0x1b, t1, t1, t2    /* +12: ybndsw ct1,ct1,t2 (non-root) */
+    jalr  x0, 16(t1)                     /* +16: pcc <- ct1; jump to +20 */
+    lui   t2, 0x1000                     /* +20: t2 = MISA_Y (pcc is not root here) */
+    csrc  CSR_MISA, t2                   /* +24 */
+    csrr  t3, CSR_MISA                   /* +28 */
+    and   t3, t3, t2                     /* +32 */
+    beqz  t3, fail                       /* +36 */
+    jalr  x0, 44(t0)                     /* +40: pcc <- ct0 (root); jump to +44 */
+
+    .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* +44: ymodesw.i (back to int mode) */
 
     /* Test 4: with every checked register a root capability again,
      * clearing misa.Y succeeds */
     li   s10, 4
+    li   t1, MISA_Y
     csrc CSR_MISA, t1
     csrr t0, CSR_MISA
     and  t2, t0, t1

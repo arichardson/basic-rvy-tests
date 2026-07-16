@@ -25,6 +25,10 @@
 #define CSR_MCAUSE  0x342
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
+#define CSR_STVEC   0x105
+#define CSR_SEPC    0x141
+#define CSR_VSTVEC  0x205
+#define CSR_VSEPC   0x241
 #define CSR_DDC     0x416
 
 #define MISA_Y      (1 << 24)
