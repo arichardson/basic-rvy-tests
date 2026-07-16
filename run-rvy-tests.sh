@@ -78,10 +78,12 @@ run() {
 build test-insn-encodings
 build test-misa-y
 build test-branches
+build test-loadstore-x0
 
 run test-insn-encodings 0
 run test-misa-y 0
 run test-branches 0
 run test-branches 3 -cpu any,x-rvy-strict-branches=on
+run test-loadstore-x0 0
 
 echo "All RVY tests passed ($TARGET)"
