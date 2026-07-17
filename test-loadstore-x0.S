@@ -9,7 +9,10 @@
  *    CHERI-specific exception (cause 32/33/34) may occur.
  *  - Capability mode: cs1=x0 selects capability register c0, which is the
  *    NULL capability (untagged); this must be rejected with a CHERI tag
- *    violation (cause 33 or 34) before any memory access is attempted.
+ *    violation before any memory access is attempted. Loads must report
+ *    CHERI Load Access Fault (cause 33) and stores CHERI Store/AMO Access
+ *    Fault (cause 34): the cause is selected by the access type, not by
+ *    the failing check (a tag violation is not a load-only fault).
  *
  * The test target address (0x400) is deliberately unmapped on the virt
  * machine: nothing needs to be readable/writable there, since the
@@ -33,7 +36,8 @@ _start:
     li   s10, 99                 /* id for traps outside any test */
     li   s11, 0                  /* illegal-instruction count (unexpected) */
     li   s6, 0                   /* generic (non-CHERI) fault count */
-    li   s7, 0                   /* CHERI exception count */
+    li   s7, 0                   /* CHERI load fault (cause 33) count */
+    li   s8, 0                   /* CHERI store/AMO fault (cause 34) count */
 
     /* Enable the FPU (mstatus.FS = Initial) so fld/fsd do not trap. */
     li   t0, 1 << 13
@@ -41,72 +45,78 @@ _start:
 
     /*
      * Integer pointer mode (the default at reset): none of these may raise
-     * a CHERI exception.
+     * a CHERI exception (neither cause 33 nor 34).
      */
     li   s10, 1
-    mv   t3, s7
+    add  t3, s7, s8
     lw   t1, TEST_ADDR(x0)
-    bne  t3, s7, fail
+    add  t4, s7, s8
+    bne  t3, t4, fail
 
     li   s10, 2
-    mv   t3, s7
+    add  t3, s7, s8
     sw   t1, TEST_ADDR(x0)
-    bne  t3, s7, fail
+    add  t4, s7, s8
+    bne  t3, t4, fail
 
     li   s10, 3
-    mv   t3, s7
+    add  t3, s7, s8
     fld  ft1, TEST_ADDR(x0)
-    bne  t3, s7, fail
+    add  t4, s7, s8
+    bne  t3, t4, fail
 
     li   s10, 4
-    mv   t3, s7
+    add  t3, s7, s8
     fsd  ft1, TEST_ADDR(x0)
-    bne  t3, s7, fail
+    add  t4, s7, s8
+    bne  t3, t4, fail
 
     li   s10, 5
-    mv   t3, s7
+    add  t3, s7, s8
     .insn i 0x7b, 1, t1, x0, TEST_ADDR    /* ly */
-    bne  t3, s7, fail
+    add  t4, s7, s8
+    bne  t3, t4, fail
 
     li   s10, 6
-    mv   t3, s7
+    add  t3, s7, s8
     .insn s 0x7b, 2, t2, TEST_ADDR(x0)    /* sy */
-    bne  t3, s7, fail
+    add  t4, s7, s8
+    bne  t3, t4, fail
 
     /* Capability mode: cs1=x0 is the NULL capability, so every access must
-     * raise a CHERI exception. */
+     * raise a CHERI exception: cause 33 for loads, cause 34 for stores. */
     li   s10, 7
     .insn r 0x7b, 0, 0x2b, x0, x0, x0    /* ymodesw.y (enter cap mode) */
 
     li   s10, 8
-    mv   t3, s7
+    addi t3, s7, 1
     lw   t1, TEST_ADDR(x0)
-    beq  t3, s7, fail
+    bne  t3, s7, fail
 
     li   s10, 9
-    mv   t3, s7
+    addi t3, s8, 1
     sw   t1, TEST_ADDR(x0)
-    beq  t3, s7, fail
+    bne  t3, s8, fail
 
     li   s10, 10
-    mv   t3, s7
+    addi t3, s7, 1
     fld  ft1, TEST_ADDR(x0)
-    beq  t3, s7, fail
+    bne  t3, s7, fail
 
     li   s10, 11
-    mv   t3, s7
+    addi t3, s8, 1
     fsd  ft1, TEST_ADDR(x0)
-    beq  t3, s7, fail
+    bne  t3, s8, fail
 
     li   s10, 12
-    mv   t3, s7
+    addi t3, s7, 1
     .insn i 0x7b, 1, t1, x0, TEST_ADDR    /* ly */
-    beq  t3, s7, fail
+    bne  t3, s7, fail
 
     li   s10, 13
-    mv   t3, s7
+    addi t3, s8, 1
     .insn s 0x7b, 2, t2, TEST_ADDR(x0)    /* sy */
-    beq  t3, s7, fail
+    bne  t3, s8, fail
 
     li   s10, 14
     .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* ymodesw.i (back to int mode) */
@@ -114,14 +124,16 @@ _start:
     bnez s11, fail                /* no illegal-instruction traps expected */
     TEST_PASS
 fail:
+    /* Leave capability mode first so the finisher store cannot fault. */
+    .insn r 0x7b, 0, 0x2b, x0, x0, x1     /* ymodesw.i */
     TEST_FAIL_S10
 
 /*
  * Trap handler: any illegal instruction (cause 2) is an unexpected failure
- * (none of the encodings above should ever be illegal); a CHERI exception
- * (cause 32-34) or any other fault is expected exactly once per access
- * above, bucketed into s7/s6 respectively. Every trap skips the faulting
- * (4-byte) instruction and resumes.
+ * (none of the encodings above should ever be illegal); CHERI load faults
+ * (cause 33) are counted in s7, CHERI store/AMO faults (cause 34) in s8,
+ * and any other fault in s6. Every trap skips the faulting (4-byte)
+ * instruction and resumes.
  */
 .balign 4
 trap_handler:
@@ -131,13 +143,16 @@ trap_handler:
     addi s11, s11, 1
     j    2f
 1:
-    li   t5, 32
-    blt  t6, t5, 3f
-    li   t4, 35
-    bge  t6, t4, 3f
+    li   t5, 33
+    bne  t6, t5, 3f
     addi s7, s7, 1
     j    2f
 3:
+    li   t5, 34
+    bne  t6, t5, 4f
+    addi s8, s8, 1
+    j    2f
+4:
     addi s6, s6, 1
 2:
     csrr t6, CSR_MEPC

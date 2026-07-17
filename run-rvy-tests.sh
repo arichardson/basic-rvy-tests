@@ -79,12 +79,14 @@ build test-insn-encodings
 build test-misa-y
 build test-branches
 build test-loadstore-x0
+build test-amo-cbo-causes
 
 run test-insn-encodings 0
 run test-misa-y 0
 run test-branches 0
 run test-branches 3 -cpu any,x-rvy-strict-branches=on
 run test-loadstore-x0 0
+run test-amo-cbo-causes 0
 
 if [ "$TARGET" = riscv64 ]; then
     # Svyrg (and the pte.rvy field it redefines) is RV64-only. Note: the
