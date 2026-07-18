@@ -129,25 +129,25 @@ s_entry:
 
     /* Test 1: normal page: capability store + load round-trips the tag */
     li   s10, 1
-    .insn s 0x7b, 2, s2, 0(a0)           /* sy root cap */
-    .insn i 0x7b, 1, t1, a0, 0           /* ly */
-    .insn r 0x7b, 0, 0x7a, t2, t1, x4    /* ytagr */
+    SY   s2, 0(a0)
+    LY   t1, 0(a0)
+    YTAGR t2, t1
     beqz t2, fail
 
     /* Test 2: base mode, pte.y=0: load clears tag, tagged store faults */
     li   s10, 2
-    .insn i 0x7b, 1, t1, a1, 0           /* ly via rvy=0 alias */
-    .insn r 0x7b, 0, 0x7a, t2, t1, x4    /* ytagr = 0 */
+    LY   t1, 0(a1)  /* via rvy=0 alias */
+    YTAGR t2, t1
     bnez t2, fail
     mv   t3, s6
     addi t3, t3, 1
-    .insn s 0x7b, 2, s2, 0(a1)           /* sy tagged -> cause 36 */
+    SY   s2, 0(a1)  /* tagged -> cause 36 */
     bne  t3, s6, fail
     mv   t3, s6
-    .insn s 0x7b, 2, x0, 0(a1)           /* sy NULL (untagged) -> no trap */
+    SY   x0, 0(a1)  /* NULL (untagged) -> no trap */
     bne  t3, s6, fail
     /* the untagged store went through: repair the buffer for later tests */
-    .insn s 0x7b, 2, s2, 0(a0)
+    SY   s2, 0(a0)
 
     /* Enable Svyrg; the bit must read back as set */
     li   s10, 3
@@ -158,55 +158,55 @@ s_entry:
     beqz t1, fail
 
     /* Test 3: rvy=0 page under Svyrg behaves like base pte.y=0 */
-    .insn i 0x7b, 1, t1, a1, 0
-    .insn r 0x7b, 0, 0x7a, t2, t1, x4
+    LY   t1, 0(a1)
+    YTAGR t2, t1
     bnez t2, fail
     mv   t3, s6
     addi t3, t3, 1
-    .insn s 0x7b, 2, s2, 0(a1)           /* sy tagged -> cause 36 */
+    SY   s2, 0(a1)  /* tagged -> cause 36 */
     bne  t3, s6, fail
 
     /* Test 4: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
     li   s10, 4
     mv   t3, s5
     addi t3, t3, 1
-    .insn i 0x7b, 1, t1, a2, 0           /* ly -> cause 35 (mismatch) */
+    LY   t1, 0(a2)  /* cause 35 (mismatch) */
     bne  t3, s5, fail
     li   t0, SSTATUS_SYRG
     csrs 0x100, t0                       /* SYRG = 1: generations match */
     mv   t3, s5
-    .insn i 0x7b, 1, t1, a2, 0           /* ly -> normal */
+    LY   t1, 0(a2)  /* normal */
     bne  t3, s5, fail
-    .insn r 0x7b, 0, 0x7a, t2, t1, x4    /* ytagr = 1 */
+    YTAGR t2, t1
     beqz t2, fail
 
     /* Test 5: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
     li   s10, 5
     mv   t3, s5
-    .insn i 0x7b, 1, t1, a3, 0           /* UYRG=0 matches yrg=0: normal */
+    LY   t1, 0(a3)  /* UYRG=0 matches yrg=0: normal */
     bne  t3, s5, fail
-    .insn r 0x7b, 0, 0x7a, t2, t1, x4    /* ytagr = 1 */
+    YTAGR t2, t1
     beqz t2, fail
     li   t0, SSTATUS_UYRG
     csrs 0x100, t0                       /* UYRG = 1: mismatch */
     mv   t3, s5
     addi t3, t3, 1
-    .insn i 0x7b, 1, t1, a3, 0           /* ly -> cause 35 */
+    LY   t1, 0(a3)  /* cause 35 */
     bne  t3, s5, fail
 
     /* Test 6: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
     li   s10, 6
     mv   t3, s5
-    .insn i 0x7b, 1, t1, a4, 0           /* ly: yr=0/yrg=1 -> normal */
+    LY   t1, 0(a4)  /* yr=0/yrg=1 -> normal */
     bne  t3, s5, fail
-    .insn r 0x7b, 0, 0x7a, t2, t1, x4    /* ytagr = 1 */
+    YTAGR t2, t1
     beqz t2, fail
     mv   t3, s6
     addi t3, t3, 1
-    .insn s 0x7b, 2, s2, 0(a4)           /* sy tagged -> cause 36 */
+    SY   s2, 0(a4)  /* tagged -> cause 36 */
     bne  t3, s6, fail
     mv   t3, s6
-    .insn s 0x7b, 2, x0, 0(a4)           /* sy NULL -> no trap */
+    SY   x0, 0(a4)  /* NULL -> no trap */
     bne  t3, s6, fail
 
     la   s9, m_done

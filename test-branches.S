@@ -42,11 +42,11 @@ _start:
      * x-rvy-strict-branches=on, and behave as normal branches otherwise.
      */
     li   s10, 2
-    .insn r 0x7b, 0, 0x2b, x0, x0, x0    /* ymodesw.y (enter cap mode) */
+    YMODESWY                             /* enter cap mode */
     .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 (1 != 2) */
     .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 (1 == 1) */
     .insn b 0x63, 1, t0, t0, fail        /* bne x5, x5 (rs1 == rs2) */
-    .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* ymodesw.i (back to int mode) */
+    YMODESWI                             /* back to int mode */
 
     /* Legal operand orders must still work (in integer mode). */
     li   s10, 3
@@ -64,7 +64,7 @@ _start:
     TEST_PASS
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
-    .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* ymodesw.i */
+    YMODESWI
     TEST_FAIL_S10
 
 TRAP_HANDLER

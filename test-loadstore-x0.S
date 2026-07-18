@@ -73,20 +73,20 @@ _start:
 
     li   s10, 5
     add  t3, s7, s8
-    .insn i 0x7b, 1, t1, x0, TEST_ADDR    /* ly */
+    LY   t1, TEST_ADDR(x0)
     add  t4, s7, s8
     bne  t3, t4, fail
 
     li   s10, 6
     add  t3, s7, s8
-    .insn s 0x7b, 2, t2, TEST_ADDR(x0)    /* sy */
+    SY   t2, TEST_ADDR(x0)
     add  t4, s7, s8
     bne  t3, t4, fail
 
     /* Capability mode: cs1=x0 is the NULL capability, so every access must
      * raise a CHERI exception: cause 33 for loads, cause 34 for stores. */
     li   s10, 7
-    .insn r 0x7b, 0, 0x2b, x0, x0, x0    /* ymodesw.y (enter cap mode) */
+    YMODESWY                             /* enter cap mode */
 
     li   s10, 8
     addi t3, s7, 1
@@ -110,22 +110,22 @@ _start:
 
     li   s10, 12
     addi t3, s7, 1
-    .insn i 0x7b, 1, t1, x0, TEST_ADDR    /* ly */
+    LY   t1, TEST_ADDR(x0)
     bne  t3, s7, fail
 
     li   s10, 13
     addi t3, s8, 1
-    .insn s 0x7b, 2, t2, TEST_ADDR(x0)    /* sy */
+    SY   t2, TEST_ADDR(x0)
     bne  t3, s8, fail
 
     li   s10, 14
-    .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* ymodesw.i (back to int mode) */
+    YMODESWI                             /* back to int mode */
 
     bnez s11, fail                /* no illegal-instruction traps expected */
     TEST_PASS
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
-    .insn r 0x7b, 0, 0x2b, x0, x0, x1     /* ymodesw.i */
+    YMODESWI
     TEST_FAIL_S10
 
 /*

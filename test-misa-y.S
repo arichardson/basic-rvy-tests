@@ -49,7 +49,7 @@ _start:
      * pointer mode.
      */
     li   s10, 3
-    .insn r 0x7b, 0, 0x2b, x0, x0, x0    /* ymodesw.y (enter cap mode) */
+    YMODESWY                             /* enter cap mode */
 
     /*
      * Corrupt \csr_num (saving its root value in \save_creg), verify
@@ -87,7 +87,7 @@ _start:
     auipc t0, 0                          /* +0:  ct0 = root, cursor = here */
     auipc t1, 0                          /* +4:  ct1 = root, cursor = here */
     addi  t2, x0, 64                     /* +8:  requested bounds length */
-    .insn r 0x7b, 0, 0x1b, t1, t1, t2    /* +12: ybndsw ct1,ct1,t2 (non-root) */
+    YBNDSW t1, t1, t2                    /* +12: setbounds ct1,ct1,t2 (non-root) */
     jalr  x0, 16(t1)                     /* +16: pcc <- ct1; jump to +20 */
     lui   t2, 0x1000                     /* +20: t2 = MISA_Y (pcc is not root here) */
     csrc  CSR_MISA, t2                   /* +24 */
@@ -96,7 +96,7 @@ _start:
     beqz  t3, fail                       /* +36 */
     jalr  x0, 44(t0)                     /* +40: pcc <- ct0 (root); jump to +44 */
 
-    .insn r 0x7b, 0, 0x2b, x0, x0, x1    /* +44: ymodesw.i (back to int mode) */
+    YMODESWI                             /* +44: back to int mode */
 
     /* Test 4: with every checked register a root capability again,
      * clearing misa.Y succeeds */
@@ -111,7 +111,7 @@ _start:
     li   s10, 5
     mv   s0, s11
     addi s0, s0, 1
-    .insn r 0x7b, 0, 0x78, t2, t0, x0    /* yamask */
+    YAMASK t2, t0
     bne  s11, s0, fail
     addi s0, s0, 1
     csrrs t2, CSR_DDC, x0                /* ddc requires CRE */
@@ -126,7 +126,7 @@ _start:
     beqz t2, fail
     mv   s0, s11
     li   t0, 0
-    .insn r 0x7b, 0, 0x78, t2, t0, x0    /* yamask, no trap expected */
+    YAMASK t2, t0                        /* no trap expected */
     bne  s11, s0, fail
 
     /* Test 7: S-mode CHERI enable is menvcfg.CRE */
@@ -148,7 +148,7 @@ _start:
     addi s0, s0, 1
     mret
 s_code_disabled:
-    .insn r 0x7b, 0, 0x78, t2, t0, x0    /* yamask in S-mode: illegal */
+    YAMASK t2, t0                        /* in S-mode: illegal */
     ecall
 m_cont_a:
     bne  s11, s0, fail
@@ -165,7 +165,7 @@ m_cont_a:
     mv   s0, s11
     mret
 s_code_enabled:
-    .insn r 0x7b, 0, 0x78, t2, t0, x0    /* yamask in S-mode: works */
+    YAMASK t2, t0                        /* in S-mode: works */
     ecall
 m_cont_b:
     bne  s11, s0, fail
