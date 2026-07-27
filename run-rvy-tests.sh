@@ -31,7 +31,13 @@ case "$QEMU" in
 *) TARGET=riscv64 ; MARCH=rv64g ;;
 esac
 
-QEMU_ARGS="-machine virt -bios none -display none -serial none"
+QEMU_ARGS="-bios none -display none -serial none"
+
+# Each test reports its result twice: through the HTIF tohost register (which
+# is what spike-like harnesses, including the Sail model, understand) and
+# through the sifive_test finisher device (virt). Run both machines so that
+# neither path silently rots.
+: "${RVY_TEST_MACHINES:=virt spike}"
 
 build() {
     "$CC" --target=$TARGET -march=$MARCH -nostdlib -static \
@@ -62,17 +68,20 @@ run() {
     test_name=$1
     expected=$2
     shift 2
-    status=0
-    run_with_timeout $QEMU $QEMU_ARGS "$@" -kernel "$BUILD_DIR/$test_name.elf" || status=$?
-    if [ "$status" = 124 ] || [ "$status" = 137 ]; then
-        echo "FAIL: $test_name $* (timed out after ${RVY_TEST_TIMEOUT}s -- possible infinite loop)"
-        exit 1
-    fi
-    if [ "$status" != "$expected" ]; then
-        echo "FAIL: $test_name $* (exit code $status, expected $expected)"
-        exit 1
-    fi
-    echo "PASS: $test_name $*"
+    for machine in $RVY_TEST_MACHINES; do
+        status=0
+        run_with_timeout $QEMU -machine "$machine" $QEMU_ARGS "$@" \
+            -kernel "$BUILD_DIR/$test_name.elf" </dev/null || status=$?
+        if [ "$status" = 124 ] || [ "$status" = 137 ]; then
+            echo "FAIL: $test_name ($machine) $* (timed out after ${RVY_TEST_TIMEOUT}s -- possible infinite loop)"
+            exit 1
+        fi
+        if [ "$status" != "$expected" ]; then
+            echo "FAIL: $test_name ($machine) $* (exit code $status, expected $expected)"
+            exit 1
+        fi
+        echo "PASS: $test_name ($machine) $*"
+    done
 }
 
 build test-insn-encodings

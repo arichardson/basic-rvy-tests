@@ -34,7 +34,23 @@
 #define MISA_Y      (1 << 24)
 #define MENVCFG_CRE (1 << 9)
 
+/*
+ * Report the exit code in t6 (already encoded as (code << 1) | 1) through the
+ * HTIF tohost register. This is what ends the run on spike-like harnesses:
+ * QEMU's spike machine and the Sail model. The two halves are written
+ * separately because QEMU only acts on the write to the upper word; Sail
+ * accepts either form. On the virt machine there is no HTIF, so this just
+ * writes to memory and the sifive_test store is what ends the run.
+ */
+.macro HTIF_EXIT_T6
+    la   t5, tohost
+    sw   t6, 0(t5)
+    sw   x0, 4(t5)
+.endm
+
 .macro TEST_PASS
+    li   t6, 1                  /* HTIF exit code 0 */
+    HTIF_EXIT_T6
     li   t6, 0x5555
     li   t5, FINISHER_ADDR
     sw   t6, 0(t5)
@@ -43,6 +59,9 @@
 
 /* Report failure with exit code = s10 (the current test id). */
 .macro TEST_FAIL_S10
+    slli t6, s10, 1
+    ori  t6, t6, 1
+    HTIF_EXIT_T6
     slli t6, s10, 16
     li   t5, 0x3333
     or   t6, t6, t5
@@ -282,3 +301,23 @@ trap_handler:
 .macro CBO_ZERO cs1
     .insn i CBO_OPC, 2, x0, \cs1, 4
 .endm
+
+/*
+ * HTIF tohost/fromhost. QEMU picks these up from the ELF symbol table (both
+ * symbols must exist and be 8 bytes) and overlays an MMIO region on them;
+ * Sail does the same. On the virt machine they are just ordinary memory.
+ */
+.section .tohost, "aw", @progbits
+.balign 8
+.globl tohost
+.type tohost, @object
+.size tohost, 8
+tohost:
+    .dword 0
+.balign 8
+.globl fromhost
+.type fromhost, @object
+.size fromhost, 8
+fromhost:
+    .dword 0
+.text
