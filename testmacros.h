@@ -120,6 +120,9 @@ trap_handler:
 #define RVY_OPC 0x7b
 #define CBO_OPC 0x0f
 
+#ifndef CHERI_093
+/* ---------------------------------------------------------------- RVY --- */
+
 /* Three-operand instructions (funct3 = 0, sub-op selected by funct7) */
 .macro PACKY cd, rs1, rs2
     .insn r RVY_OPC, 0, 0x01, \cd, \rs1, \rs2
@@ -286,6 +289,71 @@ trap_handler:
 .macro SC_Y rd, cs1, cs2
     .insn r RVY_OPC, 3, 0x0c, \rd, \cs1, \cs2
 .endm
+
+#else /* CHERI_093 */
+/*
+ * The 0.9.3 standard encodes the same operations on the base OP opcode with
+ * different mnemonics (see target/riscv/insn32-cheri-std.decode), so only the
+ * subset the tests actually use is provided here; anything without a 0.9.3
+ * equivalent errors out at assembly time.
+ */
+#define STD_OPC     0x33   /* OP    */
+#define STD_AMO_OPC 0x2f   /* AMO   */
+#define STD_LY_OPC  0x0f   /* ly    */
+#define STD_SY_OPC  0x23   /* sy    */
+
+/* Two-operand reads: funct7 0x08, sub-op selected via the rs2 field. */
+.macro YTAGR rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x0     /* gctag */
+.endm
+.macro YTYPER rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x2     /* gctype */
+.endm
+.macro YLENR rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x6     /* gclen */
+.endm
+.macro YAMASK rd, rs1
+    .insn r STD_OPC, 0, 0x08, \rd, \rs1, x7     /* cram */
+.endm
+/* sentry takes its source in cs1, unlike the v0.9.9 YSENTRY which uses cs2. */
+.macro YSENTRY cd, cs2
+    .insn r STD_OPC, 0, 0x08, \cd, \cs2, x8     /* sentry */
+.endm
+
+.macro YBNDSW cd, cs1, rs2
+    .insn r STD_OPC, 0, 0x07, \cd, \cs1, \rs2  /* scbnds */
+.endm
+
+.macro YMODESWY
+    .insn r STD_OPC, 1, 0x09, x0, x0, x0        /* modesw.cap */
+.endm
+.macro YMODESWI
+    .insn r STD_OPC, 1, 0x0a, x0, x0, x0        /* modesw.int */
+.endm
+
+.macro LY cd, addr
+    .insn i STD_LY_OPC, 4, \cd, \addr
+.endm
+.macro SY cs2, addr
+    .insn s STD_SY_OPC, 4, \cs2, \addr
+.endm
+
+/* Atomics: same funct7 values as RVY, but on the AMO opcode with funct3 4. */
+.macro LR_Y cd, cs1
+    .insn r STD_AMO_OPC, 4, 0x08, \cd, \cs1, x0
+.endm
+.macro AMOSWAP_Y cd, cs1, cs2
+    .insn r STD_AMO_OPC, 4, 0x04, \cd, \cs1, \cs2
+.endm
+.macro SC_Y rd, cs1, cs2
+    .insn r STD_AMO_OPC, 4, 0x0c, \rd, \cs1, \cs2
+.endm
+
+.macro SRLIY rd, cs1, shamt
+    .error "SRLIY does not exist in the 0.9.3 standard"
+.endm
+
+#endif /* CHERI_093 */
 
 /* Cache-block operations: standard Zicbom/Zicboz opcode and funct12s, but
  * under RVY cs1 authorizes the access as a capability. */
