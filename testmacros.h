@@ -23,6 +23,7 @@
 #define CSR_MENVCFG 0x30A
 #define CSR_MEPC    0x341
 #define CSR_MCAUSE  0x342
+#define CSR_MTVAL2  0x34B
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
 #define CSR_STVEC   0x105
@@ -320,6 +321,9 @@ trap_handler:
     .insn r STD_OPC, 0, 0x08, \cd, \cs2, x8     /* sentry */
 .endm
 
+.macro YADDRW cd, cs1, rs2
+    .insn r STD_OPC, 1, 0x06, \cd, \cs1, \rs2   /* scaddr */
+.endm
 .macro YBNDSW cd, cs1, rs2
     .insn r STD_OPC, 0, 0x07, \cd, \cs1, \rs2  /* scbnds */
 .endm
