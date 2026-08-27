@@ -11,22 +11,23 @@
  *  - S-mode CHERI enable is gated by menvcfg.CRE
  */
 #include "testmacros.h"
+#include "exceptions.h"
 
 .option norvc
 .section .text
 .globl _start
 _start:
-    SETUP_TRAP_HANDLER
+    SETUP_TRAPS
 
     /* Test 1: misa.Y is set (1) at reset */
-    li   s10, 1
+    NEXT_TEST
     csrr t0, CSR_MISA
     li   t1, MISA_Y
     and  t2, t0, t1
     beqz t2, fail
 
     /* Test 2: menvcfg resets to 0; CRE is bit 9; bit 28 is not writable */
-    li   s10, 2
+    NEXT_TEST
     csrr t0, CSR_MENVCFG
     bnez t0, fail
     li   t1, MENVCFG_CRE
@@ -48,7 +49,7 @@ _start:
      * later checks are unaffected. Capability CSR writes need capability
      * pointer mode.
      */
-    li   s10, 3
+    NEXT_TEST
     YMODESWY                             /* enter cap mode */
 
     /*
@@ -100,7 +101,7 @@ _start:
 
     /* Test 4: with every checked register a root capability again,
      * clearing misa.Y succeeds */
-    li   s10, 4
+    NEXT_TEST
     li   t1, MISA_Y
     csrc CSR_MISA, t1
     csrr t0, CSR_MISA
@@ -108,29 +109,29 @@ _start:
     bnez t2, fail
 
     /* Test 5: with Y=0, RVY instructions and YLEN CSRs are illegal */
-    li   s10, 5
-    mv   s0, s11
+    NEXT_TEST
+    mv   s0, trap_count
     addi s0, s0, 1
     YAMASK t2, t0
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
     addi s0, s0, 1
     csrrs t2, CSR_DDC, x0                /* ddc requires CRE */
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
 
     /* Test 6: misa.Y can be set again and RVY instructions work */
-    li   s10, 6
+    NEXT_TEST
     li   t1, MISA_Y
     csrs CSR_MISA, t1
     csrr t0, CSR_MISA
     and  t2, t0, t1
     beqz t2, fail
-    mv   s0, s11
+    mv   s0, trap_count
     li   t0, 0
     YAMASK t2, t0                        /* no trap expected */
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
 
     /* Test 7: S-mode CHERI enable is menvcfg.CRE */
-    li   s10, 7
+    NEXT_TEST
     li   t0, -1                  /* PMP entry 0: allow everything */
     csrw CSR_PMPADDR0, t0
     li   t0, 0x1f                /* NAPOT, RWX */
@@ -143,15 +144,15 @@ _start:
     csrs CSR_MSTATUS, t0
     la   t0, s_code_disabled
     csrw CSR_MEPC, t0
-    la   s9, m_cont_a
-    mv   s0, s11
+    la   m_continue, m_cont_a
+    mv   s0, trap_count
     addi s0, s0, 1
     mret
 s_code_disabled:
     YAMASK t2, t0                        /* in S-mode: illegal */
     ecall
 m_cont_a:
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
     /* enable S-mode CHERI and retry */
     li   t1, MENVCFG_CRE
     csrs CSR_MENVCFG, t1
@@ -161,17 +162,17 @@ m_cont_a:
     csrs CSR_MSTATUS, t0
     la   t0, s_code_enabled
     csrw CSR_MEPC, t0
-    la   s9, m_cont_b
-    mv   s0, s11
+    la   m_continue, m_cont_b
+    mv   s0, trap_count
     mret
 s_code_enabled:
     YAMASK t2, t0                        /* in S-mode: works */
     ecall
 m_cont_b:
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
 
     TEST_PASS
 fail:
-    TEST_FAIL_S10
+    TEST_FAIL
 
 TRAP_HANDLER
