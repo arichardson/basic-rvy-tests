@@ -35,6 +35,13 @@
 #define MISA_Y      (1 << 24)
 #define MENVCFG_CRE (1 << 9)
 
+/* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */
+#define PERM_W      (1 << 0)
+#define PERM_C      (1 << 5)
+#define PERM_ASR    (1 << 16)
+#define PERM_X      (1 << 17)
+#define PERM_R      (1 << 18)
+
 /*
  * Report the exit code in t6 (already encoded as (code << 1) | 1) through the
  * HTIF tohost register. This is what ends the run on spike-like harnesses:
