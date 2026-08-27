@@ -27,6 +27,8 @@
  *   7. yw=1/yd=0 page: loads normal (yr=0/yrg=1); storing a tagged
  *      capability raises cause 36 (Svade-style capability dirty
  *      tracking); untagged stores are unaffected.
+ *   8. yr=1/yrg=0/yw=0 page, which refuses loads (generation mismatch, 35)
+ *      and tagged stores (36) alike: an AMO trips both, and 36 wins.
  *
  * Register use: s2 = tagged root capability, a0-a4 = VA aliases of the test
  * buffer.
@@ -99,6 +101,10 @@ _start:
     li   t2, PTE_YRG_BIT | PTE_YW_BIT | PTE_LEAF_RWAD
     or   t2, t2, t1
     sd   t2, 48(t0)
+    /* index 7, VA 0x1_C0000000: rvy = yr only, so loads and stores both fault */
+    li   t2, PTE_YR_BIT | PTE_LEAF_RWAD
+    or   t2, t2, t1
+    sd   t2, 56(t0)
 
     /* satp = Sv39 | PPN(pagetable) */
     la   t0, pagetable
@@ -128,6 +134,8 @@ s_entry:
     add  a3, a0, t0              /* index 5: U-page, yr|yw|yd */
     li   t0, 0x100000000
     add  a4, a0, t0              /* index 6: yrg|yw (yd=0) */
+    li   t0, 0x140000000
+    add  a5, a0, t0              /* index 7: yr only */
 
     /* Test 1: normal page: capability store + load round-trips the tag */
     NEXT_TEST
@@ -206,11 +214,45 @@ s_entry:
     SY   x0, 0(a4)  /* NULL -> no trap */
     EXPECT_NO_TRAP
 
+    /*
+     * A page whose rvy field refuses both directions: yrg=0 no longer
+     * matches sstatus.SYRG, so capability loads mismatch, and yw=0 refuses
+     * tagged capability stores. Put a tagged capability in the buffer
+     * through the alias that still permits it, then approach it through
+     * this one.
+     */
+    NEXT_TEST
+    SY   s2, 0(a2)               /* index 4 still allows tagged stores */
+    EXPECT_NO_TRAP
+
+    NEXT_TEST
+    LY   t1, 0(a5)
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+
+    NEXT_TEST
+    SY   s2, 0(a5)
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+
+    /*
+     * An AMO does both, and the specification gives the store/AMO page fault
+     * priority over the load capability fault.
+     */
+    NEXT_TEST
+    AMOSWAP_Y t1, a5, s2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+
     la   m_continue, m_done
     ecall
 m_done:
     TEST_PASS
 fail:
+    /*
+     * Everything above runs in S-mode with paging on, where the finisher
+     * device is not mapped, so get back to M-mode before reporting.
+     */
+    la   m_continue, m_fail
+    ecall
+m_fail:
     TEST_FAIL
 
 TRAP_HANDLER

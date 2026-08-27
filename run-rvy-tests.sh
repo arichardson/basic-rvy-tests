@@ -92,6 +92,8 @@ build test-amo-cbo-causes
 build test-bounds-causes
 build test-branch-target-faults
 build test-pcc-bounds-fetch
+build test-cap-ops
+build test-asr
 
 run test-insn-encodings 0
 run test-misa-y 0
@@ -102,6 +104,8 @@ run test-amo-cbo-causes 0
 run test-bounds-causes 0
 run test-branch-target-faults 0
 run test-pcc-bounds-fetch 0
+run test-cap-ops 0
+run test-asr 0
 
 if [ "$TARGET" = riscv64 ]; then
     # Svyrg (and the pte.rvy field it redefines) is RV64-only. Note: the
