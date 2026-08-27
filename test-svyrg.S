@@ -11,27 +11,31 @@
  *   2. pte.y=0 page: loads have the tag cleared (no trap); stores with a
  *      set tag raise CHERI Store/AMO Page Fault (cause 36); untagged
  *      stores are unaffected.
+ *   3. a page carrying the bits Svyrg allocates may be populated ahead of
+ *      time, but using it while they are still reserved raises an ordinary
+ *      load page fault (cause 13).
  *
  *  Svyrg mode (after setting sstatus.YRGE, which must be writable):
- *   3. rvy=0 page: yr=0/yrg=0 clears loaded tags; yw=0 faults tagged
+ *   4. rvy=0 page: yr=0/yrg=0 clears loaded tags; yw=0 faults tagged
  *      stores (same observable behavior as base mode).
- *   4. yr=1/yrg=1 S-page: loading a tagged capability raises CHERI Load
+ *   5. yr=1/yrg=1 S-page: loading a tagged capability raises CHERI Load
  *      Capability Fault (cause 35) while sstatus.SYRG=0 (generation
  *      mismatch) and works normally once SYRG is set.
- *   5. yr=1/yrg=0 U-page (via sstatus.SUM): normal while UYRG=0, faults
+ *   6. yr=1/yrg=0 U-page (via sstatus.SUM): normal while UYRG=0, faults
  *      with cause 35 once UYRG is set -- with SYRG still set, proving the
  *      generation is selected by pte.u.
- *   6. yw=1/yd=0 page: loads normal (yr=0/yrg=1); storing a tagged
+ *   7. yw=1/yd=0 page: loads normal (yr=0/yrg=1); storing a tagged
  *      capability raises cause 36 (Svade-style capability dirty
  *      tracking); untagged stores are unaffected.
  *
- * Register use: s2 = tagged root capability, s5/s6 = cause 35/36 trap
- * counters, a0-a4 = VA aliases of the test buffer, s9/s10 as usual.
+ * Register use: s2 = tagged root capability, s5/s6/s7 = cause 35/36/13
+ * trap counters, a0-a4 = VA aliases of the test buffer, s9/s10 as usual.
  */
 #include "testmacros.h"
 
 #define CAUSE_CHERI_LOAD_CAP_FAULT  35
 #define CAUSE_CHERI_STORE_PAGE_FAULT 36
+#define CAUSE_LOAD_PAGE_FAULT       13
 
 /* Leaf PTE bits: V|R|A|D = 0xC3, +W = 0xC7, +X = 0xCF, U = 0x10 */
 #define PTE_LEAF_RWAD  0xC7
@@ -56,6 +60,7 @@ _start:
     li   s10, 99                 /* id for traps outside any test */
     li   s5, 0                   /* cause 35 count */
     li   s6, 0                   /* cause 36 count */
+    li   s7, 0                   /* cause 13 count */
 
     /* Keep a tagged root capability for the store tests. */
     csrrs s2, CSR_DDC, x0
@@ -78,8 +83,13 @@ _start:
      */
     la   t0, pagetable
     li   t1, 0x80000 << 10
-    /* index 2, VA 0x0_80000000 (code + data): X, rvy = yrg|yw|yd */
-    li   t2, PTE_YRG_BIT | PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWXAD
+    /*
+     * index 2, VA 0x0_80000000 (code + data): X, rvy = yd (pte.y). This is
+     * the page the test itself runs from and it is used before YRGE is set,
+     * so it must not carry any of the bits that Svyrg allocates: while YRGE
+     * is clear they are reserved and using the page would fault.
+     */
+    li   t2, PTE_YD_BIT | PTE_LEAF_RWXAD
     or   t2, t2, t1
     sd   t2, 16(t0)
     /* index 3, VA 0x0_C0000000: rvy = 0 */
@@ -149,8 +159,20 @@ s_entry:
     /* the untagged store went through: repair the buffer for later tests */
     SY   s2, 0(a0)
 
-    /* Enable Svyrg; the bit must read back as set */
+    /*
+     * Test 3: a2's PTE already carries yr|yrg|yw|yd for the tests below.
+     * Populating it early is fine, but until YRGE is set those bits are
+     * reserved, so using the page now must fault like any other reserved
+     * PTE bit would.
+     */
     li   s10, 3
+    mv   t3, s7
+    addi t3, t3, 1
+    LY   t1, 0(a2)
+    bne  t3, s7, fail
+
+    /* Enable Svyrg; the bit must read back as set */
+    li   s10, 4
     li   t0, SSTATUS_YRGE
     csrs 0x100, t0               /* sstatus */
     csrr t1, 0x100
@@ -167,7 +189,7 @@ s_entry:
     bne  t3, s6, fail
 
     /* Test 4: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
-    li   s10, 4
+    li   s10, 5
     mv   t3, s5
     addi t3, t3, 1
     LY   t1, 0(a2)  /* cause 35 (mismatch) */
@@ -181,7 +203,7 @@ s_entry:
     beqz t2, fail
 
     /* Test 5: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
-    li   s10, 5
+    li   s10, 6
     mv   t3, s5
     LY   t1, 0(a3)  /* UYRG=0 matches yrg=0: normal */
     bne  t3, s5, fail
@@ -195,7 +217,7 @@ s_entry:
     bne  t3, s5, fail
 
     /* Test 6: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
-    li   s10, 6
+    li   s10, 7
     mv   t3, s5
     LY   t1, 0(a4)  /* yr=0/yrg=1 -> normal */
     bne  t3, s5, fail
@@ -235,6 +257,11 @@ trap_handler:
     addi s6, s6, 1
     j    3f
 2:
+    li   t5, CAUSE_LOAD_PAGE_FAULT
+    bne  t6, t5, 5f
+    addi s7, s7, 1
+    j    3f
+5:
     li   t5, 9                    /* ecall from S-mode */
     bne  t6, t5, 4f
     li   t5, 0x1800               /* mstatus.MPP = M */
