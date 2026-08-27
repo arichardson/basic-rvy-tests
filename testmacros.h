@@ -23,6 +23,7 @@
 #define CSR_MISA    0x301
 #define CSR_MTVEC   0x305
 #define CSR_MENVCFG 0x30A
+#define CSR_MSCRATCH 0x340
 #define CSR_MEPC    0x341
 #define CSR_MCAUSE  0x342
 #define CSR_MTVAL2  0x34B
