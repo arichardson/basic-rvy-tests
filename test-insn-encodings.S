@@ -5,15 +5,16 @@
  * new encodings yet.
  */
 #include "testmacros.h"
+#include "exceptions.h"
 
 .option norvc
 .section .text
 .globl _start
 _start:
-    SETUP_TRAP_HANDLER
+    SETUP_TRAPS
 
     /* Test 1: YAMASK of length 0 -> all-ones mask */
-    li   s10, 1
+    NEXT_TEST
     li   t0, 0
     YAMASK t1, t0
     li   t2, -1
@@ -21,7 +22,7 @@ _start:
 
     /* Test 2: YAMASK of an inexactly representable length -> the mask is
      * still contiguous ones in the high bits, but not all-ones */
-    li   s10, 2
+    NEXT_TEST
     li   t0, 0x10000001
     YAMASK t1, t0
     not  t2, t1
@@ -32,7 +33,7 @@ _start:
 
     /* Test 3: YBNDSWI, one length per representable region.
      * The root capability (from ddc) keeps its tag for exact bounds. */
-    li   s10, 3
+    NEXT_TEST
     csrrs t0, CSR_DDC, x0        /* t0 = root capability */
 
 .macro CHECK_YBNDSWI length
@@ -62,7 +63,7 @@ _start:
 #endif
 
     /* Test 4: YSENTRY (v0.9.9 encoding: source in cs2, cs1 = 0) */
-    li   s10, 4
+    NEXT_TEST
     YSENTRY t1, t0
     YTAGR t2, t1                 /* ytagr = 1 */
     beqz t2, fail
@@ -75,28 +76,28 @@ _start:
     bnez t2, fail
 
     /* Test 5: the pre-0.9.9 YSENTRY encoding (2OP space) must be illegal */
-    li   s10, 5
-    mv   s0, s11
+    NEXT_TEST
+    mv   s0, trap_count
     addi s0, s0, 1
     .insn r 0x7b, 0, 0x7b, t1, t0, x0    /* pre-0.9.9 YSENTRY: now illegal */
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
 
     /* Test 6: SRLIY only accepts shamt == XLEN */
-    li   s10, 6
+    NEXT_TEST
     SRLIY t1, t0, __riscv_xlen
     beqz t1, fail                /* pesbt of the root cap is non-zero */
-    mv   s0, s11
+    mv   s0, trap_count
     addi s0, s0, 1
     SRLIY t1, t0, __riscv_xlen - 1    /* reserved shamt */
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
     /* funct3=5 immediates in neither the SRLIY nor YBNDSWI range */
-    mv   s0, s11
+    mv   s0, trap_count
     addi s0, s0, 1
     SRLIY t1, t0, 0x100
-    bne  s11, s0, fail
+    bne  trap_count, s0, fail
 
     TEST_PASS
 fail:
-    TEST_FAIL_S10
+    TEST_FAIL
 
 TRAP_HANDLER

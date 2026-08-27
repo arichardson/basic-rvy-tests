@@ -20,17 +20,10 @@
  * exactly at pcc.top still executes.
  */
 #include "testmacros.h"
+#include "exceptions.h"
 
-#define CAUSE_CHERI_INST 32
-
-/* Named registers, so the bookkeeping reads clearly at the use sites. */
-#define expected_mepc s3         /* address of the instruction that faults */
-#define trap_cause    s4         /* mcause of the most recent trap */
-#define trap_mepc     s6         /* mepc of the most recent trap */
-#define ran_marker    s7         /* set by the in-bounds part of a stub */
-#define resume_at     s8         /* where the handler should resume */
-#define test_id       s10
-#define trap_count    s11
+#define expected_epc s2          /* address of the instruction that faults */
+#define ran_marker   s7          /* set by the in-bounds part of a stub */
 
 /*
  * a0 = an executable capability covering exactly [\stub, \stub + \len), and
@@ -56,17 +49,14 @@
  */
 .macro EXPECT_FETCH_FAULT stub, len, fault_off, marker
     li   ran_marker, 0
-    li   trap_count, 0
+    CLEAR_TRAPS
     BOUNDED_CODE_CAP \stub, \len
-    addi expected_mepc, t0, \fault_off
-    la   resume_at, 88f
+    addi expected_epc, t0, \fault_off
+    RESUME_AFTER_FAULT 88f
     jalr ra, a0, 0
-88: YMODESWY                     /* the fresh PCC need not be in capmode */
-    li   t3, 1
-    bne  t3, trap_count, fail            /* exactly one trap */
-    li   t3, CAUSE_CHERI_INST
-    bne  t3, trap_cause, fail            /* CHERI instruction access fault */
-    bne  trap_mepc, expected_mepc, fail  /* against the unfetchable insn */
+88:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC expected_epc      /* against the unfetchable instruction */
     li   t3, \marker
     bne  t3, ran_marker, fail
 .endm
@@ -77,10 +67,10 @@
  */
 .macro EXPECT_NO_FETCH_FAULT stub, len
     li   ran_marker, 0
-    li   trap_count, 0
+    CLEAR_TRAPS
     BOUNDED_CODE_CAP \stub, \len
     jalr ra, a0, 0
-    bnez trap_count, fail
+    EXPECT_NO_TRAP
     li   t3, 1
     bne  t3, ran_marker, fail
 .endm
@@ -89,11 +79,7 @@
 .section .text
 .globl _start
 _start:
-    la   t0, trap_handler
-    csrw CSR_MTVEC, t0
-    li   trap_cause, 0
-    li   trap_mepc, 0
-    li   trap_count, 0
+    SETUP_TRAPS
 
     YMODESWY                     /* capability mode: jalr takes a capability */
 
@@ -104,23 +90,23 @@ _start:
      */
 
     /* Test 1: the return is entirely out of bounds (0 of 4 bytes) */
-    li   test_id, 1
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub32, 4, 4, 1
 
     /* Tests 2-4: the return has 1, 2 and 3 of its 4 bytes in bounds */
-    li   test_id, 2
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub32, 5, 4, 1
-    li   test_id, 3
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub32, 6, 4, 1
-    li   test_id, 4
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub32, 7, 4, 1
 
     /* Test 5: all 4 bytes in bounds, ending exactly at the top: runs */
-    li   test_id, 5
+    NEXT_TEST
     EXPECT_NO_FETCH_FAULT stub32, 8
 
     /* Test 6: the very first instruction is out of bounds */
-    li   test_id, 6
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub32, 0, 0, 0
 
     /*
@@ -129,11 +115,11 @@ _start:
      */
 
     /* Test 7: the compressed return has 1 of its 2 bytes in bounds */
-    li   test_id, 7
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub16, 3, 2, 1
 
     /* Test 8: both compressed instructions fit exactly: runs */
-    li   test_id, 8
+    NEXT_TEST
     EXPECT_NO_FETCH_FAULT stub16, 4
 
     /*
@@ -144,29 +130,29 @@ _start:
      */
 
     /* Test 9: 2 of the 4 bytes in bounds; the marker must not be set */
-    li   test_id, 9
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub_mixed, 4, 2, 0
 
     /* Test 10: 3 of the 4 bytes in bounds */
-    li   test_id, 10
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub_mixed, 5, 2, 0
 
     /*
      * Test 11: all 4 bytes in bounds, so it runs and sets the marker; the
      * fault moves to the following instruction at +6.
      */
-    li   test_id, 11
+    NEXT_TEST
     EXPECT_FETCH_FAULT stub_mixed, 6, 6, 1
 
     YMODESWI
     TEST_PASS
 
 fail_inexact_bounds:
-    li   test_id, 90             /* YBNDSW could not encode the bounds */
+    NEXT_TEST               /* YBNDSW could not encode the bounds */
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
     YMODESWI
-    TEST_FAIL_S10
+    TEST_FAIL
 
 /*
  * Entered with PCC bounded to a prefix of the stub. Every instruction is
@@ -198,19 +184,4 @@ stub_mixed:
     .insn i 0x67, 0, x0, ra, 0          /* +6 .. +9: ret */
 .option norvc
 
-/*
- * Records the cause and PCC address of the most recent trap and counts traps
- * in trap_count. The faulting PCC cannot be resumed by writing an address to
- * mepc, so install a fresh PCC derived from mtvecc (a root code capability)
- * at the recovery point stashed in resume_at.
- */
-.balign 4
-trap_handler:
-    csrr trap_cause, CSR_MCAUSE
-    csrr trap_mepc, CSR_MEPC
-    addi trap_count, trap_count, 1
-    YMODESWY
-    csrr t5, CSR_MTVEC
-    YADDRW t5, t5, resume_at
-    csrw CSR_MEPC, t5
-    mret
+TRAP_HANDLER_PCC

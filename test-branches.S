@@ -16,14 +16,15 @@
  * identical whether they execute or are skipped by the trap handler.
  */
 #include "testmacros.h"
+#include "exceptions.h"
 
 .option norvc
 .section .text
 .globl _start
 _start:
-    SETUP_TRAP_HANDLER
+    SETUP_TRAPS
 
-    li   s10, 1
+    NEXT_TEST
     li   t0, 1
     li   t1, 1
     li   t2, 2
@@ -35,13 +36,13 @@ _start:
     .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 (1 != 2) */
     .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 (1 == 1) */
     .insn b 0x63, 1, t0, t0, fail        /* bne x5, x5 (rs1 == rs2) */
-    bnez s11, fail                       /* must still be 0 */
+    bnez trap_count, fail                       /* must still be 0 */
 
     /*
      * Capability mode: the same reserved-order encodings must trap when
      * x-rvy-strict-branches=on, and behave as normal branches otherwise.
      */
-    li   s10, 2
+    NEXT_TEST
     YMODESWY                             /* enter cap mode */
     .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 (1 != 2) */
     .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 (1 == 1) */
@@ -49,22 +50,22 @@ _start:
     YMODESWI                             /* back to int mode */
 
     /* Legal operand orders must still work (in integer mode). */
-    li   s10, 3
+    NEXT_TEST
     .insn b 0x63, 0, t1, t0, 1f          /* beq x6, x5: taken */
     j    fail
 1:
     .insn b 0x63, 1, t2, t0, 2f          /* bne x7, x5: taken */
     j    fail
 2:
-    beqz s11, 3f
+    beqz trap_count, 3f
     /* Traps occurred: report the count as the exit code */
-    mv   s10, s11
-    TEST_FAIL_S10
+    mv   test_id, trap_count
+    TEST_FAIL
 3:
     TEST_PASS
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
     YMODESWI
-    TEST_FAIL_S10
+    TEST_FAIL
 
 TRAP_HANDLER

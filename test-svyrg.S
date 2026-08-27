@@ -28,14 +28,11 @@
  *      capability raises cause 36 (Svade-style capability dirty
  *      tracking); untagged stores are unaffected.
  *
- * Register use: s2 = tagged root capability, s5/s6/s7 = cause 35/36/13
- * trap counters, a0-a4 = VA aliases of the test buffer, s9/s10 as usual.
+ * Register use: s2 = tagged root capability, a0-a4 = VA aliases of the test
+ * buffer.
  */
 #include "testmacros.h"
-
-#define CAUSE_CHERI_LOAD_CAP_FAULT  35
-#define CAUSE_CHERI_STORE_PAGE_FAULT 36
-#define CAUSE_LOAD_PAGE_FAULT       13
+#include "exceptions.h"
 
 /* Leaf PTE bits: V|R|A|D = 0xC3, +W = 0xC7, +X = 0xCF, U = 0x10 */
 #define PTE_LEAF_RWAD  0xC7
@@ -55,12 +52,7 @@
 .section .text
 .globl _start
 _start:
-    la   t0, trap_handler
-    csrw CSR_MTVEC, t0
-    li   s10, 99                 /* id for traps outside any test */
-    li   s5, 0                   /* cause 35 count */
-    li   s6, 0                   /* cause 36 count */
-    li   s7, 0                   /* cause 13 count */
+    SETUP_TRAPS
 
     /* Keep a tagged root capability for the store tests. */
     csrrs s2, CSR_DDC, x0
@@ -138,24 +130,21 @@ s_entry:
     add  a4, a0, t0              /* index 6: yrg|yw (yd=0) */
 
     /* Test 1: normal page: capability store + load round-trips the tag */
-    li   s10, 1
+    NEXT_TEST
     SY   s2, 0(a0)
     LY   t1, 0(a0)
     YTAGR t2, t1
     beqz t2, fail
 
     /* Test 2: base mode, pte.y=0: load clears tag, tagged store faults */
-    li   s10, 2
+    NEXT_TEST
     LY   t1, 0(a1)  /* via rvy=0 alias */
     YTAGR t2, t1
     bnez t2, fail
-    mv   t3, s6
-    addi t3, t3, 1
     SY   s2, 0(a1)  /* tagged -> cause 36 */
-    bne  t3, s6, fail
-    mv   t3, s6
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
     SY   x0, 0(a1)  /* NULL (untagged) -> no trap */
-    bne  t3, s6, fail
+    EXPECT_NO_TRAP
     /* the untagged store went through: repair the buffer for later tests */
     SY   s2, 0(a0)
 
@@ -165,14 +154,12 @@ s_entry:
      * reserved, so using the page now must fault like any other reserved
      * PTE bit would.
      */
-    li   s10, 3
-    mv   t3, s7
-    addi t3, t3, 1
+    NEXT_TEST
     LY   t1, 0(a2)
-    bne  t3, s7, fail
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
     /* Enable Svyrg; the bit must read back as set */
-    li   s10, 4
+    NEXT_TEST
     li   t0, SSTATUS_YRGE
     csrs 0x100, t0               /* sstatus */
     csrr t1, 0x100
@@ -183,98 +170,50 @@ s_entry:
     LY   t1, 0(a1)
     YTAGR t2, t1
     bnez t2, fail
-    mv   t3, s6
-    addi t3, t3, 1
     SY   s2, 0(a1)  /* tagged -> cause 36 */
-    bne  t3, s6, fail
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
     /* Test 4: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
-    li   s10, 5
-    mv   t3, s5
-    addi t3, t3, 1
+    NEXT_TEST
     LY   t1, 0(a2)  /* cause 35 (mismatch) */
-    bne  t3, s5, fail
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     li   t0, SSTATUS_SYRG
     csrs 0x100, t0                       /* SYRG = 1: generations match */
-    mv   t3, s5
     LY   t1, 0(a2)  /* normal */
-    bne  t3, s5, fail
+    EXPECT_NO_TRAP
     YTAGR t2, t1
     beqz t2, fail
 
     /* Test 5: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
-    li   s10, 6
-    mv   t3, s5
+    NEXT_TEST
     LY   t1, 0(a3)  /* UYRG=0 matches yrg=0: normal */
-    bne  t3, s5, fail
+    EXPECT_NO_TRAP
     YTAGR t2, t1
     beqz t2, fail
     li   t0, SSTATUS_UYRG
     csrs 0x100, t0                       /* UYRG = 1: mismatch */
-    mv   t3, s5
-    addi t3, t3, 1
     LY   t1, 0(a3)  /* cause 35 */
-    bne  t3, s5, fail
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
 
     /* Test 6: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
-    li   s10, 7
-    mv   t3, s5
+    NEXT_TEST
     LY   t1, 0(a4)  /* yr=0/yrg=1 -> normal */
-    bne  t3, s5, fail
+    EXPECT_NO_TRAP
     YTAGR t2, t1
     beqz t2, fail
-    mv   t3, s6
-    addi t3, t3, 1
     SY   s2, 0(a4)  /* tagged -> cause 36 */
-    bne  t3, s6, fail
-    mv   t3, s6
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
     SY   x0, 0(a4)  /* NULL -> no trap */
-    bne  t3, s6, fail
+    EXPECT_NO_TRAP
 
-    la   s9, m_done
+    la   m_continue, m_done
     ecall
 m_done:
     TEST_PASS
 fail:
-    TEST_FAIL_S10
+    TEST_FAIL
 
-/*
- * Trap handler: counts CHERI Load Capability Faults (35) in s5 and CHERI
- * Store/AMO Page Faults (36) in s6, skipping the faulting instruction.
- * An ecall from S-mode returns to M-mode at the address in s9. Any other
- * cause is a test failure.
- */
-.balign 4
-trap_handler:
-    csrr t6, CSR_MCAUSE
-    li   t5, CAUSE_CHERI_LOAD_CAP_FAULT
-    bne  t6, t5, 1f
-    addi s5, s5, 1
-    j    3f
-1:
-    li   t5, CAUSE_CHERI_STORE_PAGE_FAULT
-    bne  t6, t5, 2f
-    addi s6, s6, 1
-    j    3f
-2:
-    li   t5, CAUSE_LOAD_PAGE_FAULT
-    bne  t6, t5, 5f
-    addi s7, s7, 1
-    j    3f
-5:
-    li   t5, 9                    /* ecall from S-mode */
-    bne  t6, t5, 4f
-    li   t5, 0x1800               /* mstatus.MPP = M */
-    csrs CSR_MSTATUS, t5
-    csrw CSR_MEPC, s9
-    mret
-3:
-    csrr t6, CSR_MEPC
-    addi t6, t6, 4
-    csrw CSR_MEPC, t6
-    mret
-4:
-    TEST_FAIL_S10
+TRAP_HANDLER
 
 .section .bss
 .balign 4096
