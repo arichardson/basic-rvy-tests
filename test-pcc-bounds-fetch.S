@@ -19,6 +19,7 @@
  * then faulted", and the positive cases prove that an instruction ending
  * exactly at pcc.top still executes.
  */
+#define TEST_NAME "pcc-bounds-fetch"
 #include "testmacros.h"
 #include "exceptions.h"
 

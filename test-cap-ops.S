@@ -13,6 +13,7 @@
  *  - YSUNSEAL and YBLD both reconstruct a tag under an authorizing
  *    capability, and both have several ways to be refused.
  */
+#define TEST_NAME "cap-ops"
 #include "testmacros.h"
 #include "exceptions.h"
 

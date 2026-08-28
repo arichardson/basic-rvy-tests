@@ -59,7 +59,59 @@
     sw   x0, 4(t5)
 .endm
 
+/*
+ * Print the NUL-terminated string at \sym on the HTIF console (device 1,
+ * command 1). Only the harnesses that implement HTIF show it; on virt these
+ * stores land in ordinary memory and are ignored, so the exit code stays the
+ * authoritative result either way.
+ */
+.macro HTIF_PUTS sym
+    la   t3, \sym
+    la   t4, tohost
+91: lbu  t5, 0(t3)
+    beqz t5, 92f
+    sw   t5, 0(t4)
+    li   t5, 0x01010000          /* device 1, command 1: putchar */
+    sw   t5, 4(t4)
+    addi t3, t3, 1
+    j    91b
+92:
+.endm
+
+/* Print test_id as a decimal number (ids never reach three digits). */
+.macro HTIF_PUT_TEST_ID
+    la   t4, tohost
+    li   t0, 10
+    divu t1, test_id, t0
+    beqz t1, 93f
+    addi t5, t1, '0'
+    sw   t5, 0(t4)
+    li   t5, 0x01010000
+    sw   t5, 4(t4)
+93:
+    remu t2, test_id, t0
+    addi t5, t2, '0'
+    sw   t5, 0(t4)
+    li   t5, 0x01010000
+    sw   t5, 4(t4)
+.endm
+
+/*
+ * Every test defines TEST_NAME so that the pass/fail line says which one it
+ * was; without it a run of the whole suite is just a column of exit codes.
+ */
+#ifndef TEST_NAME
+#error "each test must #define TEST_NAME before including this header"
+#endif
+
 .macro TEST_PASS
+    .pushsection .rodata
+    .balign 4
+94: .ascii "PASS: "
+    .ascii TEST_NAME
+    .asciz "\n"
+    .popsection
+    HTIF_PUTS 94b
     li   t6, 1                  /* HTIF exit code 0 */
     HTIF_EXIT_T6
     li   t6, 0x5555
@@ -70,6 +122,26 @@
 
 /* Report failure with exit code = test_id. */
 .macro TEST_FAIL
+    .pushsection .rodata
+    .balign 4
+95: .ascii "FAIL: "
+    .ascii TEST_NAME
+    .asciz " test "
+    .popsection
+    HTIF_PUTS 95b
+    TEST_EXIT_WITH_ID
+.endm
+
+/*
+ * Print test_id and exit with it as the code. Split out of TEST_FAIL for
+ * tests whose result is a count rather than a pass or a failure.
+ */
+.macro TEST_EXIT_WITH_ID
+    HTIF_PUT_TEST_ID
+    .pushsection .rodata
+96: .asciz "\n"
+    .popsection
+    HTIF_PUTS 96b
     slli t6, test_id, 1
     ori  t6, t6, 1
     HTIF_EXIT_T6
@@ -79,6 +151,17 @@
     li   t5, FINISHER_ADDR
     sw   t6, 0(t5)
 99: j    99b
+.endm
+
+/* Report a count in test_id as the outcome, which is not a failure. */
+.macro TEST_EXIT_COUNT what
+    .pushsection .rodata
+    .balign 4
+97: .ascii TEST_NAME
+    .asciz ": \what="
+    .popsection
+    HTIF_PUTS 97b
+    TEST_EXIT_WITH_ID
 .endm
 
 /*

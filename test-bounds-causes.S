@@ -10,6 +10,7 @@
  * what gets checked there.
  *
  */
+#define TEST_NAME "bounds-causes"
 #include "testmacros.h"
 #include "exceptions.h"
 

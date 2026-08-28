@@ -10,6 +10,7 @@
  *  - misa.Y can be set again
  *  - S-mode CHERI enable is gated by menvcfg.CRE
  */
+#define TEST_NAME "misa-y"
 #include "testmacros.h"
 #include "exceptions.h"
 
