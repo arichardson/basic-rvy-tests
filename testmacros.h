@@ -53,6 +53,29 @@
  * accepts either form. On the virt machine there is no HTIF, so this just
  * writes to memory and the sifive_test store is what ends the run.
  */
+/*
+ * The three BEQ/BNE encodings RVY reserves in capability mode, i.e. operands
+ * in rs1 <= rs2 register number order. Spelled as .insn because an assembler
+ * that knew about the reservation would refuse them, and arranged never to be
+ * taken so control flow does not depend on whether they execute. Expects
+ * t0 = 1, t1 = 1, t2 = 2, and branches to "fail" if one is ever taken.
+ */
+.macro RESERVED_ORDER_BRANCHES
+    .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 (1 != 2) */
+    .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 (1 == 1) */
+    .insn b 0x63, 1, t0, t0, fail        /* bne x5, x5 (rs1 == rs2) */
+.endm
+
+/* The same comparisons in the canonical order, which are never reserved. */
+.macro LEGAL_ORDER_BRANCHES
+    .insn b 0x63, 0, t1, t0, 1f          /* beq x6, x5: taken */
+    j    fail
+1:
+    .insn b 0x63, 1, t2, t0, 2f          /* bne x7, x5: taken */
+    j    fail
+2:
+.endm
+
 .macro HTIF_EXIT_T6
     la   t5, tohost
     sw   t6, 0(t5)
@@ -151,17 +174,6 @@
     li   t5, FINISHER_ADDR
     sw   t6, 0(t5)
 99: j    99b
-.endm
-
-/* Report a count in test_id as the outcome, which is not a failure. */
-.macro TEST_EXIT_COUNT what
-    .pushsection .rodata
-    .balign 4
-97: .ascii TEST_NAME
-    .asciz ": \what="
-    .popsection
-    HTIF_PUTS 97b
-    TEST_EXIT_WITH_ID
 .endm
 
 /*
