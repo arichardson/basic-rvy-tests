@@ -17,6 +17,7 @@
 # Once enabled, `ninja test` / `meson test --suite rvy` runs it, and (via
 # the usual meson->make bridge) so does `make check-rvy` -- handy for CI.
 
+fs = import('fs')
 rvy_test_cc_path = get_option('rvy_test_cc')
 if rvy_test_cc_path != ''
   rvy_candidates = [rvy_test_cc_path]
@@ -36,7 +37,8 @@ else
   rvy_test_cc_required = false
 endif
 
-rvy_probe_src = files('probe.S')
+rvy_src_dir = meson.current_source_dir() / '..'
+rvy_probe_src = files('../probe.S')
 rvy_test_cc_found = false
 foreach candidate : rvy_candidates
   cand_prog = find_program(candidate, required: false)
@@ -57,18 +59,38 @@ foreach candidate : rvy_candidates
 endforeach
 
 if rvy_test_cc_found
-  rvy_runner = find_program(meson.current_source_dir() / 'run-rvy-tests.sh')
+  rvy_runner = find_program(rvy_src_dir / 'run-rvy-tests.sh')
 
-  foreach dir : ['riscv64y-softmmu', 'riscv32y-softmmu']
-    if dir in target_dirs
-      target_base = dir.split('-')[0]
-      rvy_emulator = emulators['qemu-system-' + target_base]
-      test('rvy-' + target_base,
+  if is_variable('emulators')
+    # Included from QEMU's build: run against the emulators it just built,
+    # and depend on them so the suite rebuilds what it needs.
+    foreach dir : ['riscv64y-softmmu', 'riscv32y-softmmu',
+                   'riscv64cheristd-softmmu', 'riscv32cheristd-softmmu']
+      if dir in target_dirs
+        target_base = dir.split('-')[0]
+        rvy_emulator = emulators['qemu-system-' + target_base]
+        test('rvy-' + target_base,
+             rvy_runner,
+             args: [rvy_emulator.full_path(), rvy_test_cc.full_path()],
+             depends: rvy_emulator,
+             timeout: 300,
+             suite: ['rvy'])
+      endif
+    endforeach
+  else
+    # Standalone: the emulators are whatever -Drvy_emulators was given,
+    # already-built binaries somewhere on the system.
+    rvy_emulators = get_option('rvy_emulators')
+    if rvy_emulators.length() == 0
+      warning('no emulator given: configure with ' +
+              '-Drvy_emulators=/path/to/qemu-system-riscv64y to run the suite')
+    endif
+    foreach emulator : rvy_emulators
+      test(fs.name(emulator),
            rvy_runner,
-           args: [rvy_emulator.full_path(), rvy_test_cc.full_path()],
-           depends: rvy_emulator,
+           args: [emulator, rvy_test_cc.full_path()],
            timeout: 300,
            suite: ['rvy'])
-    endif
-  endforeach
+    endforeach
+  endif
 endif
