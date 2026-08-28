@@ -9,6 +9,9 @@
  * binaries keep using these encodings for their integer code.
  */
 #define TEST_NAME "reserved-branches"
+#ifdef CHERI_093
+#error "RVY v0.9.9 only: the reserved BEQ/BNE encodings are a v0.9.9 addition"
+#endif
 #include "testmacros.h"
 #include "exceptions.h"
 

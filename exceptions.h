@@ -47,15 +47,51 @@
 #define CAUSE_S_ECALL              9
 #define CAUSE_LOAD_PAGE_FAULT     13
 
+/*
+ * The kind of capability check that failed. RVY does not report it, but 0.9.3
+ * puts it in xtval2, so tests name it either way and it is simply ignored on
+ * RVY. The numbers are the 0.9.3 encoding.
+ */
+#define CAP_TAG                    0
+#define CAP_SEAL                   1
+#define CAP_PERM                   2
+#define CAP_BOUNDS                 4
+
 #ifdef CHERI_093
-/* 0.9.3 reports every capability fault as one cause, detailed in xtval2. */
+/*
+ * 0.9.3 reports every capability fault as one cause and splits it by the
+ * check that failed, in xtval2 together with the access type. RVY instead
+ * gives each access type its own cause and does not report the check, so
+ * expectations are written as TRAP_CAP_<access>(<check>) and each version
+ * keeps the half it can see.
+ */
 #define CAUSE_CHERI_ANY         0x1c
+#define CAP093_TYPE_INSN           0
+#define CAP093_TYPE_DATA           1
+#define CAP093_TYPE_BRANCH         2
+#define TRAP_CAP_FETCH(check)   CAUSE_CHERI_ANY, ((check) | (CAP093_TYPE_INSN << 16))
+#define TRAP_CAP_LOAD(check)    CAUSE_CHERI_ANY, ((check) | (CAP093_TYPE_DATA << 16))
+#define TRAP_CAP_STORE(check)   CAUSE_CHERI_ANY, ((check) | (CAP093_TYPE_DATA << 16))
+#define TRAP_CAP_BRANCH(check)  CAUSE_CHERI_ANY, ((check) | (CAP093_TYPE_BRANCH << 16))
+/* 0.9.3 reports misaligned capability accesses as misaligned, not access, faults. */
+#define CAUSE_CAP_MISALIGNED_LOAD  4
+#define CAUSE_CAP_MISALIGNED_STORE 6
+/* A missing ASR is a permission violation on the instruction fetch here. */
+#define TRAP_ASR_DENIED         TRAP_CAP_FETCH(CAP_PERM)
 #else
 #define CAUSE_CHERI_INST          32
 #define CAUSE_CHERI_LOAD          33
 #define CAUSE_CHERI_STORE         34
 #define CAUSE_CHERI_LOAD_CAP      35
 #define CAUSE_CHERI_STORE_PAGE    36
+#define TRAP_CAP_FETCH(check)   CAUSE_CHERI_INST
+#define TRAP_CAP_LOAD(check)    CAUSE_CHERI_LOAD
+#define TRAP_CAP_STORE(check)   CAUSE_CHERI_STORE
+#define TRAP_CAP_BRANCH(check)  CAUSE_CHERI_INST
+#define CAUSE_CAP_MISALIGNED_LOAD  CAUSE_LOAD_ACCESS_FAULT
+#define CAUSE_CAP_MISALIGNED_STORE CAUSE_STORE_ACCESS_FAULT
+/* RVY reports a missing ASR as an illegal instruction instead. */
+#define TRAP_ASR_DENIED         CAUSE_ILLEGAL_INSN
 #endif
 
 /* State maintained by the handlers. */
@@ -67,6 +103,7 @@
 #define m_continue    s9         /* where an ecall from S-mode returns to */
 
 .macro SETUP_TRAPS
+    ENABLE_CHERI
     la   t0, trap_handler
     csrw CSR_MTVEC, t0
     li   test_id, 0

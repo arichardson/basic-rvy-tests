@@ -23,6 +23,9 @@
  * detagged on the way from one that arrived intact but unusable.
  */
 #define TEST_NAME "branch-target-faults"
+#ifdef CHERI_093
+#error "RVY v0.9.9 only: 0.9.3 checks the jump target at the branch instead"
+#endif
 #include "testmacros.h"
 #include "exceptions.h"
 

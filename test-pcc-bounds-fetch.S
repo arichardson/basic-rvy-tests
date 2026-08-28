@@ -56,7 +56,7 @@
     RESUME_AFTER_FAULT 88f
     jalr ra, a0, 0
 88:
-    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_TRAP TRAP_CAP_FETCH(CAP_BOUNDS)
     EXPECT_EPC expected_epc      /* against the unfetchable instruction */
     li   t3, \marker
     bne  t3, ran_marker, fail
@@ -106,9 +106,15 @@ _start:
     NEXT_TEST
     EXPECT_NO_FETCH_FAULT stub32, 8
 
-    /* Test 6: the very first instruction is out of bounds */
+#ifndef CHERI_093
+    /*
+     * Test 6: the very first instruction is out of bounds. 0.9.3 checks the
+     * target of a jump at the branch rather than on fetch, so there this is
+     * a branch fault at the jalr and belongs to a different test.
+     */
     NEXT_TEST
     EXPECT_FETCH_FAULT stub32, 0, 0, 0
+#endif
 
     /*
      * Compressed instructions. stub16 sets the marker at +0 and returns at

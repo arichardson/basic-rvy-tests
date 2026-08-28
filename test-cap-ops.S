@@ -63,7 +63,12 @@ _start:
 
     YMODESWY                     /* capability mode */
 
-    /* YBNDSWI: one length from each region, plus both ends of each */
+#ifndef CHERI_093
+    /*
+     * YBNDSWI: one length from each region, plus both ends of each. 0.9.3
+     * spells the same operation scbndsi but encodes the immediate as a scale
+     * and a 5-bit value, so the regions below do not exist there.
+     */
     EXPECT_YBNDSWI_LEN 4096      /* imm9 == 0 is the page-sized encoding */
     EXPECT_YBNDSWI_LEN 1         /* byte granular ... */
     EXPECT_YBNDSWI_LEN 7
@@ -89,6 +94,7 @@ _start:
     EXPECT_TAG a2, 0
 #endif
     EXPECT_NO_TRAP               /* none of the above may fault */
+#endif
 
     /*
      * YBNDSW is exact: an unaligned base with a large length cannot be
@@ -103,7 +109,8 @@ _start:
     EXPECT_TAG a2, 0
     EXPECT_NO_TRAP               /* it clears the tag rather than trapping */
 
-    /* SRLIY by XLEN reads the metadata, which is non-zero for a real cap */
+#ifndef CHERI_093
+    /* SRLIY by XLEN reads the metadata, which 0.9.3 has no encoding for */
     NEXT_TEST
     SRLIY t1, a0, XLEN
     beqz t1, fail
@@ -117,15 +124,22 @@ _start:
     NEXT_TEST
     SRLIY t1, a0, XLEN - 1
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
 
-    /*
-     * YSUNSEAL: a1 is a subset of a0, sealed as a sentry. Unsealing it under
-     * a0 is allowed, and the result comes back unsealed and tagged.
-     */
+    /* a1 is a subset of a0, which the tag reconstruction below builds on. */
     NEXT_TEST
     YMV  a1, a0
     li   t2, 16
     YBNDSW a1, a1, t2            /* a1 = [buf, buf + 16), a subset of a0 */
+    EXPECT_TAG a1, 1
+
+#ifndef CHERI_093
+    /*
+     * YSUNSEAL, which 0.9.3 does not have: sealing a1 as a sentry and then
+     * unsealing it under a0 is allowed, and the result comes back unsealed
+     * and tagged.
+     */
+    NEXT_TEST
     YSENTRY a2, a1               /* a2 = a1 sealed as a sentry */
     EXPECT_TAG a2, 1
     YTYPER t3, a2
@@ -154,18 +168,19 @@ _start:
     bnez t3, fail
     EXPECT_NO_TRAP
 
-    /*
-     * YBLD restores a tag from an authorizing capability, and unlike
-     * YSUNSEAL does not need the input to be tagged to begin with.
-     */
+#endif /* !CHERI_093 */
+
+    /* YBLD restores a tag from an authorizing capability. */
     NEXT_TEST
     YMV  a3, a1
     li   t2, 8
     YBNDSW a3, a3, t2            /* a3 = [buf, buf + 8), a subset of a0 */
+#ifndef CHERI_093
     YSUNSEAL a3, x0, a3          /* ... with its tag cleared, as above */
-    EXPECT_TAG a3, 0
+    EXPECT_TAG a3, 0             /* YBLD does not need a tagged input */
+#endif
     YBLD a4, a0, a3
-    EXPECT_TAG a4, 1             /* YBLD does not need a tagged input */
+    EXPECT_TAG a4, 1
     EXPECT_LEN a4, 8
     EXPECT_NO_TRAP
 

@@ -8,7 +8,8 @@
  * QEMU does not enforce the reservation unless x-rvy-strict-branches is set,
  * because compilers do not swap the operands yet and existing binaries use
  * the reserved forms. This test covers that default configuration: nothing
- * here may trap. test-reserved-branches covers the enforcing one.
+ * here may trap. test-reserved-branches covers the enforcing one. 0.9.3 has
+ * no such reservation at all, so the same expectations hold there.
  *
  * The reserved-order branches are arranged never to be taken, so the flow is
  * the same whichever way they are treated.

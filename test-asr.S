@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
  * Operations gated on the Access_System_Registers permission in PCC. RVY
- * reports a missing ASR as an illegal instruction rather than as a CHERI
- * fault, which is what this checks; the pre-0.9.9 behaviour was a capability
- * exception instead.
+ * reports a missing ASR as an illegal instruction where 0.9.3 raises a
+ * capability exception, so TRAP_ASR_DENIED stands for whichever applies.
  *
  * ASR covers CSRs whose number has a non-zero privilege field, so mtvec and
  * mscratch need it while ddc does not, and that distinction is checked here
@@ -29,16 +28,17 @@ _start:
     NEXT_TEST
     csrr t0, CSR_MTVEC
     CBO_INVAL x0                 /* NULL cap, but ASR is checked first ... */
-    EXPECT_TRAP CAUSE_CHERI_STORE  /* ... so this is the capability fault */
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)  /* ... so this is the capability fault */
 
     /* Build a PCC-derived capability with ASR removed and call into it. */
     NEXT_TEST
     auipc a0, 0
     la   t0, asr_stub
     YADDRW a0, a0, t0
-    li   t1, PERM_ASR
-    YPERMC a0, a0, t1
+    li   t1, DROP_MASK(PERM_ASR)
+    DROP_PERMS a0, a0, t1
     YPERMR t2, a0
+    li   t1, PERM_ASR            /* DROP_MASK may have been complemented */
     and  t2, t2, t1
     bnez t2, fail                /* ASR really is gone */
     jalr ra, a0, 0
@@ -65,17 +65,17 @@ asr_stub:
     /* Reading an M-mode CSR needs ASR */
     NEXT_TEST
     csrr t0, CSR_MTVEC
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_TRAP TRAP_ASR_DENIED
 
     /* So does writing one (mscratch is scratch, so a stray write is safe) */
     NEXT_TEST
     csrw CSR_MSCRATCH, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_TRAP TRAP_ASR_DENIED
 
     /* CBO.INVAL checks ASR before it looks at the capability */
     NEXT_TEST
     CBO_INVAL x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_TRAP TRAP_ASR_DENIED
 
     /* ddc has no privilege bits in its CSR number, so it needs no ASR */
     NEXT_TEST
