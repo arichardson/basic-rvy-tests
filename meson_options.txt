@@ -1,0 +1,4 @@
+option('rvy_test_cc', type : 'string', value : '',
+       description: 'Bare-metal RISC-V clang for the tests/rvy suite')
+option('rvy_emulators', type : 'array', value : [],
+       description: 'Emulator binaries to run the suite against (standalone builds)')
