@@ -1,19 +1,17 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * RVY reserves BEQ/BNE encodings whose operands are in rs1 <= rs2 register
- * number order, but only in capability mode (the reservation is for
- * possible future extensions like branching on capability tag values,
- * which only make sense when the operands are capabilities). QEMU only
- * traps on them with x-rvy-strict-branches=on, so this test reports the
- * observed illegal-instruction count as its exit code:
- *   default run:  exit 0 (reserved encodings execute as normal branches)
- *   strict run:   exit 3 (each of the three reserved encodings traps, but
- *                 only in the capmode section below -- the identical
- *                 sequence in integer pointer mode must never trap, since
- *                 legacy/hybrid binaries running with CHERI enabled but in
- *                 integer mode rely on these encodings)
- * The reserved-order branches are arranged to never be taken so the flow is
- * identical whether they execute or are skipped by the trap handler.
+ * RVY reserves the BEQ/BNE encodings whose operands are in rs1 <= rs2
+ * register number order, but only in capability mode: the reservation exists
+ * so the encodings can be reused for capability-specific branches later, which
+ * only makes sense when the operands are capabilities.
+ *
+ * QEMU does not enforce the reservation unless x-rvy-strict-branches is set,
+ * because compilers do not swap the operands yet and existing binaries use
+ * the reserved forms. This test covers that default configuration: nothing
+ * here may trap. test-reserved-branches covers the enforcing one.
+ *
+ * The reserved-order branches are arranged never to be taken, so the flow is
+ * the same whichever way they are treated.
  */
 #define TEST_NAME "branches"
 #include "testmacros.h"
@@ -25,44 +23,27 @@
 _start:
     SETUP_TRAPS
 
-    NEXT_TEST
     li   t0, 1
     li   t1, 1
     li   t2, 2
 
-    /*
-     * Integer pointer mode (the reset default): reserved-order encodings
-     * must never trap here, strict-branches or not.
-     */
-    .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 (1 != 2) */
-    .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 (1 == 1) */
-    .insn b 0x63, 1, t0, t0, fail        /* bne x5, x5 (rs1 == rs2) */
-    bnez trap_count, fail                       /* must still be 0 */
-
-    /*
-     * Capability mode: the same reserved-order encodings must trap when
-     * x-rvy-strict-branches=on, and behave as normal branches otherwise.
-     */
+    /* Integer pointer mode: the reservation never applies here. */
     NEXT_TEST
-    YMODESWY                             /* enter cap mode */
-    .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 (1 != 2) */
-    .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 (1 == 1) */
-    .insn b 0x63, 1, t0, t0, fail        /* bne x5, x5 (rs1 == rs2) */
-    YMODESWI                             /* back to int mode */
+    RESERVED_ORDER_BRANCHES
+    EXPECT_NO_TRAP
 
-    /* Legal operand orders must still work (in integer mode). */
+    /* Capability mode: not enforced in this configuration either. */
     NEXT_TEST
-    .insn b 0x63, 0, t1, t0, 1f          /* beq x6, x5: taken */
-    j    fail
-1:
-    .insn b 0x63, 1, t2, t0, 2f          /* bne x7, x5: taken */
-    j    fail
-2:
-    beqz trap_count, 3f
-    /* Traps occurred: report the count as the exit code */
-    mv   test_id, trap_count
-    TEST_EXIT_COUNT traps
-3:
+    YMODESWY
+    RESERVED_ORDER_BRANCHES
+    YMODESWI
+    EXPECT_NO_TRAP
+
+    /* Legal operand orders must of course still work. */
+    NEXT_TEST
+    LEGAL_ORDER_BRANCHES
+    EXPECT_NO_TRAP
+
     TEST_PASS
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
