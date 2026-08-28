@@ -1,14 +1,20 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-2-Clause
 #
-# Build and run the bare-metal RVY tests against a qemu-system-riscv{32,64}y
-# binary. Requires a RISC-V clang (no CHERI support needed; all RVY
-# instructions are emitted with .insn).
+# Build and run the bare-metal RVY tests against an emulator. Requires a
+# RISC-V clang (no CHERI support needed; all RVY instructions are emitted
+# with .insn).
 #
-# Usage: run-rvy-tests.sh <qemu-system-riscv64y|qemu-system-riscv32y> [clang]
+# Usage: run-rvy-tests.sh <emulator> [clang]
+#
+# The emulator may be a qemu-system-riscv{32,64}{y,cheristd} binary or the
+# Sail model's sail_riscv_sim, recognised by name. The Sail model does not
+# pass the guest's exit code back, so its result is read from the PASS/FAIL
+# line the test prints on the HTIF console instead.
 set -eu
 
-QEMU=$1
+SIM=$1
+QEMU=$SIM
 CC=${2:-clang}
 SRC_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BUILD_DIR=$(mktemp -d)
@@ -26,18 +32,27 @@ else
     TIMEOUT_CMD=""
 fi
 
-case "$QEMU" in
-*riscv32*) TARGET=riscv32 ; MARCH=rv32g ;;
+case "$SIM" in
+*sail*) HARNESS=sail ;;
+*) HARNESS=qemu ;;
+esac
+
+case "$SIM" in
+*riscv32*|*rv32*) TARGET=riscv32 ; MARCH=rv32g ;;
 *) TARGET=riscv64 ; MARCH=rv64g ;;
 esac
 
 # The 0.9.3 emulators and the Sail model predate most of what this suite
 # covers, so there they build with -DCHERI_093 and only the tests whose
 # behaviour both versions share are run.
-case "$QEMU" in
+case "$SIM" in
 *cheristd*|*sail*) CHERI_VERSION=0.9.3 ; CFLAGS_CHERI=-DCHERI_093 ;;
 *) CHERI_VERSION=v0.9.9 ; CFLAGS_CHERI= ;;
 esac
+
+# A runaway guest would otherwise execute forever, so bound the Sail model by
+# instruction count as well as by the wall-clock timeout below.
+: "${RVY_SAIL_INSN_LIMIT:=20000000}"
 
 # -serial stdio so the HTIF console messages the tests print are visible;
 # the virt machine has no HTIF, so there they simply do not appear.
@@ -73,11 +88,45 @@ run_with_timeout() {
     return "$status"
 }
 
+# run_sail <test>: the model exits 0 or 1 rather than passing the guest's
+# code back, so use that for the verdict and the HTIF console log (-t) for
+# which case failed, since that is what the test itself prints.
+run_sail() {
+    test_name=$1
+    termlog="$BUILD_DIR/$test_name.term"
+    simlog="$BUILD_DIR/$test_name.log"
+    status=0
+    run_with_timeout "$SIM" -l "$RVY_SAIL_INSN_LIMIT" -t "$termlog" \
+        "$BUILD_DIR/$test_name.elf" </dev/null > "$simlog" 2>&1 || status=$?
+    if [ "$status" = 124 ] || [ "$status" = 137 ]; then
+        echo "FAIL: $test_name (sail) (timed out after ${RVY_TEST_TIMEOUT}s)"
+        exit 1
+    fi
+    if [ "$status" != 0 ]; then
+        echo "FAIL: $test_name (sail)"
+        if [ -s "$termlog" ]; then
+            sed 's/^/  | /' "$termlog"
+        else
+            # Nothing reached the console: show where the model ended up,
+            # which is where a trap loop or an unimplemented CSR shows up.
+            tail -5 "$simlog" | sed 's/^/  | /'
+        fi
+        exit 1
+    fi
+    echo "PASS: $test_name (sail)"
+}
+
 # run <test> <expected-exit-code> [extra qemu args...]
 run() {
     test_name=$1
     expected=$2
     shift 2
+    if [ "$HARNESS" = sail ]; then
+        # The extra arguments select QEMU CPU features and have no Sail
+        # equivalent; no test needing them runs in this configuration.
+        run_sail "$test_name"
+        return 0
+    fi
     for machine in $RVY_TEST_MACHINES; do
         status=0
         run_with_timeout $QEMU -machine "$machine" $QEMU_ARGS "$@" \
@@ -122,4 +171,4 @@ if [ "$CHERI_VERSION" = v0.9.9 ]; then
     fi
 fi
 
-echo "All RVY tests passed ($TARGET, CHERI $CHERI_VERSION)"
+echo "All RVY tests passed ($TARGET, CHERI $CHERI_VERSION, $HARNESS)"
