@@ -31,7 +31,9 @@ case "$QEMU" in
 *) TARGET=riscv64 ; MARCH=rv64g ;;
 esac
 
-QEMU_ARGS="-bios none -display none -serial none"
+# -serial stdio so the HTIF console messages the tests print are visible;
+# the virt machine has no HTIF, so there they simply do not appear.
+QEMU_ARGS="-bios none -display none -serial stdio"
 
 # Each test reports its result twice: through the HTIF tohost register (which
 # is what spike-like harnesses, including the Sail model, understand) and

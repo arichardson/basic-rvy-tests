@@ -13,6 +13,7 @@
  * capability itself, so it reports an illegal instruction even when handed
  * the NULL capability, which would otherwise be a CHERI store fault.
  */
+#define TEST_NAME "asr"
 #include "testmacros.h"
 #include "exceptions.h"
 

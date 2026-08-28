@@ -14,6 +14,7 @@
  *    (CBO.INVAL additionally requires ASR, which the M-mode root PCC
  *    grants, so it reports 34 like the others here.)
  */
+#define TEST_NAME "amo-cbo-causes"
 #include "testmacros.h"
 #include "exceptions.h"
 

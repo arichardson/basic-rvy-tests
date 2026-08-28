@@ -22,6 +22,7 @@
  * the target fetch tripped over, which is what separates a target that was
  * detagged on the way from one that arrived intact but unusable.
  */
+#define TEST_NAME "branch-target-faults"
 #include "testmacros.h"
 #include "exceptions.h"
 

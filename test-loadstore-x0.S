@@ -23,6 +23,7 @@
  * instructions use a 16-byte-aligned offset so alignment requirements (up to
  * CHERI_CAP_SIZE on RV64) are satisfied.
  */
+#define TEST_NAME "loadstore-x0"
 #include "testmacros.h"
 #include "exceptions.h"
 

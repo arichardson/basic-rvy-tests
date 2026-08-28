@@ -15,6 +15,7 @@
  * The reserved-order branches are arranged to never be taken so the flow is
  * identical whether they execute or are skipped by the trap handler.
  */
+#define TEST_NAME "branches"
 #include "testmacros.h"
 #include "exceptions.h"
 
@@ -60,7 +61,7 @@ _start:
     beqz trap_count, 3f
     /* Traps occurred: report the count as the exit code */
     mv   test_id, trap_count
-    TEST_FAIL
+    TEST_EXIT_COUNT traps
 3:
     TEST_PASS
 fail:

@@ -4,6 +4,7 @@
  * emitted via the macros in testmacros.h since assemblers do not know the
  * new encodings yet.
  */
+#define TEST_NAME "insn-encodings"
 #include "testmacros.h"
 #include "exceptions.h"
 

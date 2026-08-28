@@ -33,6 +33,7 @@
  * Register use: s2 = tagged root capability, a0-a4 = VA aliases of the test
  * buffer.
  */
+#define TEST_NAME "svyrg"
 #include "testmacros.h"
 #include "exceptions.h"
 
