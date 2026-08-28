@@ -34,6 +34,10 @@
 #define CSR_VSTVEC  0x205
 #define CSR_VSEPC   0x241
 #define CSR_DDC     0x416
+/* CHERI thread ID registers, readable without ASR but writable only with it. */
+#define CSR_UTIDC   0x480
+#define CSR_STIDC   0x580
+#define CSR_MTIDC   0x780
 #define CSR_MSECCFG 0x747
 
 #define MSECCFG_CRE (1 << 3)

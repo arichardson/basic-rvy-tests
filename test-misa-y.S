@@ -6,7 +6,8 @@
  *  - misa.Y can only be cleared while pcc, ddc, and every implemented
  *    xtvec/xepc (mtvecc/mepcc, stvecc/sepcc, vstvecc/vsepcc) are currently
  *    root capabilities; each is checked individually below
- *  - once cleared, RVY instructions and YLEN CSRs raise illegal instruction
+ *  - once cleared, RVY instructions and every CSR the extension adds raise
+ *    illegal instruction, and both come back when it is set again
  *  - misa.Y can be set again
  *  - S-mode CHERI enable is gated by menvcfg.CRE
  */
@@ -112,15 +113,35 @@ _start:
     and  t2, t0, t1
     bnez t2, fail
 
-    /* Test 5: with Y=0, RVY instructions and YLEN CSRs are illegal */
+    /*
+     * Test 5: with Y=0 the extension is gone, so its instructions and every
+     * CSR it adds must read as illegal rather than as some stale value. The
+     * CSRs are checked one at a time so a failure names the one at fault.
+     */
     NEXT_TEST
-    mv   s0, trap_count
-    addi s0, s0, 1
     YAMASK t2, t0
-    bne  trap_count, s0, fail
-    addi s0, s0, 1
-    csrrs t2, CSR_DDC, x0                /* ddc requires CRE */
-    bne  trap_count, s0, fail
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST
+    csrrs t2, CSR_DDC, x0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST
+    csrrs t2, CSR_MTIDC, x0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST
+    csrrs t2, CSR_STIDC, x0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST
+    csrrs t2, CSR_UTIDC, x0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    /* Writes are gone too, not just reads. */
+    NEXT_TEST
+    csrw CSR_MTIDC, x0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     /* Test 6: misa.Y can be set again and RVY instructions work */
     NEXT_TEST
@@ -129,10 +150,17 @@ _start:
     csrr t0, CSR_MISA
     and  t2, t0, t1
     beqz t2, fail
-    mv   s0, trap_count
     li   t0, 0
-    YAMASK t2, t0                        /* no trap expected */
-    bne  trap_count, s0, fail
+    YAMASK t2, t0
+    EXPECT_NO_TRAP
+
+    /* ... and so do the CSRs it adds. */
+    NEXT_TEST
+    csrrs t2, CSR_DDC, x0
+    csrrs t2, CSR_MTIDC, x0
+    csrrs t2, CSR_STIDC, x0
+    csrrs t2, CSR_UTIDC, x0
+    EXPECT_NO_TRAP
 
     /* Test 7: S-mode CHERI enable is menvcfg.CRE */
     NEXT_TEST
