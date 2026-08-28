@@ -14,17 +14,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#ifdef CHERI_093
-/* xtval2 = capability cause | TYPE << 16 (0 = instruction fetch, 1 = data) */
-#define CAP093_BOUNDS       4
-#define TRAP_INST_BOUNDS    CAUSE_CHERI_ANY, (CAP093_BOUNDS | (0 << 16))
-#define TRAP_LOAD_BOUNDS    CAUSE_CHERI_ANY, (CAP093_BOUNDS | (1 << 16))
-#define TRAP_STORE_BOUNDS   CAUSE_CHERI_ANY, (CAP093_BOUNDS | (1 << 16))
-#else
-#define TRAP_INST_BOUNDS    CAUSE_CHERI_INST
-#define TRAP_LOAD_BOUNDS    CAUSE_CHERI_LOAD
-#define TRAP_STORE_BOUNDS   CAUSE_CHERI_STORE
-#endif
 
 .option norvc
 .section .text
@@ -56,17 +45,17 @@ _start:
     /* Test 2: load starting past the top */
     NEXT_TEST
     lw   t2, 8(a0)
-    EXPECT_TRAP TRAP_LOAD_BOUNDS
+    EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
 
     /* Test 3: store starting past the top */
     NEXT_TEST
     sw   t2, 8(a0)
-    EXPECT_TRAP TRAP_STORE_BOUNDS
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
     /* Test 4: load straddling the top (a1 ends at buf + 6) */
     NEXT_TEST
     lw   t2, 4(a1)
-    EXPECT_TRAP TRAP_LOAD_BOUNDS
+    EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
 
     /*
      * Test 5: running off the end of a function. auipc is the only way to
@@ -82,7 +71,7 @@ _start:
     RESUME_AFTER_FAULT 1f        /* the fetch fault needs a fresh PCC */
     jalr ra, a2, 0
 1:
-    EXPECT_TRAP TRAP_INST_BOUNDS
+    EXPECT_TRAP TRAP_CAP_FETCH(CAP_BOUNDS)
 
     YMODESWI
     TEST_PASS

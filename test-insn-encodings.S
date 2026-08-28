@@ -32,10 +32,17 @@ _start:
     and  t3, t3, t2
     bnez t3, fail                /* ~mask + 1 must be a power of two */
 
-    /* Test 3: YBNDSWI, one length per representable region.
-     * The root capability (from ddc) keeps its tag for exact bounds. */
+    /* ddc is the root capability the cases below derive from. */
+    csrrs t0, CSR_DDC, x0
+
+#ifndef CHERI_093
+    /*
+     * Test 3: YBNDSWI, one length per representable region. The root
+     * capability keeps its tag for exact bounds. 0.9.3 spells the same
+     * operation scbndsi with a scale and a 5-bit immediate, so these regions
+     * are specific to the v0.9.9 encoding.
+     */
     NEXT_TEST
-    csrrs t0, CSR_DDC, x0        /* t0 = root capability */
 
 .macro CHECK_YBNDSWI length
     YBNDSWI t1, t0, \length
@@ -62,8 +69,9 @@ _start:
     YTAGR t2, t1                 /* ytagr = 0 */
     bnez t2, fail
 #endif
+#endif /* !CHERI_093 */
 
-    /* Test 4: YSENTRY (v0.9.9 encoding: source in cs2, cs1 = 0) */
+    /* Test 4: YSENTRY (the macro picks each version's encoding) */
     NEXT_TEST
     YSENTRY t1, t0
     YTAGR t2, t1                 /* ytagr = 1 */
@@ -76,26 +84,29 @@ _start:
     YTAGR t2, t4                 /* ytagr = 0 */
     bnez t2, fail
 
+#ifndef CHERI_093
     /* Test 5: the pre-0.9.9 YSENTRY encoding (2OP space) must be illegal */
     NEXT_TEST
-    mv   s0, trap_count
-    addi s0, s0, 1
     .insn r 0x7b, 0, 0x7b, t1, t0, x0    /* pre-0.9.9 YSENTRY: now illegal */
-    bne  trap_count, s0, fail
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
 
-    /* Test 6: SRLIY only accepts shamt == XLEN */
+#ifndef CHERI_093
+    /* Test 6: SRLIY only accepts shamt == XLEN (0.9.3 has no such form) */
     NEXT_TEST
     SRLIY t1, t0, __riscv_xlen
     beqz t1, fail                /* pesbt of the root cap is non-zero */
-    mv   s0, trap_count
-    addi s0, s0, 1
+    EXPECT_NO_TRAP
+
+    NEXT_TEST
     SRLIY t1, t0, __riscv_xlen - 1    /* reserved shamt */
-    bne  trap_count, s0, fail
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
     /* funct3=5 immediates in neither the SRLIY nor YBNDSWI range */
-    mv   s0, trap_count
-    addi s0, s0, 1
+    NEXT_TEST
     SRLIY t1, t0, 0x100
-    bne  trap_count, s0, fail
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
 
     TEST_PASS
 fail:

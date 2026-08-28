@@ -34,9 +34,31 @@
 #define CSR_VSTVEC  0x205
 #define CSR_VSEPC   0x241
 #define CSR_DDC     0x416
+#define CSR_MSECCFG 0x747
+
+#define MSECCFG_CRE (1 << 3)
+
+/*
+ * Dropping permissions: RVY has ypermc, which clears the bits in the mask,
+ * while 0.9.3 only has acperm, which keeps them, so the mask is complemented
+ * there. Spelled as two defines rather than a macro so neither version needs
+ * a scratch register to invert it.
+ */
+#ifdef CHERI_093
+#define DROP_PERMS   ACPERM
+#define DROP_MASK(p) ~(p)
+#else
+#define DROP_PERMS   YPERMC
+#define DROP_MASK(p) (p)
+#endif
 
 #define MISA_Y      (1 << 24)
+#ifdef CHERI_093
+/* 0.9.3 put the S-mode CHERI enable at bit 28 rather than bit 9. */
+#define MENVCFG_CRE (1 << 28)
+#else
 #define MENVCFG_CRE (1 << 9)
+#endif
 
 /* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */
 #define PERM_W      (1 << 0)
@@ -53,6 +75,19 @@
  * accepts either form. On the virt machine there is no HTIF, so this just
  * writes to memory and the sifive_test store is what ends the run.
  */
+/*
+ * Make capability instructions usable in M-mode. RVY has misa.Y set at reset,
+ * but 0.9.3 gates them on mseccfg.CRE, which resets to zero, so a test that
+ * does not set it traps on its first capability instruction -- and then again
+ * in the trap handler.
+ */
+.macro ENABLE_CHERI
+#ifdef CHERI_093
+    li   t0, MSECCFG_CRE
+    csrs CSR_MSECCFG, t0
+#endif
+.endm
+
 /*
  * The three BEQ/BNE encodings RVY reserves in capability mode, i.e. operands
  * in rs1 <= rs2 register number order. Spelled as .insn because an assembler
@@ -398,6 +433,28 @@
 .endm
 .macro YBNDSW cd, cs1, rs2
     .insn r STD_OPC, 0, 0x07, \cd, \cs1, \rs2  /* scbnds */
+.endm
+
+.macro YMV cd, cs1
+    .insn r STD_OPC, 0, 0x06, \cd, \cs1, x0    /* cmv */
+.endm
+.macro ACPERM cd, cs1, rs2
+    .insn r STD_OPC, 2, 0x06, \cd, \cs1, \rs2 /* acperm: keeps rs2's bits */
+.endm
+.macro YMODER rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x3    /* gcmode */
+.endm
+.macro YMODEW cd, cs1, rs2
+    .insn r STD_OPC, 7, 0x06, \cd, \cs1, \rs2 /* scmode */
+.endm
+.macro YPERMR rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x1    /* gcperm */
+.endm
+.macro YBLD cd, cs1, cs2
+    .insn r STD_OPC, 5, 0x06, \cd, \cs1, \cs2 /* cbld */
+.endm
+.macro YADDI cd, cs1, imm
+    .insn i 0x1b, 2, \cd, \cs1, \imm          /* caddi */
 .endm
 
 .macro YMODESWY

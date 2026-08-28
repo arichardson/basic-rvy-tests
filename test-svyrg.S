@@ -34,6 +34,9 @@
  * buffer.
  */
 #define TEST_NAME "svyrg"
+#ifdef CHERI_093
+#error "RVY v0.9.9 only: the pte.rvy field is a v0.9.9 redefinition"
+#endif
 #include "testmacros.h"
 #include "exceptions.h"
 

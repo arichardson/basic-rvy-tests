@@ -31,6 +31,14 @@ case "$QEMU" in
 *) TARGET=riscv64 ; MARCH=rv64g ;;
 esac
 
+# The 0.9.3 emulators and the Sail model predate most of what this suite
+# covers, so there they build with -DCHERI_093 and only the tests whose
+# behaviour both versions share are run.
+case "$QEMU" in
+*cheristd*|*sail*) CHERI_VERSION=0.9.3 ; CFLAGS_CHERI=-DCHERI_093 ;;
+*) CHERI_VERSION=v0.9.9 ; CFLAGS_CHERI= ;;
+esac
+
 # -serial stdio so the HTIF console messages the tests print are visible;
 # the virt machine has no HTIF, so there they simply do not appear.
 QEMU_ARGS="-bios none -display none -serial stdio"
@@ -42,7 +50,7 @@ QEMU_ARGS="-bios none -display none -serial stdio"
 : "${RVY_TEST_MACHINES:=virt spike}"
 
 build() {
-    "$CC" --target=$TARGET -march=$MARCH -nostdlib -static \
+    "$CC" --target=$TARGET -march=$MARCH $CFLAGS_CHERI -nostdlib -static \
         -fuse-ld=lld -Wl,-T,"$SRC_DIR/link.ld" \
         "$SRC_DIR/$1.S" -o "$BUILD_DIR/$1.elf"
 }
@@ -86,35 +94,32 @@ run() {
     done
 }
 
-build test-insn-encodings
-build test-misa-y
-build test-branches
-build test-reserved-branches
-build test-loadstore-x0
-build test-amo-cbo-causes
-build test-bounds-causes
-build test-branch-target-faults
-build test-pcc-bounds-fetch
-build test-cap-ops
-build test-asr
+# Behaviour both CHERI versions share; the tests skip the individual cases
+# that only apply to one of them.
+for t in test-loadstore-x0 test-amo-cbo-causes test-bounds-causes \
+         test-pcc-bounds-fetch test-insn-encodings test-branches \
+         test-cap-ops test-asr; do
+    build $t
+    run $t 0
+done
 
-run test-insn-encodings 0
-run test-misa-y 0
-run test-branches 0
-run test-reserved-branches 0 -cpu any,x-rvy-strict-branches=on
-run test-loadstore-x0 0
-run test-amo-cbo-causes 0
-run test-bounds-causes 0
-run test-branch-target-faults 0
-run test-pcc-bounds-fetch 0
-run test-cap-ops 0
-run test-asr 0
+if [ "$CHERI_VERSION" = v0.9.9 ]; then
+    # misa.Y and taking control-flow faults at the target are both v0.9.9.
+    for t in test-misa-y test-branch-target-faults; do
+        build $t
+        run $t 0
+    done
 
-if [ "$TARGET" = riscv64 ]; then
-    # Svyrg (and the pte.rvy field it redefines) is RV64-only. Note: the
-    # "any" CPU has no supervisor mode, so use the default CPU model.
-    build test-svyrg
-    run test-svyrg 0 -cpu rv64,Svyrg=on
+    # The reservation is only enforced when asked for.
+    build test-reserved-branches
+    run test-reserved-branches 0 -cpu any,x-rvy-strict-branches=on
+
+    if [ "$TARGET" = riscv64 ]; then
+        # Svyrg (and the pte.rvy field it redefines) is RV64-only. Note: the
+        # "any" CPU has no supervisor mode, so use the default CPU model.
+        build test-svyrg
+        run test-svyrg 0 -cpu rv64,Svyrg=on
+    fi
 fi
 
-echo "All RVY tests passed ($TARGET)"
+echo "All RVY tests passed ($TARGET, CHERI $CHERI_VERSION)"
