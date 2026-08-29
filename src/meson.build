@@ -112,8 +112,27 @@ if rvy_test_cc_found
     endforeach
   else
     # Standalone: -Drvy_emulators names already-built binaries somewhere on
-    # the system.
-    foreach emulator : get_option('rvy_emulators')
+    # the system. Left unset, fall back to whichever of the four QEMU
+    # targets a cheribuild SDK output tree has, so a bare `meson test` does
+    # something useful without always having to be told where they are.
+    rvy_emulator_paths = get_option('rvy_emulators')
+    if rvy_emulator_paths.length() == 0
+      rvy_sdk_bin = fs.expanduser('~/cheri/output/sdk/bin')
+      if fs.is_dir(rvy_sdk_bin)
+        foreach name : ['qemu-system-riscv64y', 'qemu-system-riscv32y',
+                         'qemu-system-riscv64cheristd', 'qemu-system-riscv32cheristd']
+          candidate = rvy_sdk_bin / name
+          if fs.exists(candidate)
+            rvy_emulator_paths += [candidate]
+          endif
+        endforeach
+      endif
+      if rvy_emulator_paths.length() > 0
+        message('no -Drvy_emulators given: defaulting to the SDK build(s) under ' + rvy_sdk_bin)
+      endif
+    endif
+
+    foreach emulator : rvy_emulator_paths
       name = fs.name(emulator)
       rvy_emulators_to_test += [{
         'label': name,
