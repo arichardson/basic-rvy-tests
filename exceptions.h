@@ -157,6 +157,24 @@ __rvy_used_resume_after_fault = 1
     CLEAR_TRAPS
 .endm
 
+/*
+ * The operation was not rejected: it either completed or faulted only over
+ * where it touched memory, which is a property of the machine rather than of
+ * the architecture. A CHERI fault means it was refused on capability grounds
+ * and an illegal instruction means it never executed at all, so this is an
+ * allow-list of the two access faults rather than a list of what to reject.
+ */
+.macro EXPECT_ONLY_MEMORY_FAULT
+    beqz trap_count, 87f
+    li   t3, CAUSE_LOAD_ACCESS_FAULT
+    beq  t3, trap_cause, 87f
+    li   t3, CAUSE_STORE_ACCESS_FAULT
+    beq  t3, trap_cause, 87f
+    j    fail
+87:
+    CLEAR_TRAPS
+.endm
+
 /* The trap was reported against the address in \reg. */
 .macro EXPECT_EPC reg
     bne  trap_epc, \reg, fail
