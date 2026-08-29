@@ -297,6 +297,9 @@
 .macro YTYPER rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x2     /* gctype */
 .endm
+.macro YBASER rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x5     /* gcbase */
+.endm
 .macro YLENR rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x6     /* gclen */
 .endm
@@ -320,6 +323,9 @@
 .endm
 .macro ACPERM cd, cs1, rs2
     .insn r STD_OPC, 2, 0x06, \cd, \cs1, \rs2 /* acperm: keeps rs2's bits */
+.endm
+.macro PACKY cd, rs1, rs2
+    .insn r STD_OPC, 3, 0x06, \cd, \rs1, \rs2 /* schi */
 .endm
 .macro YMODER rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x3    /* gcmode */
@@ -365,8 +371,12 @@
     .insn r STD_AMO_OPC, 4, 0x0c, \rd, \cs1, \cs2
 .endm
 
+/* 0.9.3 spells the metadata read gchi (2-op rs2=4) rather than a shift. */
 .macro SRLIY rd, cs1, shamt
-    .error "SRLIY does not exist in the 0.9.3 standard"
+    .if (\shamt) != __riscv_xlen
+        .error "SRLIY with shamt != XLEN does not exist in the 0.9.3 standard"
+    .endif
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x4     /* gchi */
 .endm
 
 #endif /* CHERI_093 */
