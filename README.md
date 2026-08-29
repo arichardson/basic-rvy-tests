@@ -4,20 +4,32 @@ Bare-metal assembly tests for CHERI RISC-V, written against the RVY v0.9.9
 specification and also buildable against CHERI 0.9.3. Each test boots on its
 own, checks one area of the architecture, and reports a single pass or fail.
 
-The suite is deliberately small and self-contained: there is no libc, no
-runtime and no build system requirement beyond a compiler and an emulator.
-Every RVY instruction is emitted with `.insn`, so **the toolchain does not
-need CHERI support** and any bare-metal RISC-V clang will do.
+The suite is deliberately small and self-contained: there is no libc and no
+runtime. Every RVY instruction is emitted with `.insn`, so **the toolchain
+does not need CHERI support** and any bare-metal RISC-V clang will do.
 
 ## Running
 
+Meson is the preferred way to run the suite: it registers one build target
+per ELF and one test per (test, emulator, machine), so `ninja`/`meson test`
+build and run cases in parallel and report each one individually, rather
+than the whole suite passing or failing as a unit.
+
+As QEMU's `tests/rvy` submodule it registers itself, so `make check-rvy` or
+`meson test --suite rvy` runs it against the emulators that build produced.
+It is skipped rather than failing if no RISC-V-capable clang is found;
+`-Drvy_test_cc=/path/to/clang` names one explicitly.
+
+Standalone, point it at emulators that already exist:
+
 ```sh
-./src/run-rvy-tests.sh <emulator> [clang]
+meson setup build -Drvy_emulators=/path/to/qemu-system-riscv64y
+meson test -C build
 ```
 
-The emulator may be a QEMU system binary or the Sail model's
-`sail_riscv_sim`; the script recognises which by name and adjusts what it
-builds and runs:
+`-Drvy_emulators` takes a comma-separated list, so one build directory can
+cover several emulators at once. The emulator may be a QEMU system binary or
+the Sail model's `sail_riscv_sim`; each one's name says its profile:
 
 | Emulator | XLEN | CHERI version |
 | --- | --- | --- |
@@ -36,27 +48,23 @@ harnesses including the Sail model understand, and through the `sifive_test`
 finisher that `virt` provides. Running both keeps either path from silently
 rotting.
 
-Some knobs, all optional:
+Two more `-D` options, both optional:
 
-| Variable | Default | Meaning |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `RVY_TEST_TIMEOUT` | `20` | Wall-clock seconds before a test is called hung |
-| `RVY_TEST_MACHINES` | `virt spike` | Machines to run each test on |
-| `RVY_SAIL_INSN_LIMIT` | `20000000` | Instruction budget for the Sail model |
+| `rvy_test_timeout` | `20` | Wall-clock seconds before a test is considered hung |
+| `rvy_sail_insn_limit` | `20000000` | Instruction budget for the Sail model |
 
-### Through meson
-
-As QEMU's `tests/rvy` submodule the suite registers itself, so `make
-check-rvy` or `meson test --suite rvy` runs it against the emulators that
-build produced. It is skipped rather than failing if no RISC-V-capable clang
-is found; `-Drvy_test_cc=/path/to/clang` names one explicitly.
-
-Standalone, point it at emulators that already exist:
+### Fallback: a single emulator, no build directory
 
 ```sh
-meson setup build -Drvy_emulators=/path/to/qemu-system-riscv64y
-meson test -C build
+./src/run-rvy-tests.sh <emulator> [clang]
 ```
+
+A thin wrapper for a one-off "does this emulator pass" check: it drives the
+same meson setup through a throwaway build directory and forwards its exit
+code. Reach for meson directly once you want more than one emulator, a
+persistent build directory, or per-case results.
 
 ## Reading a failure
 
@@ -91,10 +99,12 @@ The last five are v0.9.9 only.
 
 | File | Purpose |
 | --- | --- |
+| `src/meson.build` | Registers the build and test targets; the list of tests lives here |
 | `src/testmacros.h` | `.macro` wrapper per instruction, for both CHERI versions, plus the pass/fail reporting |
 | `src/exceptions.h` | Trap handlers and the `EXPECT_*` vocabulary for stating what should fault |
 | `src/link.ld` | Flat layout at `0x80000000`, with HTIF given a page to itself |
-| `src/run-rvy-tests.sh` | Builds and runs everything; the list of tests lives here |
+| `src/run-rvy-test.sh` | Runs one already-built ELF through one emulator invocation; called by each meson test() |
+| `src/run-rvy-tests.sh` | Fallback wrapper: drives meson for a single emulator without a build directory |
 | `src/probe.S` | Compiles to nothing; used to detect a usable toolchain |
 
 ## Licence
