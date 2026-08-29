@@ -59,38 +59,126 @@ foreach candidate : rvy_candidates
 endforeach
 
 if rvy_test_cc_found
-  rvy_runner = find_program(rvy_src_dir / 'run-rvy-tests.sh')
+  rvy_run_test = find_program(rvy_src_dir / 'run-rvy-test.sh')
+  rvy_machines = ['virt', 'spike']
 
+  # Every case, and which (xlen, CHERI version) profiles it applies to; a key
+  # left out defaults to both xlens and both CHERI versions. This is the
+  # canonical list -- a test not named here never runs.
+  rvy_tests = [
+    {'name': 'test-loadstore-x0'},
+    {'name': 'test-amo-cbo-causes'},
+    {'name': 'test-bounds-causes'},
+    {'name': 'test-pcc-bounds-fetch'},
+    {'name': 'test-insn-encodings'},
+    {'name': 'test-branches'},
+    {'name': 'test-cap-ops'},
+    {'name': 'test-cap-reset-regression'},
+    {'name': 'test-asr'},
+    # misa.Y, taking control-flow faults at the target, and the exception
+    # priority table are all v0.9.9 only.
+    {'name': 'test-misa-y', 'cheri_versions': ['v0.9.9']},
+    {'name': 'test-branch-target-faults', 'cheri_versions': ['v0.9.9']},
+    {'name': 'test-exception-priority', 'cheri_versions': ['v0.9.9']},
+    # The reservation is only enforced when asked for.
+    {'name': 'test-reserved-branches', 'cheri_versions': ['v0.9.9'],
+     'qemu_args': ['-cpu', 'any,x-rvy-strict-branches=on']},
+    # Svyrg (and the pte.rvy field it redefines) is RV64-only. The "any" CPU
+    # has no supervisor mode, so this needs the default CPU model.
+    {'name': 'test-svyrg', 'cheri_versions': ['v0.9.9'], 'xlens': [64],
+     'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
+  ]
+
+  # Which emulators to test against, and the (xlen, CHERI version, harness)
+  # profile each implies -- inferred from its name, the same heuristic
+  # run-rvy-tests.sh has always used.
+  rvy_emulators_to_test = []
   if is_variable('emulators')
-    # Included from QEMU's build: run against the emulators it just built,
-    # and depend on them so the suite rebuilds what it needs.
+    # Included from QEMU's build: the target name says the profile exactly.
     foreach dir : ['riscv64y-softmmu', 'riscv32y-softmmu',
                    'riscv64cheristd-softmmu', 'riscv32cheristd-softmmu']
       if dir in target_dirs
         target_base = dir.split('-')[0]
         rvy_emulator = emulators['qemu-system-' + target_base]
-        test('rvy-' + target_base,
-             rvy_runner,
-             args: [rvy_emulator.full_path(), rvy_test_cc.full_path()],
-             depends: rvy_emulator,
-             timeout: 300,
-             suite: ['rvy'])
+        rvy_emulators_to_test += [{
+          'label': target_base,
+          'path': rvy_emulator.full_path(),
+          'depends': [rvy_emulator],
+          'xlen': target_base.contains('riscv32') ? 32 : 64,
+          'cheri_version': target_base.contains('cheristd') ? '0.9.3' : 'v0.9.9',
+          'harness': 'qemu',
+        }]
       endif
     endforeach
   else
-    # Standalone: the emulators are whatever -Drvy_emulators was given,
-    # already-built binaries somewhere on the system.
-    rvy_emulators = get_option('rvy_emulators')
-    if rvy_emulators.length() == 0
+    # Standalone: -Drvy_emulators names already-built binaries somewhere on
+    # the system.
+    foreach emulator : get_option('rvy_emulators')
+      name = fs.name(emulator)
+      rvy_emulators_to_test += [{
+        'label': name,
+        'path': emulator,
+        'depends': [],
+        'xlen': (name.contains('riscv32') or name.contains('rv32')) ? 32 : 64,
+        'cheri_version': (name.contains('cheristd') or name.contains('sail')) ? '0.9.3' : 'v0.9.9',
+        'harness': name.contains('sail') ? 'sail' : 'qemu',
+      }]
+    endforeach
+    if rvy_emulators_to_test.length() == 0
       warning('no emulator given: configure with ' +
               '-Drvy_emulators=/path/to/qemu-system-riscv64y to run the suite')
     endif
-    foreach emulator : rvy_emulators
-      test(fs.name(emulator),
-           rvy_runner,
-           args: [emulator, rvy_test_cc.full_path()],
-           timeout: 300,
-           suite: ['rvy'])
-    endforeach
   endif
+
+  # One ELF per (test, xlen, CHERI version): several emulators can share a
+  # profile (e.g. riscv64cheristd and the Sail model are both riscv64/0.9.3),
+  # so build it once and let every matching test() depend on it.
+  rvy_elf_targets = {}
+  foreach emulator : rvy_emulators_to_test
+    foreach t : rvy_tests
+      xlens = t.get('xlens', [32, 64])
+      cheri_versions = t.get('cheri_versions', ['0.9.3', 'v0.9.9'])
+      if emulator['xlen'] not in xlens or emulator['cheri_version'] not in cheri_versions
+        continue
+      endif
+
+      profile = ('@0@-@1@-@2@'.format(t['name'], emulator['xlen'], emulator['cheri_version'])).underscorify()
+      if profile not in rvy_elf_targets
+        march = emulator['xlen'] == 32 ? 'rv32g' : 'rv64g'
+        cflags_cheri = emulator['cheri_version'] == '0.9.3' ? ['-DCHERI_093'] : []
+        rvy_elf_targets += {profile: custom_target(
+          profile + '.elf',
+          input: t['name'] + '.S',
+          output: profile + '.elf',
+          command: [rvy_test_cc, '--target=riscv' + emulator['xlen'].to_string(),
+                     '-march=' + march] + cflags_cheri +
+                    ['-nostdlib', '-static', '-fuse-ld=lld',
+                     '-Wl,-T,' + (rvy_src_dir / 'link.ld'),
+                     '@INPUT@', '-o', '@OUTPUT@'],
+          depend_files: files('link.ld', 'testmacros.h', 'exceptions.h'),
+          build_by_default: false,
+        )}
+      endif
+      elf = rvy_elf_targets[profile]
+
+      test_id = 'rvy-' + emulator['label'] + '-' + t['name']
+      if emulator['harness'] == 'sail'
+        test(test_id, rvy_run_test,
+             args: ['sail', emulator['path'], elf,
+                    get_option('rvy_sail_insn_limit').to_string()],
+             depends: emulator['depends'],
+             timeout: get_option('rvy_test_timeout'),
+             suite: ['rvy'])
+      else
+        qemu_args = t.get('qemu_args', [])
+        foreach machine : rvy_machines
+          test(test_id + '-' + machine, rvy_run_test,
+               args: ['qemu', emulator['path'], elf, machine] + qemu_args,
+               depends: emulator['depends'],
+               timeout: get_option('rvy_test_timeout'),
+               suite: ['rvy'])
+        endforeach
+      endif
+    endforeach
+  endforeach
 endif
