@@ -40,33 +40,42 @@ _start:
     csrs CSR_MSTATUS, t0
 
     /*
-     * Integer pointer mode (the default at reset): the address is unmapped,
-     * so each access faults, but as a generic access fault rather than any
-     * CHERI cause.
+     * Give the registers the stores use a defined value: what gets written
+     * is not what is under test, and storing whatever reset left behind
+     * makes the test depend on it.
+     */
+    li   t1, 0
+    li   t2, 0
+
+    /*
+     * Integer pointer mode (the default at reset): rs1=x0 contributes 0, so
+     * these are ordinary accesses to a low address. None may be refused on
+     * capability grounds or rejected as an illegal instruction; whether that
+     * address is readable at all is up to the machine.
      */
     NEXT_TEST
     lw   t1, TEST_ADDR(x0)
-    EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
+    EXPECT_ONLY_MEMORY_FAULT
 
     NEXT_TEST
     sw   t1, TEST_ADDR(x0)
-    EXPECT_TRAP CAUSE_STORE_ACCESS_FAULT
+    EXPECT_ONLY_MEMORY_FAULT
 
     NEXT_TEST
     fld  ft1, TEST_ADDR(x0)
-    EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
+    EXPECT_ONLY_MEMORY_FAULT
 
     NEXT_TEST
     fsd  ft1, TEST_ADDR(x0)
-    EXPECT_TRAP CAUSE_STORE_ACCESS_FAULT
+    EXPECT_ONLY_MEMORY_FAULT
 
     NEXT_TEST
     LY   t1, TEST_ADDR(x0)
-    EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
+    EXPECT_ONLY_MEMORY_FAULT
 
     NEXT_TEST
     SY   t2, TEST_ADDR(x0)
-    EXPECT_TRAP CAUSE_STORE_ACCESS_FAULT
+    EXPECT_ONLY_MEMORY_FAULT
 
     /*
      * Capability mode: cs1=x0 is the NULL capability, so every access is
