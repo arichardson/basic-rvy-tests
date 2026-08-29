@@ -147,7 +147,7 @@ run() {
 # that only apply to one of them.
 for t in test-loadstore-x0 test-amo-cbo-causes test-bounds-causes \
          test-pcc-bounds-fetch test-insn-encodings test-branches \
-         test-cap-ops test-asr; do
+         test-cap-ops test-cap-reset-regression test-asr; do
     build $t
     run $t 0
 done
