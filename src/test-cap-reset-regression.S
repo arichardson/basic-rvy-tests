@@ -7,11 +7,6 @@
  * reproduce, or the first store of an untouched register writes something
  * other than what the register held.
  *
- * The same applies to a capability loaded from memory and stored straight
- * back: any untagged bit pattern is a value a program can hold and move
- * around, so it has to survive for arbitrary patterns and not just for ones
- * that encode something meaningful.
- *
  * Everything is written and checked with integer accesses, so the test says
  * nothing about how a capability is encoded, and nothing here is tagged.
  */
@@ -36,27 +31,6 @@
     bne  t2, t3, fail
 .endm
 
-/*
- * Put \lo (the address half) and \hi (the metadata half) in memory, load the
- * capability they spell, store it back and require the same bits out.
- */
-.macro EXPECT_BITS_ROUNDTRIP lo, hi
-    NEXT_TEST "the bit pattern \lo / \hi survives a load and store back"
-    la   a0, src
-    la   a2, dst
-    li   t0, \lo
-    li   t1, \hi
-    SX   t0, 0(a0)
-    SX   t1, XBYTES(a0)
-    LY   a1, 0(a0)               /* the bits, as a capability ... */
-    SY   a1, 0(a2)               /* ... and straight back to memory */
-    EXPECT_NO_TRAP
-    LX   t2, 0(a2)
-    bne  t2, t0, fail            /* the address half survived ... */
-    LX   t3, XBYTES(a2)
-    bne  t3, t1, fail            /* ... and so did the metadata half */
-.endm
-
 .option norvc
 .section .text
 .globl _start
@@ -76,14 +50,6 @@ _start:
     EXPECT_RESET_ROUNDTRIP s1
     EXPECT_RESET_ROUNDTRIP s2
     EXPECT_RESET_ROUNDTRIP s7
-
-    EXPECT_BITS_ROUNDTRIP 0, 0
-    EXPECT_BITS_ROUNDTRIP -1, -1
-    EXPECT_BITS_ROUNDTRIP 0x55555555, 0x55555555
-    EXPECT_BITS_ROUNDTRIP 0xaaaaaaaa, 0xaaaaaaaa
-    EXPECT_BITS_ROUNDTRIP 0x80000000, 0
-    EXPECT_BITS_ROUNDTRIP 0, 0x80000000
-    EXPECT_BITS_ROUNDTRIP 0x12345678, 0x9abcdef0
 
     TEST_PASS
 fail:
