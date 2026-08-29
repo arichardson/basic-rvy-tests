@@ -8,9 +8,10 @@
  * mscratch need it while ddc does not, and that distinction is checked here
  * too: dropping ASR must not make every CSR inaccessible.
  *
- * CBO.INVAL is the other ASR-gated operation, and it checks ASR before the
- * capability itself, so it reports an illegal instruction even when handed
- * the NULL capability, which would otherwise be a CHERI store fault.
+ * CBO.INVAL is the other ASR-gated operation. Under RVY a missing ASR is an
+ * illegal instruction, which outranks the capability checks, so it is
+ * reported even for the NULL capability; 0.9.3 instead treats ASR as one more
+ * permission on the authorizing capability and reports the tag violation.
  */
 #define TEST_NAME "asr"
 #include "testmacros.h"
@@ -72,10 +73,19 @@ asr_stub:
     csrw CSR_MSCRATCH, x0
     EXPECT_TRAP TRAP_ASR_DENIED
 
-    /* CBO.INVAL checks ASR before it looks at the capability */
+    /*
+     * CBO.INVAL is ASR-gated, but the two versions order that against the
+     * capability checks differently: RVY reports a missing ASR as an illegal
+     * instruction, which outranks them, while 0.9.3 makes ASR one more
+     * permission and so reaches the tag check first.
+     */
     NEXT_TEST
     CBO_INVAL x0
+#ifdef CHERI_093
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+#else
     EXPECT_TRAP TRAP_ASR_DENIED
+#endif
 
     /* ddc has no privilege bits in its CSR number, so it needs no ASR */
     NEXT_TEST
