@@ -37,8 +37,8 @@ else
   rvy_test_cc_required = false
 endif
 
-rvy_src_dir = meson.current_source_dir() / '..'
-rvy_probe_src = files('../probe.S')
+rvy_src_dir = meson.current_source_dir()
+rvy_probe_src = files('probe.S')
 rvy_test_cc_found = false
 foreach candidate : rvy_candidates
   cand_prog = find_program(candidate, required: false)
