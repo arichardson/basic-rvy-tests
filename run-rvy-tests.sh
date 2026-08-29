@@ -153,8 +153,9 @@ for t in test-loadstore-x0 test-amo-cbo-causes test-bounds-causes \
 done
 
 if [ "$CHERI_VERSION" = v0.9.9 ]; then
-    # misa.Y and taking control-flow faults at the target are both v0.9.9.
-    for t in test-misa-y test-branch-target-faults; do
+    # misa.Y, taking control-flow faults at the target, and the exception
+    # priority table are all v0.9.9.
+    for t in test-misa-y test-branch-target-faults test-exception-priority; do
         build $t
         run $t 0
     done
