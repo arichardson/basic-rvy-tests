@@ -71,9 +71,9 @@ covers, the Sail model:
 
 ```sh
 for t in riscv64y riscv32y riscv64cheristd riscv32cheristd; do
-    ./run-rvy-tests.sh /path/to/qemu-system-$t
+    ./src/run-rvy-tests.sh /path/to/qemu-system-$t
 done
-./run-rvy-tests.sh /path/to/sail_riscv_sim
+./src/run-rvy-tests.sh /path/to/sail_riscv_sim
 ```
 
 Then mutation-check what you added: change the expected cause to the one you

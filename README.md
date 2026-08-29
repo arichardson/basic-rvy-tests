@@ -12,7 +12,7 @@ need CHERI support** and any bare-metal RISC-V clang will do.
 ## Running
 
 ```sh
-./run-rvy-tests.sh <emulator> [clang]
+./src/run-rvy-tests.sh <emulator> [clang]
 ```
 
 The emulator may be a QEMU system binary or the Sail model's
@@ -91,11 +91,11 @@ The last five are v0.9.9 only.
 
 | File | Purpose |
 | --- | --- |
-| `testmacros.h` | `.macro` wrapper per instruction, for both CHERI versions, plus the pass/fail reporting |
-| `exceptions.h` | Trap handlers and the `EXPECT_*` vocabulary for stating what should fault |
-| `link.ld` | Flat layout at `0x80000000`, with HTIF given a page to itself |
-| `run-rvy-tests.sh` | Builds and runs everything; the list of tests lives here |
-| `probe.S` | Compiles to nothing; used to detect a usable toolchain |
+| `src/testmacros.h` | `.macro` wrapper per instruction, for both CHERI versions, plus the pass/fail reporting |
+| `src/exceptions.h` | Trap handlers and the `EXPECT_*` vocabulary for stating what should fault |
+| `src/link.ld` | Flat layout at `0x80000000`, with HTIF given a page to itself |
+| `src/run-rvy-tests.sh` | Builds and runs everything; the list of tests lives here |
+| `src/probe.S` | Compiles to nothing; used to detect a usable toolchain |
 
 ## Licence
 
