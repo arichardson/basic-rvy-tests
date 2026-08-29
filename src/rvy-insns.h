@@ -279,6 +279,9 @@
 .macro YTYPER rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x2     /* gctype */
 .endm
+.macro YBASER rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x5     /* gcbase */
+.endm
 .macro YLENR rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x6     /* gclen */
 .endm
