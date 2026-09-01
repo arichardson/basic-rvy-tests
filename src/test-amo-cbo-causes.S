@@ -80,6 +80,11 @@ _start:
     CBO_CLEAN x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
+    /* CBO.FLUSH via NULL cap */
+    NEXT_TEST
+    CBO_FLUSH x0
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+
     /* CBO.INVAL via NULL cap (the M-mode root PCC grants ASR) */
     NEXT_TEST
     CBO_INVAL x0
