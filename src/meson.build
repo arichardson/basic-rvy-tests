@@ -76,6 +76,7 @@ if rvy_test_cc_found
     {'name': 'test-cap-reset-regression'},
     {'name': 'test-asr'},
     {'name': 'test-cbo-bounds'},
+    {'name': 'test-xepc-detag'},
     # misa.Y, taking control-flow faults at the target, and the exception
     # priority table are all v0.9.9 only.
     {'name': 'test-misa-y', 'cheri_versions': ['v0.9.9']},

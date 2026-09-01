@@ -175,6 +175,22 @@ __rvy_used_resume_after_fault = 1
     CLEAR_TRAPS
 .endm
 
+/*
+ * Whether misa.C can be cleared at all is implementation-defined (WARL): the
+ * base ISA permits a hart to hard-wire it. Attempt the write, and skip to
+ * \label if it did not take, rather than assuming either outcome.
+ */
+.macro TRY_CLEAR_MISA_C label
+    csrr t3, CSR_MISA
+    li   t4, MISA_C
+    not  t4, t4
+    and  t3, t3, t4
+    csrw CSR_MISA, t3
+    csrr t3, CSR_MISA
+    andi t3, t3, MISA_C
+    bnez t3, \label
+.endm
+
 /* The trap was reported against the address in \reg. */
 .macro EXPECT_EPC reg
     bne  trap_epc, \reg, fail
