@@ -86,6 +86,7 @@ assembly, and the comment above the case says what it is.
 | `test-pcc-bounds-fetch` | Fetching across the end of PCC, including straddling instructions |
 | `test-cap-reset-regression` | A stored capability writes out the bits the register holds |
 | `test-asr` | Operations gated on the `ASR` permission |
+| `test-cbo-bounds` | CBO.ZERO/INVAL fault on any byte out of bounds, CBO.CLEAN/FLUSH only if all are |
 | `test-branches` | The reserved `BEQ`/`BNE` operand orders, unenforced |
 | `test-reserved-branches` | The same, with `x-rvy-strict-branches=on` |
 | `test-branch-target-faults` | Control-flow faults are taken at the target, not the branch |
