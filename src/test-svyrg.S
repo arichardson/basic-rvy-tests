@@ -178,14 +178,15 @@ s_entry:
     and  t1, t1, t0
     beqz t1, fail
 
-    /* Test 3: rvy=0 page under Svyrg behaves like base pte.y=0 */
+    /* Test 4: rvy=0 page under Svyrg behaves like base pte.y=0 */
+    NEXT_TEST
     LY   t1, 0(a1)
     YTAGR t2, t1
     bnez t2, fail
     SY   s2, 0(a1)  /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
-    /* Test 4: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
+    /* Test 5: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
     NEXT_TEST
     LY   t1, 0(a2)  /* cause 35 (mismatch) */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
@@ -196,7 +197,7 @@ s_entry:
     YTAGR t2, t1
     beqz t2, fail
 
-    /* Test 5: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
+    /* Test 6: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
     NEXT_TEST
     LY   t1, 0(a3)  /* UYRG=0 matches yrg=0: normal */
     EXPECT_NO_TRAP
@@ -207,7 +208,7 @@ s_entry:
     LY   t1, 0(a3)  /* cause 35 */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
 
-    /* Test 6: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
+    /* Test 7: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
     NEXT_TEST
     LY   t1, 0(a4)  /* yr=0/yrg=1 -> normal */
     EXPECT_NO_TRAP
