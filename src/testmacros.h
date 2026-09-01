@@ -57,6 +57,7 @@
 #endif
 
 #define MISA_Y      (1 << 24)
+#define MISA_C      (1 << 2)
 #ifdef CHERI_093
 /* 0.9.3 put the S-mode CHERI enable at bit 28 rather than bit 9. */
 #define MENVCFG_CRE (1 << 28)
