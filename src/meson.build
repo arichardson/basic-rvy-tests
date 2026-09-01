@@ -90,6 +90,8 @@ if rvy_test_cc_found
     # has no supervisor mode, so this needs the default CPU model.
     {'name': 'test-svyrg', 'cheri_versions': ['v0.9.9'], 'xlens': [64],
      'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
+    {'name': 'test-translation-priority', 'cheri_versions': ['v0.9.9'],
+     'xlens': [64], 'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
   ]
 
   # Which emulators to test against, and the (xlen, CHERI version, harness)
