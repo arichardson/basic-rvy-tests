@@ -82,6 +82,7 @@ if rvy_test_cc_found
     {'name': 'test-misa-y', 'cheri_versions': ['v0.9.9']},
     {'name': 'test-branch-target-faults', 'cheri_versions': ['v0.9.9']},
     {'name': 'test-exception-priority', 'cheri_versions': ['v0.9.9']},
+    {'name': 'test-xepc-return', 'cheri_versions': ['v0.9.9']},
     # The reservation is only enforced when asked for.
     {'name': 'test-reserved-branches', 'cheri_versions': ['v0.9.9'],
      'qemu_args': ['-cpu', 'any,x-rvy-strict-branches=on']},

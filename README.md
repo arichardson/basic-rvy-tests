@@ -87,14 +87,16 @@ assembly, and the comment above the case says what it is.
 | `test-cap-reset-regression` | A stored capability writes out the bits the register holds |
 | `test-asr` | Operations gated on the `ASR` permission |
 | `test-cbo-bounds` | CBO.ZERO/INVAL fault on any byte out of bounds, CBO.CLEAN/FLUSH only if all are |
+| `test-xepc-detag` | mepc/sepc legalization: misaligned writes, and reads/mret under IALIGN=32 |
 | `test-branches` | The reserved `BEQ`/`BNE` operand orders, unenforced |
 | `test-reserved-branches` | The same, with `x-rvy-strict-branches=on` |
 | `test-branch-target-faults` | Control-flow faults are taken at the target, not the branch |
 | `test-exception-priority` | Which exception wins when an instruction trips two checks |
+| `test-xepc-return` | MRET unseals a sentry epcc and installs it as PCC unchecked |
 | `test-misa-y` | Turning CHERI off through `misa.Y`, and the CSRs that go with it |
 | `test-svyrg` | `Svyrg` and the `pte.rvy` field, under Sv39 paging |
 
-The last five are v0.9.9 only.
+The last six are v0.9.9 only.
 
 ## Layout
 
