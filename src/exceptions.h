@@ -46,6 +46,7 @@
 #define CAUSE_STORE_ACCESS_FAULT   7
 #define CAUSE_S_ECALL              9
 #define CAUSE_LOAD_PAGE_FAULT     13
+#define CAUSE_STORE_PAGE_FAULT    15
 
 /*
  * The kind of capability check that failed. RVY does not report it, but 0.9.3

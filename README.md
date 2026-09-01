@@ -95,8 +95,9 @@ assembly, and the comment above the case says what it is.
 | `test-xepc-return` | MRET unseals a sentry epcc and installs it as PCC unchecked |
 | `test-misa-y` | Turning CHERI off through `misa.Y`, and the CSRs that go with it |
 | `test-svyrg` | `Svyrg` and the `pte.rvy` field, under Sv39 paging |
+| `test-translation-priority` | Page table walk faults, and where they rank against the capability checks |
 
-The last six are v0.9.9 only.
+The last seven are v0.9.9 only.
 
 ## Layout
 
