@@ -73,14 +73,6 @@
 #define PERM_R      (1 << 18)
 
 /*
- * Report the exit code in t6 (already encoded as (code << 1) | 1) through the
- * HTIF tohost register. This is what ends the run on spike-like harnesses:
- * QEMU's spike machine and the Sail model. The two halves are written
- * separately because QEMU only acts on the write to the upper word; Sail
- * accepts either form. On the virt machine there is no HTIF, so this just
- * writes to memory and the sifive_test store is what ends the run.
- */
-/*
  * Make capability instructions usable in M-mode. RVY has misa.Y set at reset,
  * but 0.9.3 gates them on mseccfg.CRE, which resets to zero, so a test that
  * does not set it traps on its first capability instruction -- and then again
@@ -116,6 +108,14 @@
 2:
 .endm
 
+/*
+ * Report the exit code in t6 (already encoded as (code << 1) | 1) through the
+ * HTIF tohost register. This is what ends the run on spike-like harnesses:
+ * QEMU's spike machine and the Sail model. The two halves are written
+ * separately because QEMU only acts on the write to the upper word; Sail
+ * accepts either form. On the virt machine there is no HTIF, so this just
+ * writes to memory and the sifive_test store is what ends the run.
+ */
 .macro HTIF_EXIT_T6
     la   t5, tohost
     sw   t6, 0(t5)
