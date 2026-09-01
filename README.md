@@ -86,6 +86,7 @@ assembly, and the comment above the case says what it is.
 | `test-pcc-bounds-fetch` | Fetching across the end of PCC, including straddling instructions |
 | `test-cap-reset-regression` | A stored capability writes out the bits the register holds |
 | `test-asr` | Operations gated on the `ASR` permission |
+| `test-console` | The shared console helpers, and that they emit what they are asked to |
 | `test-cbo-bounds` | CBO.ZERO/INVAL fault on any byte out of bounds, CBO.CLEAN/FLUSH only if all are |
 | `test-xepc-detag` | mepc/sepc legalization: misaligned writes, and reads/mret under IALIGN=32 |
 | `test-branches` | The reserved `BEQ`/`BNE` operand orders, unenforced |
