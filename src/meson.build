@@ -75,6 +75,7 @@ if rvy_test_cc_found
     {'name': 'test-cap-ops'},
     {'name': 'test-cap-reset-regression'},
     {'name': 'test-asr'},
+    {'name': 'test-console'},
     {'name': 'test-cbo-bounds'},
     {'name': 'test-xepc-detag'},
     # misa.Y, taking control-flow faults at the target, and the exception
@@ -172,14 +173,15 @@ if rvy_test_cc_found
         cflags_cheri = emulator['cheri_version'] == '0.9.3' ? ['-DCHERI_093'] : []
         rvy_elf_targets += {profile: custom_target(
           profile + '.elf',
-          input: t['name'] + '.S',
+          input: [t['name'] + '.S', 'console.S'],
           output: profile + '.elf',
           command: [rvy_test_cc, '--target=riscv' + emulator['xlen'].to_string(),
                      '-march=' + march] + cflags_cheri +
                     ['-nostdlib', '-static', '-fuse-ld=lld',
                      '-Wl,-T,' + (rvy_src_dir / 'link.ld'),
                      '@INPUT@', '-o', '@OUTPUT@'],
-          depend_files: files('link.ld', 'testmacros.h', 'exceptions.h'),
+          depend_files: files('link.ld', 'testmacros.h', 'exceptions.h',
+                              'console.h'),
           build_by_default: false,
         )}
       endif
