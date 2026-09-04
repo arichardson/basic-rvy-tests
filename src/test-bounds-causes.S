@@ -36,24 +36,24 @@ _start:
     YMODESWY                     /* capability mode: a0/a1 authorize accesses */
 
     /* Test 1: accesses inside the bounds must not trap */
-    NEXT_TEST
+    NEXT_TEST "accesses inside the bounds do not trap"
     lw   t2, 0(a0)
     lw   t2, 4(a0)
     sw   t2, 0(a0)
     EXPECT_NO_TRAP
 
     /* Test 2: load starting past the top */
-    NEXT_TEST
+    NEXT_TEST "load starting past the top"
     lw   t2, 8(a0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
 
     /* Test 3: store starting past the top */
-    NEXT_TEST
+    NEXT_TEST "store starting past the top"
     sw   t2, 8(a0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
     /* Test 4: load straddling the top (a1 ends at buf + 6) */
-    NEXT_TEST
+    NEXT_TEST "load straddling the top"
     lw   t2, 4(a1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
 
@@ -62,7 +62,7 @@ _start:
      * get hold of an executable capability, so bound a PCC-derived one to
      * the two instructions of the stub and call it.
      */
-    NEXT_TEST
+    NEXT_TEST "running off the end of a bounded pcc"
     auipc a2, 0
     la   t1, off_end_stub
     YADDRW a2, a2, t1

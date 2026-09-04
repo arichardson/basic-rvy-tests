@@ -26,24 +26,24 @@ _start:
     li   t2, 2
 
     /* Integer pointer mode: still not reserved, even when enforcing. */
-    NEXT_TEST
+    NEXT_TEST "reserved operand order still runs in integer pointer mode"
     RESERVED_ORDER_BRANCHES
     EXPECT_NO_TRAP
 
     /* Capability mode: each of the three is now an illegal instruction. */
     YMODESWY
-    NEXT_TEST
+    NEXT_TEST "beq x5 x7 in capability mode is illegal when enforcing"
     .insn b 0x63, 0, t0, t2, fail        /* beq x5, x7 */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    NEXT_TEST
+    NEXT_TEST "bne x5 x6 in capability mode is illegal when enforcing"
     .insn b 0x63, 1, t0, t1, fail        /* bne x5, x6 */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    NEXT_TEST
+    NEXT_TEST "bne x5 x5 in capability mode is illegal when enforcing"
     .insn b 0x63, 1, t0, t0, fail        /* bne x5, x5 (rs1 == rs2) */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     /* Legal operand orders keep working in capability mode. */
-    NEXT_TEST
+    NEXT_TEST "the canonical operand orders keep working"
     LEGAL_ORDER_BRANCHES
     EXPECT_NO_TRAP
     YMODESWI

@@ -142,14 +142,14 @@ s_entry:
     add  a5, a0, t0              /* index 7: yr only */
 
     /* Test 1: normal page: capability store + load round-trips the tag */
-    NEXT_TEST
+    NEXT_TEST "a normal page round-trips a capability tag"
     SY   s2, 0(a0)
     LY   t1, 0(a0)
     YTAGR t2, t1
     beqz t2, fail
 
     /* Test 2: base mode, pte.y=0: load clears tag, tagged store faults */
-    NEXT_TEST
+    NEXT_TEST "base mode pte.y=0 clears loaded tags and faults tagged stores"
     LY   t1, 0(a1)  /* via rvy=0 alias */
     YTAGR t2, t1
     bnez t2, fail
@@ -166,12 +166,12 @@ s_entry:
      * reserved, so using the page now must fault like any other reserved
      * PTE bit would.
      */
-    NEXT_TEST
+    NEXT_TEST "a page carrying the Svyrg bits faults while they are reserved"
     LY   t1, 0(a2)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
     /* Enable Svyrg; the bit must read back as set */
-    NEXT_TEST
+    NEXT_TEST "sstatus.YRGE reads back as set"
     li   t0, SSTATUS_YRGE
     csrs 0x100, t0               /* sstatus */
     csrr t1, 0x100
@@ -179,7 +179,7 @@ s_entry:
     beqz t1, fail
 
     /* Test 4: rvy=0 page under Svyrg behaves like base pte.y=0 */
-    NEXT_TEST
+    NEXT_TEST "rvy=0 under Svyrg behaves like base pte.y=0"
     LY   t1, 0(a1)
     YTAGR t2, t1
     bnez t2, fail
@@ -187,7 +187,7 @@ s_entry:
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
     /* Test 5: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
-    NEXT_TEST
+    NEXT_TEST "yr=1/yrg=1 faults a tagged load while SYRG=0 and works once set"
     LY   t1, 0(a2)  /* cause 35 (mismatch) */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     li   t0, SSTATUS_SYRG
@@ -198,7 +198,7 @@ s_entry:
     beqz t2, fail
 
     /* Test 6: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
-    NEXT_TEST
+    NEXT_TEST "yr=1/yrg=0 on a U-page is selected by UYRG not SYRG"
     LY   t1, 0(a3)  /* UYRG=0 matches yrg=0: normal */
     EXPECT_NO_TRAP
     YTAGR t2, t1
@@ -209,7 +209,7 @@ s_entry:
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
 
     /* Test 7: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
-    NEXT_TEST
+    NEXT_TEST "yw=1/yd=0 allows loads and faults tagged stores"
     LY   t1, 0(a4)  /* yr=0/yrg=1 -> normal */
     EXPECT_NO_TRAP
     YTAGR t2, t1
@@ -226,15 +226,15 @@ s_entry:
      * through the alias that still permits it, then approach it through
      * this one.
      */
-    NEXT_TEST
+    NEXT_TEST "the alias that still permits it stores a tagged capability"
     SY   s2, 0(a2)               /* index 4 still allows tagged stores */
     EXPECT_NO_TRAP
 
-    NEXT_TEST
+    NEXT_TEST "yr only: the capability load mismatches the generation"
     LY   t1, 0(a5)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
 
-    NEXT_TEST
+    NEXT_TEST "yr only: the tagged capability store is refused"
     SY   s2, 0(a5)
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
@@ -242,7 +242,7 @@ s_entry:
      * An AMO does both, and the specification gives the store/AMO page fault
      * priority over the load capability fault.
      */
-    NEXT_TEST
+    NEXT_TEST "an AMO trips both and the store page fault wins"
     AMOSWAP_Y t1, a5, s2
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 

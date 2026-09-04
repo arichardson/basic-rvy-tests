@@ -59,14 +59,14 @@ _start:
     YMODESWY                     /* capability mode: jalr takes a capability */
 
     /* Test 1: untagged target (PACKY builds a capability with tag = 0) */
-    NEXT_TEST
+    NEXT_TEST "an untagged target faults at the target not the branch"
     la   t0, victim
     PACKY a0, t0, x0
     JALR_EXPECT_FAULT_AT a0, 0, t0
     EXPECT_TARGET_FAULT 0
 
     /* Test 2: target without execute permission */
-    NEXT_TEST
+    NEXT_TEST "a target without execute permission faults at the target"
     auipc a0, 0                  /* the only executable capability available */
     la   t0, victim
     YADDRW a0, a0, t0
@@ -81,7 +81,7 @@ _start:
      * tag exactly as scaddr would, and the target takes a tag fault at
      * cs1.address + 8 rather than a seal fault at cs1.address.
      */
-    NEXT_TEST
+    NEXT_TEST "a sentry with a non-zero immediate stays sealed and detags"
     auipc a0, 0
     la   t0, victim
     YADDRW a0, a0, t0
@@ -91,7 +91,7 @@ _start:
     EXPECT_TARGET_FAULT 0
 
     /* Test 4: target outside the bounds of the authorizing capability */
-    NEXT_TEST
+    NEXT_TEST "a target outside the bounds faults at the target"
     auipc a0, 0
     la   t0, victim
     YADDRW a0, a0, t0
@@ -105,7 +105,7 @@ _start:
      * Test 5: the same sentry with a zero immediate is unsealed and runs, so
      * the checks above are not simply rejecting every sentry.
      */
-    NEXT_TEST
+    NEXT_TEST "the same sentry with a zero immediate is unsealed and runs"
     auipc a0, 0
     la   t0, good_target
     YADDRW a0, a0, t0
