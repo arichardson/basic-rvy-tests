@@ -105,6 +105,7 @@
 
 .macro SETUP_TRAPS
     ENABLE_CHERI
+    call console_init            /* probes for a UART; needs its own handler */
     la   t0, trap_handler
     csrw CSR_MTVEC, t0
     li   test_id, 0

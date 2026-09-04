@@ -48,6 +48,11 @@ harnesses including the Sail model understand, and through the `sifive_test`
 finisher that `virt` provides. Running both keeps either path from silently
 rotting.
 
+Console output goes to both sinks as well. HTIF carries it on `spike` and
+under Sail; `virt` has no HTIF but does have a 16550 UART, which the suite
+probes for at startup and writes to when it is there, so a run prints the
+same thing either way.
+
 Two more `-D` options, both optional:
 
 | Option | Default | Meaning |
@@ -110,6 +115,9 @@ The last seven are v0.9.9 only.
 | `src/link.ld` | Flat layout at `0x80000000`, with HTIF given a page to itself |
 | `src/run-rvy-test.sh` | Runs one already-built ELF through one emulator invocation; called by each meson test() |
 | `src/run-rvy-tests.sh` | Fallback wrapper: drives meson for a single emulator without a build directory |
+| `src/console.S` | Console output (HTIF and the virt UART) and the exit sequence, linked into every test |
+| `src/console.h` | Constants and the calling convention for the above |
+| `src/rvy-insns.h` | The RVY instruction encodings, shared by the tests and `console.S` |
 | `src/probe.S` | Compiles to nothing; used to detect a usable toolchain |
 
 ## Licence
