@@ -63,15 +63,24 @@
 #error "each test must #define TEST_NAME before including this header"
 #endif
 
+/*
+ * Report the result as TAP, so a run reports each case rather than just a
+ * verdict: the plan, then one line per case up to the one that failed. The
+ * name goes out as a TAP comment, which keeps the old human-readable line
+ * without putting anything in the stream a parser would choke on.
+ */
 .macro TEST_PASS
     .pushsection .rodata
     .balign 4
-94: .ascii "PASS: "
+94: .ascii "# PASS: "
     .ascii TEST_NAME
     .asciz "\n"
     .popsection
     la   a0, 94b
     call console_puts
+    mv   a0, test_id             /* every case ran, and all of them passed */
+    li   a1, 0
+    call console_tap
     li   a0, 0
     call console_exit
 .endm
@@ -80,20 +89,12 @@
 .macro TEST_FAIL
     .pushsection .rodata
     .balign 4
-95: .ascii "FAIL: "
+95: .ascii "# FAIL: "
     .ascii TEST_NAME
     .asciz " test "
     .popsection
     la   a0, 95b
     call console_puts
-    TEST_EXIT_WITH_ID
-.endm
-
-/*
- * Print test_id and exit with it as the code. Split out of TEST_FAIL for
- * tests whose result is a count rather than a pass or a failure.
- */
-.macro TEST_EXIT_WITH_ID
     mv   a0, test_id
     call console_put_dec
     .pushsection .rodata
@@ -101,6 +102,9 @@
     .popsection
     la   a0, 96b
     call console_puts
+    mv   a0, test_id             /* the last case reached is the one that failed */
+    mv   a1, test_id
+    call console_tap
     mv   a0, test_id
     call console_exit
 .endm
