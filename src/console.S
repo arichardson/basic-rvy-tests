@@ -93,8 +93,11 @@ console_init:
     la    t1, console_uart
     YADDRW t1, t0, t1
     sw    a3, 0(t1)
-    YMV  ra, a1
-    ret
+
+    /* The version line has to come first, so announce it before any test runs. */
+    la   a0, .Ltap_version
+    YMV  ra, a1                  /* console_puts returns straight to our caller */
+    j    console_puts
 
 /*
  * Write the byte in a0 to every console this machine has. The HTIF write is
@@ -162,6 +165,59 @@ console_put_dec:
     mv   a0, a3                  /* console_puts wants the address */
     YMV  ra, a1
     j    console_puts            /* tail call: it returns to our caller */
+
+/*
+ * Emit the whole TAP stream: a0 = how many cases ran, a1 = which one failed
+ * (0 if none). It is written out here at the end rather than a line at a time
+ * as the cases run, because NEXT_TEST would then have to clobber the argument
+ * registers, and tests set those up before it as often as after.
+ *
+ * Clobbers a0-a7 and t0-t4, which is more than the rest of this file, but the
+ * only callers are TEST_PASS and TEST_FAIL and nothing runs after them.
+ *
+ * Note the operand order of the bne below: RVY reserves BEQ/BNE with the
+ * operands in rs1 <= rs2 register number order, and this runs in capability
+ * mode where that reservation applies.
+ */
+.globl console_tap
+console_tap:
+    CONSOLE_ENTER
+    YMV  a4, ra                  /* none of the calls below touch a4-a7 */
+    mv   a6, a0
+    mv   a7, a1
+
+    li   a5, 1
+1:  blt  a6, a5, 2f              /* while i <= total */
+    bne  a7, a5, 3f              /* canonical order: a7 > a5 */
+    la   a0, .Ltap_notok
+    j    4f
+3:  la   a0, .Ltap_ok
+4:  jal  ra, console_puts
+    mv   a0, a5
+    jal  ra, console_put_dec
+
+    la   a0, .Ltap_nl
+    jal  ra, console_puts
+    addi a5, a5, 1
+    j    1b
+2:  la   a0, .Ltap_plan          /* the plan trails the results, so a test does
+                                  * not have to declare its count up front */
+    jal  ra, console_puts
+    mv   a0, a6
+    jal  ra, console_put_dec
+    la   a0, .Ltap_nl
+    jal  ra, console_puts
+    YMV  ra, a4
+    ret
+
+.section .rodata
+.Ltap_version: .asciz "TAP version 13\n"
+.Ltap_plan:  .asciz "1.."
+.Ltap_ok:    .asciz "ok "
+.Ltap_notok: .asciz "not ok "
+.Ltap_nl:    .asciz "\n"
+
+.section .text
 
 /*
  * Report a0 as the exit code and stop. The two encodings are what each
