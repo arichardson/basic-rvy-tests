@@ -8,9 +8,9 @@
  *
  * Calling convention, which the tests depend on:
  *
- *  - Call them in integer pointer mode only. They use plain loads and stores,
- *    which in capability mode would take their base register as the
- *    authorizing capability rather than as an address.
+ *  - Either pointer mode will do. They switch to capability mode themselves
+ *    and put the caller's mode back on return, working it out from whether
+ *    the return address carries a tag.
  *  - They clobber a0-a3 and t0-t4, and nothing else. In particular they leave
  *    the registers exceptions.h reserves alone, so a test can still report
  *    test_id after calling one.
@@ -18,6 +18,10 @@
  *   console_puts(a0 = pointer to a NUL-terminated string)
  *   console_put_dec(a0 = value)     print it in decimal
  *   console_exit(a0 = exit code)    report the code and stop the machine
+ *
+ * console_init is the exception: SETUP_TRAPS calls it once before a test has
+ * begun, and it also uses a4/a5. It probes for the UART, which means trapping
+ * where there is none, so it saves and restores everything that disturbs.
  */
 #pragma once
 
@@ -26,6 +30,16 @@
 
 /* The sifive_test finisher, which is how the virt machine is stopped. */
 #define FINISHER_ADDR 0x100000
+
+/*
+ * The 16550 UART the virt machine puts at 0x10000000. Nothing is mapped there
+ * on the spike machine or under the Sail model, where a bare access faults,
+ * so console_init probes for it rather than assuming either way.
+ */
+#define UART_ADDR     0x10000000
+#define UART_THR      0          /* transmit holding register */
+#define UART_LSR      5          /* line status; bit 5 = ready for a byte */
+#define UART_LSR_THRE 0x20
 
 /* Room for a 64-bit value in decimal, and the NUL. */
 #define DEC_BUF_LEN 24

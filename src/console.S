@@ -49,21 +49,82 @@
 .section .text
 
 /*
- * Write the byte in a0 to the console. The HTIF write is two stores because
- * QEMU only acts on the write to the upper word, while Sail takes either.
+ * Work out whether this machine has the virt UART, by reading one of its
+ * registers behind a trap handler that just records that the access failed.
+ * A bare read is the only way to ask: nothing distinguishes the machines
+ * otherwise, and on the ones without it the address is simply not mapped.
+ *
+ * Called from SETUP_TRAPS, before the test installs its own handler.
+ */
+.globl console_init
+console_init:
+    CONSOLE_ENTER
+    YMV  a1, ra                  /* kept across the probe */
+
+    /*
+     * Where there is no UART the probe below traps, and a trap rewrites mepcc
+     * and mstatus. That has to leave no trace: a test writing an address to
+     * mepc keeps the rest of the capability, so a stale mepcc from here would
+     * silently hand it the mode this function runs in rather than its own.
+     */
+    csrr  a4, CSR_MSTATUS
+    csrrs a5, CSR_MEPC, x0       /* the whole capability, not just the address */
+
+    auipc t0, 0                  /* a handler capability, since mtvecc is one */
+    la    t1, .Lprobe_failed
+    YADDRW t0, t0, t1
+    csrrw a2, CSR_MTVEC, t0      /* a2 = whatever was there before */
+
+    li   a3, 1                   /* assume it is there ... */
+    csrrs t0, CSR_DDC, x0
+    li    t1, UART_ADDR
+    YADDRW t0, t0, t1
+    lbu   t2, UART_LSR(t0)       /* ... and find out here */
+    j    .Lprobe_done
+
+.balign 4
+.Lprobe_failed:                  /* entered as a trap handler, and stays there */
+    li   a3, 0
+.Lprobe_done:
+    csrw CSR_MTVEC, a2           /* put the previous handler back ... */
+    csrw CSR_MEPC, a5            /* ... and everything the trap disturbed */
+    csrw CSR_MSTATUS, a4
+    csrrs t0, CSR_DDC, x0
+    la    t1, console_uart
+    YADDRW t1, t0, t1
+    sw    a3, 0(t1)
+    YMV  ra, a1
+    ret
+
+/*
+ * Write the byte in a0 to every console this machine has. The HTIF write is
+ * two stores because QEMU only acts on the write to the upper word, while
+ * Sail takes either.
  */
 .globl console_putc
 console_putc:
     CONSOLE_ENTER
-    csrrs t0, CSR_DDC, x0
+    csrrs t0, CSR_DDC, x0        /* kept for both sinks below */
+
     la    t1, console_target
     YADDRW t2, t0, t1
     LOAD_X t1, 0(t2)             /* where the writes go; &tohost in a real run */
-    YADDRW t0, t0, t1
-    sw   a0, 0(t0)
-    li   t1, HTIF_PUTCHAR
-    sw   t1, 4(t0)
-    ret
+    YADDRW t2, t0, t1
+    sw    a0, 0(t2)
+    li    t1, HTIF_PUTCHAR
+    sw    t1, 4(t2)
+
+    la    t1, console_uart
+    YADDRW t2, t0, t1
+    lw    t1, 0(t2)
+    beqz  t1, 1f                 /* no UART on this machine */
+    li    t1, UART_ADDR
+    YADDRW t2, t0, t1
+    sb    a0, UART_THR(t2)       /* the emulated UART never refuses a byte, so
+                                  * this does not poll: spinning on the status
+                                  * register would hang outright if the probe
+                                  * ever said yes where there is nothing. */
+1:  ret
 
 /* Write the NUL-terminated string a0 points at. */
 .globl console_puts
@@ -133,6 +194,11 @@ console_exit:
 .globl console_target
 console_target:
     WORD_X tohost
+
+/* Set by console_init: non-zero where this machine has the virt UART. */
+.globl console_uart
+console_uart:
+    .word 0
 
 .section .bss
 .balign 8
