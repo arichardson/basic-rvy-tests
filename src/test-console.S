@@ -29,17 +29,27 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-/* Send the console at the buffer below, so its writes can be read back. */
+/*
+ * Send the console at the buffer below, so its writes can be read back. The
+ * UART is silenced for the duration as well: it is a separate sink that the
+ * redirect does not cover, and anything it emitted here would land in the
+ * middle of the run's real output.
+ */
 .macro REDIRECT_CONSOLE
     la   t0, console_target
     la   t1, sink
     STORE_X t1, 0(t0)
+    la   t0, console_uart
+    lw   s0, 0(t0)               /* remembered for RESTORE_CONSOLE */
+    sw   x0, 0(t0)
 .endm
 
 .macro RESTORE_CONSOLE
     la   t0, console_target
     la   t1, tohost
     STORE_X t1, 0(t0)
+    la   t0, console_uart
+    sw   s0, 0(t0)
 .endm
 
 .macro CLEAR_SINK
@@ -74,6 +84,22 @@ _start:
     LOAD_X t1, 0(t0)
     la   t2, tohost
     bne  t1, t2, fail
+
+    /*
+     * Whether there is a UART is a property of the machine, so neither
+     * answer can be asserted outright. What must hold is that console_init
+     * agreed with reality: the register is readable exactly when it said so.
+     */
+    NEXT_TEST
+    la   t0, console_uart
+    lw   s1, 0(t0)
+    li   t0, UART_ADDR
+    lbu  t1, UART_LSR(t0)
+    beqz s1, 1f
+    EXPECT_NO_TRAP
+    j    2f
+1:  EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
+2:
 
     REDIRECT_CONSOLE
 
