@@ -6,22 +6,29 @@
  * them and none of them are performance sensitive, so there is no reason for
  * each one to carry its own copy.
  *
- * Calling convention, which the tests depend on:
+ * Either pointer mode will do for any of them: they switch to capability mode
+ * themselves and put the caller's mode back on return, working it out from
+ * whether the return address carries a tag. None of them touch the registers
+ * exceptions.h reserves.
  *
- *  - Either pointer mode will do. They switch to capability mode themselves
- *    and put the caller's mode back on return, working it out from whether
- *    the return address carries a tag.
- *  - They clobber a0-a3 and t0-t4, and nothing else. In particular they leave
- *    the registers exceptions.h reserves alone, so a test can still report
- *    test_id after calling one.
+ * These two are meant to be called from a test, and keep to a0-a3 and t0-t4
+ * so that one can be dropped in for a diagnostic:
  *
  *   console_puts(a0 = pointer to a NUL-terminated string)
  *   console_put_dec(a0 = value)     print it in decimal
- *   console_exit(a0 = exit code)    report the code and stop the machine
  *
- * console_init is the exception: SETUP_TRAPS calls it once before a test has
- * begun, and it also uses a4/a5. It probes for the UART, which means trapping
- * where there is none, so it saves and restores everything that disturbs.
+ * The rest are called on the test's behalf, by SETUP_TRAPS,
+ * SKIPPABLE_BLOCK_SKIPPED and TEST_PASS/TEST_FAIL, at points where nothing
+ * the test was holding is still live, so they are freer with registers:
+ *
+ *   console_init()                                    clobbers a0-a5, t0-t4
+ *   console_skip(a0 = reason, a1 = first, a2 = last)  clobbers t0-t4
+ *   console_tap(a0 = cases, a1 = the failing one)     clobbers a0-a7, t0-t6
+ *   console_exit(a0 = exit code)                      does not return
+ *
+ * console_init runs before the test has installed a handler and probes for
+ * the UART, which means trapping where there is none, so it saves and
+ * restores everything that disturbs.
  */
 #pragma once
 
@@ -41,6 +48,12 @@
 #define UART_LSR      5          /* line status; bit 5 = ready for a byte */
 #define UART_LSR_THRE 0x20
 
+/*
+ * How many skipped blocks a test may have. Going over is reported rather than
+ * dropped: a skip that went unrecorded would show up as a case that passed.
+ */
+#define TAP_MAX_SKIPS 8
+
 /* Room for a 64-bit value in decimal, and the NUL. */
 #define DEC_BUF_LEN 24
 
@@ -55,9 +68,11 @@
 #define STORE_X sd
 #define WORD_X  .dword
 #define PTR_SHIFT 3
+#define PTR_BYTES 8
 #else
 #define LOAD_X  lw
 #define STORE_X sw
 #define WORD_X  .word
 #define PTR_SHIFT 2
+#define PTR_BYTES 4
 #endif

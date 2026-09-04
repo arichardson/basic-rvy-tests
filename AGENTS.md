@@ -25,6 +25,19 @@ renumber the rest, and give each one a description: it is what the TAP stream
 calls the case, and is the first thing anyone reads when it fails. Say what
 the case establishes rather than what it does, and keep it to one line.
 
+## Cases a machine cannot run
+
+Where a whole block of cases depends on something implementation-defined, do
+not let it simply not happen: bracket it with `SKIPPABLE_BLOCK_BEGIN` and
+`SKIPPABLE_BLOCK_SKIPPED "<reason>"` so the cases are still numbered and are
+reported as TAP skips with the reason. The case numbers and the plan then mean
+the same thing on every machine, and `test-xepc-detag` (whose IALIGN=32 block
+needs a writable `misa.C`) is the worked example. The assembler does the
+counting, so the block never has to say how many cases it holds.
+
+This is for run-time differences. A subject that does not exist in a build at
+all is an `#ifdef`, and those cases are simply not assembled.
+
 ## Version differences
 
 Prefer writing a case so both versions can run it. Where they genuinely

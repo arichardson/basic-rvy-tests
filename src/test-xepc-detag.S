@@ -104,6 +104,7 @@ _start:
      * cleared at all is WARL, so this whole block is skipped where it holds
      * at 1 regardless -- currently every QEMU target, not the Sail model.
      */
+    SKIPPABLE_BLOCK_BEGIN
     TRY_CLEAR_MISA_C skip_ialign32
 
     csrrs a0, CSR_DDC, x0
@@ -155,7 +156,10 @@ ialign32_recovered:
 
     li   t0, MISA_C               /* leave misa.C as this test found it */
     csrs CSR_MISA, t0
+    j    ialign32_done
 skip_ialign32:
+    SKIPPABLE_BLOCK_SKIPPED "misa.C is hard-wired here so IALIGN=32 is unreachable"
+ialign32_done:
 
     YMODESWI
     TEST_PASS

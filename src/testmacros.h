@@ -78,7 +78,7 @@
     .popsection
     la   a0, 94b
     call console_puts
-    mv   a0, test_id             /* every case ran, and all of them passed */
+    li   a0, __tap_cases         /* every case in the file, skips included */
     li   a1, 0
     call console_tap
     li   a0, 0
