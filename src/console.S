@@ -167,6 +167,41 @@ console_put_dec:
     j    console_puts            /* tail call: it returns to our caller */
 
 /*
+ * Record that cases a1 through a2 could not run here, for the reason a0
+ * names. Several blocks may each report their own, so these accumulate; going
+ * over TAP_MAX_SKIPS sets a flag that console_tap reports, because a skip that
+ * was quietly dropped would leave its cases looking like ones that passed.
+ */
+.globl console_skip
+console_skip:
+    CONSOLE_ENTER
+    csrrs t0, CSR_DDC, x0
+    la   t1, tap_skip_count
+    YADDRW t1, t0, t1
+    LOAD_X t2, 0(t1)
+    li   t3, TAP_MAX_SKIPS
+    bge  t2, t3, 1f              /* no room: say so rather than lose it */
+
+    slli t3, t2, PTR_SHIFT       /* slot = count * 3 pointers */
+    slli t4, t2, PTR_SHIFT + 1
+    add  t3, t3, t4
+    la   t4, tap_skips
+    add  t3, t3, t4
+    YADDRW t3, t0, t3
+    STORE_X a1, 0(t3)
+    STORE_X a2, PTR_BYTES(t3)
+    STORE_X a0, 2 * PTR_BYTES(t3)
+    addi t2, t2, 1
+    STORE_X t2, 0(t1)
+    ret
+
+1:  la   t1, tap_skip_overflow
+    YADDRW t1, t0, t1
+    li   t2, 1
+    STORE_X t2, 0(t1)
+    ret
+
+/*
  * Emit the whole TAP stream: a0 = how many cases ran, a1 = which one failed
  * (0 if none). It is written out here at the end rather than a line at a time
  * as the cases run, because NEXT_TEST would then have to clobber the argument
@@ -187,22 +222,16 @@ console_tap:
     mv   a7, a1
 
     /*
-     * The name table is built at link time, in source order, so entry i names
-     * case i as long as no NEXT_TEST was skipped before a later one ran. A run
-     * that stops early -- which is what a failure does -- leaves the entries it
-     * did reach correct, so require only that the table is long enough rather
-     * than an exact match, or the failing case would be the one case to lose
-     * its name.
+     * Entry i of the table names case i: NEXT_TEST emits it and loads test_id
+     * from the same assembly-time counter, so the two cannot disagree. t5 is
+     * how many entries there are, which only bounds the loop below.
      */
     csrrs t6, CSR_DDC, x0        /* kept for the table loads below */
     la   t0, __tapnames_start
     la   t1, __tapnames_end
-    sub  t1, t1, t0
-    srli t1, t1, PTR_SHIFT
-    li   t5, 1
-    bgeu t1, a6, 5f              /* enough entries to cover the cases that ran */
-    li   t5, 0
-5:
+    sub  t5, t1, t0
+    srli t5, t5, PTR_SHIFT
+
     li   a5, 1
 1:  blt  a6, a5, 2f              /* while i <= total */
     bne  a7, a5, 3f              /* canonical order: a7 > a5 */
@@ -213,7 +242,7 @@ console_tap:
     mv   a0, a5
     jal  ra, console_put_dec
 
-    beqz t5, 6f                  /* no usable names */
+    bltu t5, a5, 6f              /* past the end of the table */
     la   t0, __tapnames_start
     addi t1, a5, -1
     slli t1, t1, PTR_SHIFT
@@ -227,7 +256,27 @@ console_tap:
     jal  ra, console_puts
     mv   a0, a3
     jal  ra, console_puts
-6:  la   a0, .Ltap_nl
+    /* Was this case inside any of the blocks that could not run? */
+6:  la   t0, tap_skip_count
+    YADDRW t0, t6, t0
+    LOAD_X t1, 0(t0)             /* t1 = slots left to look at */
+    la   t2, tap_skips
+    YADDRW t2, t6, t2            /* t2 = the slot being looked at */
+8:  beqz t1, 7f
+    LOAD_X t3, 0(t2)
+    blt  a5, t3, 9f              /* before this range */
+    LOAD_X t3, PTR_BYTES(t2)
+    blt  t3, a5, 9f              /* after it */
+    LOAD_X a3, 2 * PTR_BYTES(t2) /* the reason; survives console_puts */
+    la   a0, .Ltap_skip
+    jal  ra, console_puts
+    mv   a0, a3
+    jal  ra, console_puts
+    j    7f
+9:  YADDI t2, t2, 3 * PTR_BYTES
+    addi t1, t1, -1
+    j    8b
+7:  la   a0, .Ltap_nl
     jal  ra, console_puts
     addi a5, a5, 1
     j    1b
@@ -247,6 +296,7 @@ console_tap:
 .Ltap_ok:    .asciz "ok "
 .Ltap_notok: .asciz "not ok "
 .Ltap_dash:  .asciz " - "
+.Ltap_skip:  .asciz " # SKIP "
 .Ltap_nl:    .asciz "\n"
 
 .section .text
@@ -282,6 +332,17 @@ console_exit:
 .globl console_target
 console_target:
     WORD_X tohost
+
+/* Set by console_skip: one {first, last, reason} per block that could not run. */
+.globl tap_skip_count
+tap_skip_count:
+    WORD_X 0
+.globl tap_skip_overflow
+tap_skip_overflow:
+    WORD_X 0
+.globl tap_skips
+tap_skips:
+    .space 3 * PTR_BYTES * TAP_MAX_SKIPS
 
 /* Set by console_init: non-zero where this machine has the virt UART. */
 .globl console_uart

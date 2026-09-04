@@ -118,6 +118,9 @@
     li   trap_count, 0
 .endm
 
+/* Cases counted so far, at assembly time; see SKIPPABLE_BLOCK_BEGIN. */
+.set __tap_cases, 0
+
 /*
  * Start the next case; a failure from here on reports this id. \desc is what
  * the TAP stream calls the case, and is emitted into a table the linker keeps
@@ -125,18 +128,51 @@
  * clobbering the argument registers, and tests set those up before NEXT_TEST
  * as often as after.
  *
- * The table is in source order, so entry i names case i as long as no
- * NEXT_TEST is skipped before a later one runs. Stopping early is fine, which
- * is what matters: a failing run keeps the names for the cases it reached.
+ * test_id is loaded with the case's own source-order number rather than being
+ * counted up at run time, so it names the same case whatever ran before it and
+ * always indexes the right table entry. A counter would drift the moment a
+ * case was skipped, and the names after it would then be wrong rather than
+ * missing, which is not something the reader could spot.
  */
 .macro NEXT_TEST desc=
-    addi test_id, test_id, 1
+    .set __tap_cases, __tap_cases + 1
+    li   test_id, __tap_cases
     .pushsection .rodata
 79: .asciz "\desc"   /* the quotes go here: the assembler strips the caller's */
     .popsection
     .pushsection .tapnames, "a"
     WORD_X 79b
     .popsection
+.endm
+
+/*
+ * A block of cases that only some machines can run at all. Bracket it with
+ * these so the ones that cannot still appear, as TAP skips, rather than
+ * vanishing: the case numbers and the plan then mean the same thing wherever
+ * the suite runs, and the reason is reported rather than left to be guessed.
+ *
+ *     SKIPPABLE_BLOCK_BEGIN
+ *     TRY_CLEAR_MISA_C 1f
+ *     ... cases ...
+ *     j 2f
+ * 1:  SKIPPABLE_BLOCK_SKIPPED "why not here"
+ * 2:
+ *
+ * The counting is done by the assembler, so the block does not have to say
+ * how many cases it holds and cannot fall out of step with itself.
+ */
+.macro SKIPPABLE_BLOCK_BEGIN
+    .set __tap_skip_from, __tap_cases + 1
+.endm
+
+.macro SKIPPABLE_BLOCK_SKIPPED reason
+    .pushsection .rodata
+78: .asciz "\reason"
+    .popsection
+    la   a0, 78b
+    li   a1, __tap_skip_from
+    li   a2, __tap_cases
+    call console_skip
 .endm
 
 /* Forget any traps taken so far; the next EXPECT_TRAP starts from zero. */

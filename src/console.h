@@ -41,6 +41,12 @@
 #define UART_LSR      5          /* line status; bit 5 = ready for a byte */
 #define UART_LSR_THRE 0x20
 
+/*
+ * How many skipped blocks a test may have. Going over is reported rather than
+ * dropped: a skip that went unrecorded would show up as a case that passed.
+ */
+#define TAP_MAX_SKIPS 8
+
 /* Room for a 64-bit value in decimal, and the NUL. */
 #define DEC_BUF_LEN 24
 
@@ -55,9 +61,11 @@
 #define STORE_X sd
 #define WORD_X  .dword
 #define PTR_SHIFT 3
+#define PTR_BYTES 8
 #else
 #define LOAD_X  lw
 #define STORE_X sw
 #define WORD_X  .word
 #define PTR_SHIFT 2
+#define PTR_BYTES 4
 #endif
