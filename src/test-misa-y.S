@@ -25,14 +25,14 @@ _start:
     SETUP_TRAPS
 
     /* Test 1: misa.Y is set (1) at reset */
-    NEXT_TEST
+    NEXT_TEST "misa.Y is set at reset"
     csrr t0, CSR_MISA
     li   t1, MISA_Y
     and  t2, t0, t1
     beqz t2, fail
 
     /* Test 2: menvcfg resets to 0; CRE is bit 9; bit 28 is not writable */
-    NEXT_TEST
+    NEXT_TEST "menvcfg resets to 0 and CRE is bit 9 not bit 28"
     csrr t0, CSR_MENVCFG
     bnez t0, fail
     li   t1, MENVCFG_CRE
@@ -54,7 +54,7 @@ _start:
      * later checks are unaffected. Capability CSR writes need capability
      * pointer mode.
      */
-    NEXT_TEST
+    NEXT_TEST "clearing misa.Y is refused unless every xtvec/xepc is root"
     YMODESWY                             /* enter cap mode */
 
     /*
@@ -106,7 +106,7 @@ _start:
 
     /* Test 4: with every checked register a root capability again,
      * clearing misa.Y succeeds */
-    NEXT_TEST
+    NEXT_TEST "with all of them root again misa.Y clears"
     li   t1, MISA_Y
     csrc CSR_MISA, t1
     csrr t0, CSR_MISA
@@ -118,33 +118,33 @@ _start:
      * CSR it adds must read as illegal rather than as some stale value. The
      * CSRs are checked one at a time so a failure names the one at fault.
      */
-    NEXT_TEST
+    NEXT_TEST "with Y clear an RVY instruction is illegal"
     YAMASK t2, t0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST
+    NEXT_TEST "with Y clear reading ddc is illegal"
     csrrs t2, CSR_DDC, x0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST
+    NEXT_TEST "with Y clear reading mtidc is illegal"
     csrrs t2, CSR_MTIDC, x0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST
+    NEXT_TEST "with Y clear reading stidc is illegal"
     csrrs t2, CSR_STIDC, x0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST
+    NEXT_TEST "with Y clear reading utidc is illegal"
     csrrs t2, CSR_UTIDC, x0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     /* Writes are gone too, not just reads. */
-    NEXT_TEST
+    NEXT_TEST "with Y clear writing mtidc is illegal"
     csrw CSR_MTIDC, x0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     /* Test 6: misa.Y can be set again and RVY instructions work */
-    NEXT_TEST
+    NEXT_TEST "misa.Y can be set again and RVY instructions work"
     li   t1, MISA_Y
     csrs CSR_MISA, t1
     csrr t0, CSR_MISA
@@ -155,7 +155,7 @@ _start:
     EXPECT_NO_TRAP
 
     /* ... and so do the CSRs it adds. */
-    NEXT_TEST
+    NEXT_TEST "and so do the CSRs the extension adds"
     csrrs t2, CSR_DDC, x0
     csrrs t2, CSR_MTIDC, x0
     csrrs t2, CSR_STIDC, x0
@@ -163,7 +163,7 @@ _start:
     EXPECT_NO_TRAP
 
     /* Test 7: S-mode CHERI enable is menvcfg.CRE */
-    NEXT_TEST
+    NEXT_TEST "S-mode CHERI is gated by menvcfg.CRE"
     li   t0, -1                  /* PMP entry 0: allow everything */
     csrw CSR_PMPADDR0, t0
     li   t0, 0x1f                /* NAPOT, RWX */

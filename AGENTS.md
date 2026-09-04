@@ -21,7 +21,9 @@ change makes it wrong, the comment is part of the change.
 4. End with `TEST_PASS`, and a `fail:` label reaching `TEST_FAIL`.
 
 Number cases with `NEXT_TEST` rather than literals, so inserting one does not
-renumber the rest.
+renumber the rest, and give each one a description: it is what the TAP stream
+calls the case, and is the first thing anyone reads when it fails. Say what
+the case establishes rather than what it does, and keep it to one line.
 
 ## Version differences
 

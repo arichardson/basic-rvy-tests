@@ -48,7 +48,7 @@ _start:
      * Test 1: a sentry sealed over a plain callable capability unseals on
      * mret and resumes there, exactly like a JALR to the same sentry would.
      */
-    NEXT_TEST
+    NEXT_TEST "mret unseals a sentry epcc and resumes there"
     auipc a0, 0
     la   t0, good_target
     YADDRW a0, a0, t0
@@ -66,7 +66,7 @@ good_target:
     YTYPER t0, a0
     bnez t0, fail
     YMODESWI
-    NEXT_TEST
+    NEXT_TEST "a target without execute permission faults at the fetch not at mret"
 
     /*
      * Test 2: a capability missing execute permission is not checked by mret

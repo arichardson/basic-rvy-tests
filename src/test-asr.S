@@ -26,13 +26,13 @@ _start:
     YMODESWY                     /* capability mode: jalr takes a capability */
 
     /* The M-mode root PCC grants ASR, so these all work to begin with. */
-    NEXT_TEST
+    NEXT_TEST "root pcc grants ASR so cbo.inval reports the capability fault"
     csrr t0, CSR_MTVEC
     CBO_INVAL x0                 /* NULL cap, but ASR is checked first ... */
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)  /* ... so this is the capability fault */
 
     /* Build a PCC-derived capability with ASR removed and call into it. */
-    NEXT_TEST
+    NEXT_TEST "a pcc without ASR still runs, and consumes its own traps"
     auipc a0, 0
     la   t0, asr_stub
     YADDRW a0, a0, t0
@@ -46,7 +46,7 @@ _start:
     EXPECT_NO_TRAP               /* the stub consumed all of its own traps */
 
     /* Back on the root PCC, ASR-gated CSRs work again. */
-    NEXT_TEST
+    NEXT_TEST "back on the root pcc the ASR-gated CSRs work again"
     csrr t0, CSR_MTVEC
     EXPECT_NO_TRAP
 
@@ -64,12 +64,12 @@ fail:
 .balign 8
 asr_stub:
     /* Reading an M-mode CSR needs ASR */
-    NEXT_TEST
+    NEXT_TEST "reading an M-mode CSR needs ASR"
     csrr t0, CSR_MTVEC
     EXPECT_TRAP TRAP_ASR_DENIED
 
     /* So does writing one (mscratch is scratch, so a stray write is safe) */
-    NEXT_TEST
+    NEXT_TEST "writing an M-mode CSR needs ASR"
     csrw CSR_MSCRATCH, x0
     EXPECT_TRAP TRAP_ASR_DENIED
 
@@ -79,7 +79,7 @@ asr_stub:
      * instruction, which outranks them, while 0.9.3 makes ASR one more
      * permission and so reaches the tag check first.
      */
-    NEXT_TEST
+    NEXT_TEST "cbo.inval without ASR: illegal on RVY, tag fault on 0.9.3"
     CBO_INVAL x0
 #ifdef CHERI_093
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
@@ -88,7 +88,7 @@ asr_stub:
 #endif
 
     /* ddc has no privilege bits in its CSR number, so it needs no ASR */
-    NEXT_TEST
+    NEXT_TEST "ddc has no privilege bits in its number so needs no ASR"
     csrrs t0, CSR_DDC, x0
     EXPECT_NO_TRAP
 

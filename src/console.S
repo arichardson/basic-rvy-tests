@@ -186,6 +186,23 @@ console_tap:
     mv   a6, a0
     mv   a7, a1
 
+    /*
+     * The name table is built at link time, in source order, so entry i names
+     * case i as long as no NEXT_TEST was skipped before a later one ran. A run
+     * that stops early -- which is what a failure does -- leaves the entries it
+     * did reach correct, so require only that the table is long enough rather
+     * than an exact match, or the failing case would be the one case to lose
+     * its name.
+     */
+    csrrs t6, CSR_DDC, x0        /* kept for the table loads below */
+    la   t0, __tapnames_start
+    la   t1, __tapnames_end
+    sub  t1, t1, t0
+    srli t1, t1, PTR_SHIFT
+    li   t5, 1
+    bgeu t1, a6, 5f              /* enough entries to cover the cases that ran */
+    li   t5, 0
+5:
     li   a5, 1
 1:  blt  a6, a5, 2f              /* while i <= total */
     bne  a7, a5, 3f              /* canonical order: a7 > a5 */
@@ -196,7 +213,21 @@ console_tap:
     mv   a0, a5
     jal  ra, console_put_dec
 
-    la   a0, .Ltap_nl
+    beqz t5, 6f                  /* no usable names */
+    la   t0, __tapnames_start
+    addi t1, a5, -1
+    slli t1, t1, PTR_SHIFT
+    add  t0, t0, t1
+    YADDRW t0, t6, t0
+    LOAD_X a3, 0(t0)             /* the name, which survives console_puts */
+    YADDRW t0, t6, a3
+    lbu  t1, 0(t0)
+    beqz t1, 6f                  /* this case was not given one */
+    la   a0, .Ltap_dash
+    jal  ra, console_puts
+    mv   a0, a3
+    jal  ra, console_puts
+6:  la   a0, .Ltap_nl
     jal  ra, console_puts
     addi a5, a5, 1
     j    1b
@@ -215,6 +246,7 @@ console_tap:
 .Ltap_plan:  .asciz "1.."
 .Ltap_ok:    .asciz "ok "
 .Ltap_notok: .asciz "not ok "
+.Ltap_dash:  .asciz " - "
 .Ltap_nl:    .asciz "\n"
 
 .section .text

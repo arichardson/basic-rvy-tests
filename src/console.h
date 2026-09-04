@@ -54,8 +54,10 @@
 #define LOAD_X  ld
 #define STORE_X sd
 #define WORD_X  .dword
+#define PTR_SHIFT 3
 #else
 #define LOAD_X  lw
 #define STORE_X sw
 #define WORD_X  .word
+#define PTR_SHIFT 2
 #endif

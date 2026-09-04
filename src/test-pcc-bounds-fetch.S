@@ -91,19 +91,19 @@ _start:
      */
 
     /* Test 1: the return is entirely out of bounds (0 of 4 bytes) */
-    NEXT_TEST
+    NEXT_TEST "a 4-byte return entirely out of bounds faults"
     EXPECT_FETCH_FAULT stub32, 4, 4, 1
 
     /* Tests 2-4: the return has 1, 2 and 3 of its 4 bytes in bounds */
-    NEXT_TEST
+    NEXT_TEST "a 4-byte return with 1 of its bytes in bounds faults"
     EXPECT_FETCH_FAULT stub32, 5, 4, 1
-    NEXT_TEST
+    NEXT_TEST "a 4-byte return with 2 of its bytes in bounds faults"
     EXPECT_FETCH_FAULT stub32, 6, 4, 1
-    NEXT_TEST
+    NEXT_TEST "a 4-byte return with 3 of its bytes in bounds faults"
     EXPECT_FETCH_FAULT stub32, 7, 4, 1
 
     /* Test 5: all 4 bytes in bounds, ending exactly at the top: runs */
-    NEXT_TEST
+    NEXT_TEST "a 4-byte return ending exactly at pcc.top runs"
     EXPECT_NO_FETCH_FAULT stub32, 8
 
 #ifndef CHERI_093
@@ -112,7 +112,7 @@ _start:
      * target of a jump at the branch rather than on fetch, so there this is
      * a branch fault at the jalr and belongs to a different test.
      */
-    NEXT_TEST
+    NEXT_TEST "the very first instruction being out of bounds faults there"
     EXPECT_FETCH_FAULT stub32, 0, 0, 0
 #endif
 
@@ -122,11 +122,11 @@ _start:
      */
 
     /* Test 7: the compressed return has 1 of its 2 bytes in bounds */
-    NEXT_TEST
+    NEXT_TEST "a compressed return with 1 of its 2 bytes in bounds faults"
     EXPECT_FETCH_FAULT stub16, 3, 2, 1
 
     /* Test 8: both compressed instructions fit exactly: runs */
-    NEXT_TEST
+    NEXT_TEST "two compressed instructions fitting exactly both run"
     EXPECT_NO_FETCH_FAULT stub16, 4
 
     /*
@@ -137,25 +137,25 @@ _start:
      */
 
     /* Test 9: 2 of the 4 bytes in bounds; the marker must not be set */
-    NEXT_TEST
+    NEXT_TEST "a 4-byte instruction at a 2-byte address with 2 bytes in bounds"
     EXPECT_FETCH_FAULT stub_mixed, 4, 2, 0
 
     /* Test 10: 3 of the 4 bytes in bounds */
-    NEXT_TEST
+    NEXT_TEST "a 4-byte instruction at a 2-byte address with 3 bytes in bounds"
     EXPECT_FETCH_FAULT stub_mixed, 5, 2, 0
 
     /*
      * Test 11: all 4 bytes in bounds, so it runs and sets the marker; the
      * fault moves to the following instruction at +6.
      */
-    NEXT_TEST
+    NEXT_TEST "all 4 bytes in bounds so the fault moves to the next instruction"
     EXPECT_FETCH_FAULT stub_mixed, 6, 6, 1
 
     YMODESWI
     TEST_PASS
 
 fail_inexact_bounds:
-    NEXT_TEST               /* YBNDSW could not encode the bounds */
+    NEXT_TEST "ybndsw could not encode the bounds this case needs"
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
     YMODESWI

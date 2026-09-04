@@ -79,7 +79,7 @@ _start:
      * The default target is what the harness reads, and a redirected run
      * cannot check it, so check it before redirecting anything.
      */
-    NEXT_TEST
+    NEXT_TEST "console_target defaults to the address the harness reads"
     la   t0, console_target
     LOAD_X t1, 0(t0)
     la   t2, tohost
@@ -90,7 +90,7 @@ _start:
      * answer can be asserted outright. What must hold is that console_init
      * agreed with reality: the register is readable exactly when it said so.
      */
-    NEXT_TEST
+    NEXT_TEST "console_init agreed with whether the UART is really there"
     la   t0, console_uart
     lw   s1, 0(t0)
     li   t0, UART_ADDR
@@ -104,28 +104,28 @@ _start:
     REDIRECT_CONSOLE
 
     /* One character: the byte and the command word both have to appear. */
-    NEXT_TEST
+    NEXT_TEST "console_putc emits the byte and the HTIF command word"
     CLEAR_SINK
     li   a0, 'X'
     call console_putc
     EXPECT_EMITTED 'X'
 
     /* A string: reaching its last character means the loop ran to the end. */
-    NEXT_TEST
+    NEXT_TEST "console_puts runs the string to its last character"
     CLEAR_SINK
     la   a0, msg_abc
     call console_puts
     EXPECT_EMITTED 'c'
 
     /* A number, whose last digit is emitted last. */
-    NEXT_TEST
+    NEXT_TEST "console_put_dec emits the digits ending with the last"
     CLEAR_SINK
     li   a0, 1234567890
     call console_put_dec
     EXPECT_EMITTED '0'
 
     /* The same from capability mode, which takes the other entry path. */
-    NEXT_TEST
+    NEXT_TEST "console_puts from capability mode emits the same bytes"
     CLEAR_SINK
     YMODESWY
     la   a0, msg_abc
@@ -136,7 +136,7 @@ _start:
     RESTORE_CONSOLE
 
     /* From integer pointer mode: the call comes back in integer mode. */
-    NEXT_TEST
+    NEXT_TEST "a call made in integer mode returns in integer mode"
     la   a0, msg_int
     call console_puts
     la   t0, scratch
@@ -149,7 +149,7 @@ _start:
      * That is what shows the mode was put back rather than left as the
      * helper ran in.
      */
-    NEXT_TEST
+    NEXT_TEST "a call made in capability mode returns in capability mode"
     YMODESWY
     la   a0, msg_cap
     call console_puts
@@ -158,7 +158,7 @@ _start:
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
     /* Still capability mode, so a real capability still works there. */
-    NEXT_TEST
+    NEXT_TEST "a real capability still authorizes a load afterwards"
     csrrs t0, CSR_DDC, x0
     la   t1, scratch
     YADDRW t0, t0, t1
@@ -169,7 +169,7 @@ _start:
      * The decimal printer, which makes a nested call to console_puts and so
      * has to keep its own return address across it.
      */
-    NEXT_TEST
+    NEXT_TEST "console_put_dec keeps its return address across its nested call"
     li   a0, 1234567890
     call console_put_dec
     la   a0, msg_nl
@@ -179,7 +179,7 @@ _start:
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
     /* And back from integer pointer mode again, still in it afterwards. */
-    NEXT_TEST
+    NEXT_TEST "and integer mode is still restored after that"
     YMODESWI
     la   a0, msg_int
     call console_puts
@@ -197,8 +197,8 @@ TRAP_HANDLER
 
 .section .rodata
 msg_abc: .asciz "abc"
-msg_int: .asciz "console: from integer mode\n"
-msg_cap: .asciz "console: from capability mode, decimal "
+msg_int: .asciz "# console: from integer mode\n"
+msg_cap: .asciz "# console: from capability mode, decimal "
 msg_nl:  .asciz "\n"
 
 .section .bss

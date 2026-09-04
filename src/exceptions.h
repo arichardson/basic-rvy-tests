@@ -118,9 +118,25 @@
     li   trap_count, 0
 .endm
 
-/* Start the next case; a failure from here on reports this id. */
-.macro NEXT_TEST
+/*
+ * Start the next case; a failure from here on reports this id. \desc is what
+ * the TAP stream calls the case, and is emitted into a table the linker keeps
+ * in source order rather than being printed here: printing would mean
+ * clobbering the argument registers, and tests set those up before NEXT_TEST
+ * as often as after.
+ *
+ * The table is in source order, so entry i names case i as long as no
+ * NEXT_TEST is skipped before a later one runs. Stopping early is fine, which
+ * is what matters: a failing run keeps the names for the cases it reached.
+ */
+.macro NEXT_TEST desc=
     addi test_id, test_id, 1
+    .pushsection .rodata
+79: .asciz "\desc"   /* the quotes go here: the assembler strips the caller's */
+    .popsection
+    .pushsection .tapnames, "a"
+    WORD_X 79b
+    .popsection
 .endm
 
 /* Forget any traps taken so far; the next EXPECT_TRAP starts from zero. */

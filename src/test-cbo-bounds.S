@@ -37,16 +37,16 @@ _start:
     YBNDSW a0, a0, t1            /* [buf, buf + CBOM_LEN/3) */
 
     /* CLEAN/FLUSH: some bytes of the block are covered, so this is allowed. */
-    NEXT_TEST
+    NEXT_TEST "cbo.clean tolerates a block only partly in bounds"
     CBO_CLEAN a0
     EXPECT_NO_TRAP
 
-    NEXT_TEST
+    NEXT_TEST "cbo.flush tolerates a block only partly in bounds"
     CBO_FLUSH a0
     EXPECT_NO_TRAP
 
     /* ZERO: the rest of the block is not covered, so this faults. */
-    NEXT_TEST
+    NEXT_TEST "cbo.zero faults when any byte of the block is out of bounds"
     CBO_ZERO a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
@@ -54,7 +54,7 @@ _start:
      * INVAL has the same rule under RVY, but 0.9.3 predates it and instead
      * shares CLEAN/FLUSH's weaker "all bytes out of bounds" check.
      */
-    NEXT_TEST
+    NEXT_TEST "cbo.inval: any byte on RVY all bytes on 0.9.3"
     CBO_INVAL a0
 #ifdef CHERI_093
     EXPECT_NO_TRAP
@@ -78,11 +78,11 @@ _start:
     la   t0, buf
     YADDRW a0, a0, t0            /* move back to block 0; bounds stay put */
 
-    NEXT_TEST
+    NEXT_TEST "cbo.clean faults when every byte is out of bounds"
     CBO_CLEAN a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
-    NEXT_TEST
+    NEXT_TEST "cbo.flush faults when every byte is out of bounds"
     CBO_FLUSH a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
@@ -93,11 +93,11 @@ _start:
     li   t1, CBOM_LEN
     YBNDSW a0, a0, t1
 
-    NEXT_TEST
+    NEXT_TEST "cbo.zero passes when the whole block is in bounds"
     CBO_ZERO a0
     EXPECT_NO_TRAP
 
-    NEXT_TEST
+    NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0
     EXPECT_NO_TRAP
 

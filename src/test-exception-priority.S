@@ -40,11 +40,11 @@ _start:
      * what fails, so the encoding is never examined and the reserved
      * encoding at the target goes unnoticed.
      */
-    NEXT_TEST                    /* control: in bounds, so it is decoded */
+    NEXT_TEST "control: a reserved encoding in bounds is decoded and is illegal"
     .word 0                      /* a reserved encoding */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST                    /* ... and out of bounds, so it is not */
+    NEXT_TEST "a pcc bounds fault outranks the illegal instruction at the target"
     YMODESWY
     auipc a0, 0
     la   t0, illegal_target
@@ -63,21 +63,21 @@ _start:
     la   a0, buf
     addi a1, a0, 4               /* never aligned enough for a capability */
 
-    NEXT_TEST                    /* control: authorized, so only misaligned */
+    NEXT_TEST "control: an authorized misaligned capability load is misaligned"
     LY   t1, 0(a1)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
 
-    NEXT_TEST                    /* ... and unauthorized as well */
+    NEXT_TEST "a capability check outranks the misaligned capability load"
     YMODESWY                     /* capability mode: x0 is the NULL capability */
     LY   t1, 4(x0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     YMODESWI
 
-    NEXT_TEST                    /* the same pair for a store */
+    NEXT_TEST "control: an authorized misaligned capability store is misaligned"
     SY   x0, 0(a1)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
 
-    NEXT_TEST
+    NEXT_TEST "a capability check outranks the misaligned capability store"
     YMODESWY
     SY   x0, 4(x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)

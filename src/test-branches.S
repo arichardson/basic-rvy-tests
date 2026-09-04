@@ -29,19 +29,19 @@ _start:
     li   t2, 2
 
     /* Integer pointer mode: the reservation never applies here. */
-    NEXT_TEST
+    NEXT_TEST "reserved operand order is never reserved in integer mode"
     RESERVED_ORDER_BRANCHES
     EXPECT_NO_TRAP
 
     /* Capability mode: not enforced in this configuration either. */
-    NEXT_TEST
+    NEXT_TEST "and is not enforced in capability mode either by default"
     YMODESWY
     RESERVED_ORDER_BRANCHES
     YMODESWI
     EXPECT_NO_TRAP
 
     /* Legal operand orders must of course still work. */
-    NEXT_TEST
+    NEXT_TEST "the canonical operand orders still work"
     LEGAL_ORDER_BRANCHES
     EXPECT_NO_TRAP
 

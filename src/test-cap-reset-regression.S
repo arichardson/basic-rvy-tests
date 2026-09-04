@@ -31,7 +31,7 @@
 
 /* Store \reg, load it back, store that, and compare the two memory images. */
 .macro EXPECT_RESET_ROUNDTRIP reg
-    NEXT_TEST
+    NEXT_TEST "\reg holds bits it can store back untouched since reset"
     la   a0, src
     la   a1, dst
     SY   \reg, 0(a0)
@@ -51,7 +51,7 @@
  * capability they spell, store it back and require the same bits out.
  */
 .macro EXPECT_BITS_ROUNDTRIP lo, hi
-    NEXT_TEST
+    NEXT_TEST "the bit pattern \lo / \hi survives a load and store back"
     la   a0, src
     la   a2, dst
     li   t0, \lo

@@ -15,7 +15,7 @@ _start:
     SETUP_TRAPS
 
     /* Test 1: YAMASK of length 0 -> all-ones mask */
-    NEXT_TEST
+    NEXT_TEST "yamask of length 0 gives an all-ones mask"
     li   t0, 0
     YAMASK t1, t0
     li   t2, -1
@@ -23,7 +23,7 @@ _start:
 
     /* Test 2: YAMASK of an inexactly representable length -> the mask is
      * still contiguous ones in the high bits, but not all-ones */
-    NEXT_TEST
+    NEXT_TEST "yamask of an inexact length rounds to contiguous high bits"
     li   t0, 0x10000001
     YAMASK t1, t0
     not  t2, t1
@@ -42,7 +42,7 @@ _start:
      * operation scbndsi with a scale and a 5-bit immediate, so these regions
      * are specific to the v0.9.9 encoding.
      */
-    NEXT_TEST
+    NEXT_TEST "ybndswi encodes one length from each representable region"
 
 .macro CHECK_YBNDSWI length
     YBNDSWI t1, t0, \length
@@ -72,7 +72,7 @@ _start:
 #endif /* !CHERI_093 */
 
     /* Test 4: YSENTRY (the macro picks each version's encoding) */
-    NEXT_TEST
+    NEXT_TEST "ysentry seals as a sentry and sealing again detags"
     YSENTRY t1, t0
     YTAGR t2, t1                 /* ytagr = 1 */
     beqz t2, fail
@@ -86,24 +86,24 @@ _start:
 
 #ifndef CHERI_093
     /* Test 5: the pre-0.9.9 YSENTRY encoding (2OP space) must be illegal */
-    NEXT_TEST
+    NEXT_TEST "the pre-0.9.9 ysentry encoding is illegal"
     .insn r 0x7b, 0, 0x7b, t1, t0, x0    /* pre-0.9.9 YSENTRY: now illegal */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif
 
 #ifndef CHERI_093
     /* Test 6: SRLIY only accepts shamt == XLEN (0.9.3 has no such form) */
-    NEXT_TEST
+    NEXT_TEST "srliy by XLEN reads the metadata"
     SRLIY t1, t0, __riscv_xlen
     beqz t1, fail                /* pesbt of the root cap is non-zero */
     EXPECT_NO_TRAP
 
-    NEXT_TEST
+    NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
     SRLIY t1, t0, __riscv_xlen - 1    /* reserved shamt */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     /* funct3=5 immediates in neither the SRLIY nor YBNDSWI range */
-    NEXT_TEST
+    NEXT_TEST "a funct3=5 immediate outside both ranges is illegal"
     SRLIY t1, t0, 0x100
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif
