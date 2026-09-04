@@ -42,8 +42,8 @@
 #include "exceptions.h"
 
 /* Write \reg (tagged) to \csr, read it back, and require the given tag. */
-.macro EXPECT_XEPC_TAG csr, reg, tag
-    NEXT_TEST
+.macro EXPECT_XEPC_TAG csr, reg, tag, desc
+    NEXT_TEST "\desc"
     csrw \csr, \reg
     csrrs a2, \csr, x0
     YTAGR t1, a2
@@ -71,8 +71,8 @@ _start:
     YBNDSW a0, a0, t1
 
     /* Aligned: the tag survives the round trip (sanity/decode check). */
-    EXPECT_XEPC_TAG CSR_MEPC, a0, 1
-    EXPECT_XEPC_TAG CSR_SEPC, a0, 1
+    EXPECT_XEPC_TAG CSR_MEPC, a0, 1, "mepc keeps the tag of an aligned capability"
+    EXPECT_XEPC_TAG CSR_SEPC, a0, 1, "sepc keeps the tag of an aligned capability"
 
     /* Misaligned but unsealed: the address rounds down, the tag survives. */
     csrrs a1, CSR_DDC, x0
@@ -81,11 +81,11 @@ _start:
     YADDRW a1, a1, t0
     li   t1, 8
     YBNDSW a1, a1, t1
-    EXPECT_XEPC_TAG CSR_MEPC, a1, 1
-    EXPECT_XEPC_TAG CSR_SEPC, a1, 1
+    EXPECT_XEPC_TAG CSR_MEPC, a1, 1, "mepc keeps the tag of a misaligned unsealed capability"
+    EXPECT_XEPC_TAG CSR_SEPC, a1, 1, "sepc keeps the tag of a misaligned unsealed capability"
 
     /* And that round-down is a real write: it comes back on a plain read too. */
-    NEXT_TEST
+    NEXT_TEST "the address is rounded down on a plain read"
     csrw CSR_MEPC, a1
     csrrs a2, CSR_MEPC, x0
     andi t1, a2, 1
@@ -93,8 +93,8 @@ _start:
 
     /* The same capability sealed as a sentry: now the tag is cleared. */
     YSENTRY a1, a1
-    EXPECT_XEPC_TAG CSR_MEPC, a1, 0
-    EXPECT_XEPC_TAG CSR_SEPC, a1, 0
+    EXPECT_XEPC_TAG CSR_MEPC, a1, 0, "mepc clears the tag of a misaligned sentry"
+    EXPECT_XEPC_TAG CSR_SEPC, a1, 0, "sepc clears the tag of a misaligned sentry"
 
     /*
      * Bit 1 only matters with IALIGN=32, and only on read: legalizing it on
@@ -114,11 +114,11 @@ _start:
     YBNDSW a0, a0, t1
 
     /* Unsealed: the tag survives a plain read despite bit 1 being set. */
-    EXPECT_XEPC_TAG CSR_MEPC, a0, 1
-    EXPECT_XEPC_TAG CSR_SEPC, a0, 1
+    EXPECT_XEPC_TAG CSR_MEPC, a0, 1, "mepc keeps the tag of an unsealed capability with bit 1 set"
+    EXPECT_XEPC_TAG CSR_SEPC, a0, 1, "sepc keeps the tag of an unsealed capability with bit 1 set"
 
     /* But the address is rounded down on read, same as bit 0 above. */
-    NEXT_TEST
+    NEXT_TEST "bit 1 is rounded down on read under IALIGN=32"
     csrw CSR_MEPC, a0
     csrrs a1, CSR_MEPC, x0
     andi t1, a1, 2
@@ -126,8 +126,8 @@ _start:
 
     /* The same capability sealed: reading now legalizes bit 1 and detags. */
     YSENTRY a0, a0
-    EXPECT_XEPC_TAG CSR_MEPC, a0, 0
-    EXPECT_XEPC_TAG CSR_SEPC, a0, 0
+    EXPECT_XEPC_TAG CSR_MEPC, a0, 0, "mepc clears the tag of a sentry with bit 1 set"
+    EXPECT_XEPC_TAG CSR_SEPC, a0, 0, "sepc clears the tag of a sentry with bit 1 set"
 
     /*
      * mret computes its target the same way: it masks bit 1 out of the
@@ -138,7 +138,7 @@ _start:
      * even though the value read out of mepc, taken at face value, still
      * carried a tag.
      */
-    NEXT_TEST
+    NEXT_TEST "mret detags a sentry whose stored address had bit 1 set"
     auipc a0, 0
     la   t0, victim
     ori  t0, t0, 2

@@ -4,6 +4,15 @@ SECTIONS
     . = 0x80000000;
     .text : { *(.text*) }
     .rodata : { *(.rodata*) }
+    /*
+     * One pointer per NEXT_TEST, in source order, so the TAP stream can name
+     * each case. See NEXT_TEST in testmacros.h.
+     */
+    .tapnames : {
+        __tapnames_start = .;
+        KEEP(*(.tapnames))
+        __tapnames_end = .;
+    }
     .data : { *(.data*) }
     .bss : { *(.bss*) }
     /*

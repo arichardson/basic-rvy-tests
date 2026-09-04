@@ -53,27 +53,27 @@ _start:
      * capability grounds or rejected as an illegal instruction; whether that
      * address is readable at all is up to the machine.
      */
-    NEXT_TEST
+    NEXT_TEST "integer mode: lw through x0 is an ordinary access"
     lw   t1, TEST_ADDR(x0)
     EXPECT_ONLY_MEMORY_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "integer mode: sw through x0 is an ordinary access"
     sw   t1, TEST_ADDR(x0)
     EXPECT_ONLY_MEMORY_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "integer mode: fld through x0 is an ordinary access"
     fld  ft1, TEST_ADDR(x0)
     EXPECT_ONLY_MEMORY_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "integer mode: fsd through x0 is an ordinary access"
     fsd  ft1, TEST_ADDR(x0)
     EXPECT_ONLY_MEMORY_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "integer mode: ly through x0 is an ordinary access"
     LY   t1, TEST_ADDR(x0)
     EXPECT_ONLY_MEMORY_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "integer mode: sy through x0 is an ordinary access"
     SY   t2, TEST_ADDR(x0)
     EXPECT_ONLY_MEMORY_FAULT
 
@@ -83,27 +83,27 @@ _start:
      */
     YMODESWY
 
-    NEXT_TEST
+    NEXT_TEST "capability mode: lw through the NULL capability is a tag fault"
     lw   t1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
-    NEXT_TEST
+    NEXT_TEST "capability mode: sw through the NULL capability is a tag fault"
     sw   t1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
-    NEXT_TEST
+    NEXT_TEST "capability mode: fld through the NULL capability is a tag fault"
     fld  ft1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
-    NEXT_TEST
+    NEXT_TEST "capability mode: fsd through the NULL capability is a tag fault"
     fsd  ft1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
-    NEXT_TEST
+    NEXT_TEST "capability mode: ly through the NULL capability is a tag fault"
     LY   t1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
-    NEXT_TEST
+    NEXT_TEST "capability mode: sy through the NULL capability is a tag fault"
     SY   t2, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 

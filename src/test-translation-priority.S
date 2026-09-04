@@ -236,91 +236,91 @@ s_entry:
 
     /* ---- Ordering 1: a capability check outranks the walk ------------- */
 
-    NEXT_TEST
+    NEXT_TEST "an untagged capability outranks the page fault for ly"
     LY   t1, 0(a1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    NEXT_TEST                    /* control: tagged, so the walk's own fault */
+    NEXT_TEST "control: the same address tagged takes the page fault"
     LY   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "an untagged capability outranks the page fault for sy"
     SY   s2, 0(a1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    NEXT_TEST
+    NEXT_TEST "control: the same address tagged takes the store page fault"
     SY   s2, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "an untagged capability outranks the page fault for lr.y"
     LR_Y t1, a1
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    NEXT_TEST
+    NEXT_TEST "control: the same address tagged takes the page fault"
     LR_Y t1, a0
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "an untagged capability outranks the page fault for amoswap.y"
     AMOSWAP_Y t1, a1, s2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    NEXT_TEST
+    NEXT_TEST "control: the same address tagged takes the store page fault"
     AMOSWAP_Y t1, a0, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "an untagged capability outranks the reservation check for sc.y"
     SC_Y t1, a1, s2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    NEXT_TEST                    /* control: well formed, so no capability fault */
+    NEXT_TEST "control: a well formed sc.y raises no capability fault"
     SC_Y t1, a5, s2
     EXPECT_NO_TRAP
 
     /* ---- Ordering 2: a misaligned capability access outranks it too --- */
 
-    NEXT_TEST
+    NEXT_TEST "a misaligned ly outranks the page fault"
     LY   t1, 0(a2)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    NEXT_TEST                    /* control: aligned, so the walk's own fault */
+    NEXT_TEST "control: the aligned ly takes the page fault"
     LY   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "a misaligned sy outranks the store page fault"
     SY   s2, 0(a2)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    NEXT_TEST
+    NEXT_TEST "control: the aligned sy takes the store page fault"
     SY   s2, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "a misaligned lr.y outranks the page fault"
     LR_Y t1, a2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    NEXT_TEST
+    NEXT_TEST "control: the aligned lr.y takes the page fault"
     LR_Y t1, a0
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "a misaligned amoswap.y outranks the store page fault"
     AMOSWAP_Y t1, a2, s2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    NEXT_TEST
+    NEXT_TEST "control: the aligned amoswap.y takes the store page fault"
     AMOSWAP_Y t1, a0, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "a misaligned sc.y outranks the reservation check"
     SC_Y t1, a2, s2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    NEXT_TEST                    /* control: aligned, so no misaligned fault */
+    NEXT_TEST "control: an aligned sc.y raises no misaligned fault"
     SC_Y t1, a5, s2
     EXPECT_NO_TRAP
 
     /* ---- The walk's own faults, per reason and per instruction -------- */
 
     /* An invalid PTE: nothing may go through it. */
-    NEXT_TEST
+    NEXT_TEST "an invalid pte faults an ly"
     LY   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an invalid pte faults an sy"
     SY   s2, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an invalid pte faults an lr.y"
     LR_Y t1, a0
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an invalid pte faults an amoswap.y"
     AMOSWAP_Y t1, a0, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
@@ -328,16 +328,16 @@ s_entry:
      * No read permission (an execute-only page). An AMO needs to read as
      * well as write, so it is refused here too, as a store/AMO fault.
      */
-    NEXT_TEST
+    NEXT_TEST "an execute-only page refuses an ly"
     LY   t1, 0(a6)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an execute-only page refuses an lr.y"
     LR_Y t1, a6
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an execute-only page refuses an sy"
     SY   s2, 0(a6)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an execute-only page refuses an amoswap.y"
     AMOSWAP_Y t1, a6, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
@@ -345,19 +345,19 @@ s_entry:
      * No write permission (a read-only page). Loads go through, so the lr.y
      * also gives the sc.y below a valid reservation to be refused with.
      */
-    NEXT_TEST
+    NEXT_TEST "a read-only page still permits an ly"
     LY   t1, 0(a7)
     EXPECT_NO_TRAP
-    NEXT_TEST
+    NEXT_TEST "a read-only page refuses an sy"
     SY   s2, 0(a7)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "a read-only page refuses an amoswap.y"
     AMOSWAP_Y t1, a7, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "a read-only page permits the lr.y that reserves the address"
     LR_Y t1, a7                  /* permitted, and reserves the address */
     EXPECT_NO_TRAP
-    NEXT_TEST
+    NEXT_TEST "and refuses the sc.y that reservation lets reach the walk"
     SC_Y t1, a7, s2              /* ... so this reaches the walk and is refused */
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
@@ -366,19 +366,19 @@ s_entry:
      * is rewritten before each case so a hardware update does not leave the
      * bit set for the next one.
      */
-    NEXT_TEST
+    NEXT_TEST "an unset accessed bit and an ly"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
     LY   t1, 0(s0)
     EXPECT_AD_FAULT CAUSE_LOAD_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an unset accessed bit and an sy"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
     SY   s2, 0(s0)
     EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an unset accessed bit and an lr.y"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
     LR_Y t1, s0
     EXPECT_AD_FAULT CAUSE_LOAD_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an unset accessed bit and an amoswap.y"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
     AMOSWAP_Y t1, s0, s2
     EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
@@ -387,23 +387,23 @@ s_entry:
      * An unset dirty bit, which only writes care about: the load is
      * unaffected either way, and also reserves the address for the sc.y.
      */
-    NEXT_TEST
+    NEXT_TEST "an unset dirty bit does not affect an ly"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
     LY   t1, 0(s1)
     EXPECT_NO_TRAP
-    NEXT_TEST
+    NEXT_TEST "an unset dirty bit and an sy"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
     SY   s2, 0(s1)
     EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an unset dirty bit and an amoswap.y"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
     AMOSWAP_Y t1, s1, s2
     EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
-    NEXT_TEST
+    NEXT_TEST "an unset dirty bit permits the lr.y that reserves the address"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
     LR_Y t1, s1
     EXPECT_NO_TRAP
-    NEXT_TEST
+    NEXT_TEST "and the sc.y that reservation lets reach the walk"
     SC_Y t1, s1, s2
     EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
 
@@ -413,30 +413,30 @@ s_entry:
     CAP_TO_ALIAS a4, IDX_USER    /* the same, but S-mode may not reach it */
 
     /* 35 only fires for a set tag, so put one in the buffer first. */
-    NEXT_TEST
+    NEXT_TEST "put a tagged capability in the buffer for the loads below"
     SY   s2, 0(a5)
     EXPECT_NO_TRAP
 
     /* The mismatching page really does raise 35 on its own ... */
-    NEXT_TEST
+    NEXT_TEST "the mismatching page raises a load capability fault on its own"
     LY   t1, 0(a3)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     /* ... and the page fault from the same walk still outranks it. */
-    NEXT_TEST
+    NEXT_TEST "but a page fault on the same walk outranks it"
     LY   t1, 0(a4)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "the mismatching page raises it for lr.y too"
     LR_Y t1, a3
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    NEXT_TEST
+    NEXT_TEST "and the page fault still outranks it"
     LR_Y t1, a4
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
-    NEXT_TEST
+    NEXT_TEST "the mismatching page raises it for amoswap.y too"
     AMOSWAP_Y t1, a3, s2
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    NEXT_TEST
+    NEXT_TEST "and the store page fault still outranks it"
     AMOSWAP_Y t1, a4, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 

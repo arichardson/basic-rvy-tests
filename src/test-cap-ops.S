@@ -37,7 +37,7 @@
 
 /* Bound a copy of the authorizing capability and check the decoded length. */
 .macro EXPECT_YBNDSWI_LEN len
-    NEXT_TEST
+    NEXT_TEST "ybndswi encodes a length of \len exactly"
     YMV  a2, a0
     YBNDSWI a2, a2, \len
     EXPECT_TAG a2, 1             /* the length must be exactly encodable */
@@ -88,7 +88,7 @@ _start:
      * immediate still decodes to 4080; it is the bounds that cannot be
      * encoded.
      */
-    NEXT_TEST
+    NEXT_TEST "ybndswi cannot represent 4080 in the RV32 format so it detags"
     YMV  a2, a0
     YBNDSWI a2, a2, 4080
     EXPECT_TAG a2, 0
@@ -100,7 +100,7 @@ _start:
      * YBNDSW is exact: an unaligned base with a large length cannot be
      * encoded, so the result is untagged rather than rounded out.
      */
-    NEXT_TEST
+    NEXT_TEST "ybndsw is exact so bounds it cannot encode detag instead of rounding"
     la   t1, buf
     addi t1, t1, 1
     YADDRW a2, a0, t1
@@ -111,23 +111,23 @@ _start:
 
 #ifndef CHERI_093
     /* SRLIY by XLEN reads the metadata, which 0.9.3 has no encoding for */
-    NEXT_TEST
+    NEXT_TEST "srliy by XLEN reads the capability metadata"
     SRLIY t1, a0, XLEN
     beqz t1, fail
     EXPECT_NO_TRAP
 
     /* Any other shift amount is a reserved encoding */
-    NEXT_TEST
+    NEXT_TEST "srliy by 8 is a reserved shift amount"
     SRLIY t1, a0, 8
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST
+    NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
     SRLIY t1, a0, XLEN - 1
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif
 
     /* a1 is a subset of a0, which the tag reconstruction below builds on. */
-    NEXT_TEST
+    NEXT_TEST "a bounded subset of the authorizing capability keeps its tag"
     YMV  a1, a0
     li   t2, 16
     YBNDSW a1, a1, t2            /* a1 = [buf, buf + 16), a subset of a0 */
@@ -139,7 +139,7 @@ _start:
      * unsealing it under a0 is allowed, and the result comes back unsealed
      * and tagged.
      */
-    NEXT_TEST
+    NEXT_TEST "ysunseal of a sentry under a superset returns it unsealed"
     YSENTRY a2, a1               /* a2 = a1 sealed as a sentry */
     EXPECT_TAG a2, 1
     YTYPER t3, a2
@@ -151,17 +151,17 @@ _start:
     EXPECT_NO_TRAP
 
     /* Unsealing under an authority that is not a superset is refused */
-    NEXT_TEST
+    NEXT_TEST "ysunseal under an authority that is not a superset is refused"
     YSUNSEAL a3, a1, a0          /* a0 is not a subset of a1 */
     EXPECT_TAG a3, 0
 
     /* So is unsealing something that was not sealed to begin with */
-    NEXT_TEST
+    NEXT_TEST "ysunseal of something that was never sealed is refused"
     YSUNSEAL a3, a0, a1
     EXPECT_TAG a3, 0
 
     /* cs1 = c0 is the documented "copy, untag and unseal" corner */
-    NEXT_TEST
+    NEXT_TEST "ysunseal with cs1=c0 copies untags and unseals"
     YSUNSEAL a3, x0, a2
     EXPECT_TAG a3, 0
     YTYPER t3, a3
@@ -171,7 +171,7 @@ _start:
 #endif /* !CHERI_093 */
 
     /* YBLD restores a tag from an authorizing capability. */
-    NEXT_TEST
+    NEXT_TEST "ybld restores a tag from an authorizing capability"
     YMV  a3, a1
     li   t2, 8
     YBNDSW a3, a3, t2            /* a3 = [buf, buf + 8), a subset of a0 */
@@ -185,7 +185,7 @@ _start:
     EXPECT_NO_TRAP
 
     /* Building from an authority that is not a superset is refused */
-    NEXT_TEST
+    NEXT_TEST "ybld from an authority that is not a superset is refused"
     YBLD a4, a3, a0              /* a0 is not a subset of a3 */
     EXPECT_TAG a4, 0
     EXPECT_NO_TRAP

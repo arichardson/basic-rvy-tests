@@ -28,22 +28,22 @@ _start:
     addi a1, a0, 4               /* misaligned for YLEN/8 on RV32 and RV64 */
 
     /* Aligned LR.Y via root DDC succeeds (sanity/decode check) */
-    NEXT_TEST
+    NEXT_TEST "aligned lr.y through root ddc succeeds"
     LR_Y t1, a0
     EXPECT_NO_TRAP
 
     /* Misaligned LR.Y raises a load access fault */
-    NEXT_TEST
+    NEXT_TEST "misaligned lr.y raises a load access fault"
     LR_Y t1, a1
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
 
     /* Misaligned SC.Y raises a store/AMO access fault */
-    NEXT_TEST
+    NEXT_TEST "misaligned sc.y raises a store fault"
     SC_Y t1, a1, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
 
     /* ... and so does misaligned AMOSWAP.Y */
-    NEXT_TEST
+    NEXT_TEST "misaligned amoswap.y raises a store fault"
     AMOSWAP_Y t1, a1, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
 
@@ -51,42 +51,42 @@ _start:
     YMODESWY
 
     /* LR.Y via NULL cap: load-classified tag fault */
-    NEXT_TEST
+    NEXT_TEST "lr.y through the NULL capability is load classified"
     LR_Y t1, x0
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
     /* SC.Y via NULL cap: store-classified tag fault */
-    NEXT_TEST
+    NEXT_TEST "sc.y through the NULL capability is store classified"
     SC_Y t1, x0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* AMOSWAP.Y via NULL cap */
-    NEXT_TEST
+    NEXT_TEST "amoswap.y through the NULL capability is store classified"
     AMOSWAP_Y t1, x0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* Integer AMO via NULL cap: also store-classified (R+W required) */
-    NEXT_TEST
+    NEXT_TEST "an integer amo through the NULL capability is store classified"
     amoswap.w t1, t2, (x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.ZERO via NULL cap */
-    NEXT_TEST
+    NEXT_TEST "cbo.zero through the NULL capability is store classified"
     CBO_ZERO x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.CLEAN via NULL cap */
-    NEXT_TEST
+    NEXT_TEST "cbo.clean through the NULL capability is store classified"
     CBO_CLEAN x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.FLUSH via NULL cap */
-    NEXT_TEST
+    NEXT_TEST "cbo.flush through the NULL capability is store classified"
     CBO_FLUSH x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.INVAL via NULL cap (the M-mode root PCC grants ASR) */
-    NEXT_TEST
+    NEXT_TEST "cbo.inval through the NULL capability is store classified"
     CBO_INVAL x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
