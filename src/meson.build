@@ -194,6 +194,7 @@ if rvy_test_cc_found
                     get_option('rvy_sail_insn_limit').to_string()],
              depends: emulator['depends'],
              timeout: get_option('rvy_test_timeout'),
+             protocol: 'tap',
              suite: ['rvy'])
       else
         qemu_args = t.get('qemu_args', [])
@@ -202,7 +203,8 @@ if rvy_test_cc_found
                args: ['qemu', emulator['path'], elf, machine] + qemu_args,
                depends: emulator['depends'],
                timeout: get_option('rvy_test_timeout'),
-               suite: ['rvy'])
+               protocol: 'tap',
+             suite: ['rvy'])
         endforeach
       endif
     endforeach

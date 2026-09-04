@@ -27,21 +27,20 @@ qemu)
     ;;
 sail)
     INSN_LIMIT=$1
-    # The model's own exit status is the verdict, but it does not print which
-    # case failed, so keep the HTIF console log (-t) to show on failure.
+    # The model writes the guest console to the file -t names rather than to
+    # its own stdout, so that file is where the TAP stream comes from.
     LOGDIR=$(mktemp -d)
     trap 'rm -rf "$LOGDIR"' EXIT
     status=0
     "$EMULATOR" -l "$INSN_LIMIT" -t "$LOGDIR/term" "$ELF" \
         </dev/null >"$LOGDIR/log" 2>&1 || status=$?
-    if [ "$status" != 0 ]; then
-        if [ -s "$LOGDIR/term" ]; then
-            cat "$LOGDIR/term"
-        else
-            # Nothing reached the console: show where the model ended up,
-            # which is where a trap loop or an unimplemented CSR shows up.
-            tail -5 "$LOGDIR/log"
-        fi
+    # The console carries the TAP stream, so it always goes to stdout. The
+    # model's own chatter stays out of it, and is only worth showing when
+    # nothing reached the console at all -- a trap loop or an unimplemented
+    # CSR looks like that. Prefix it so it stays a TAP comment.
+    cat "$LOGDIR/term"
+    if [ "$status" != 0 ] && [ ! -s "$LOGDIR/term" ]; then
+        sed -e 's/^/# /' "$LOGDIR/log" | tail -5
     fi
     exit "$status"
     ;;

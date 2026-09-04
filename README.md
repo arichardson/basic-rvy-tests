@@ -73,11 +73,23 @@ persistent build directory, or per-case results.
 
 ## Reading a failure
 
-A test prints `PASS: <name>` or `FAIL: <name> test <n>` and exits with `n`,
-the number of the case that failed. Cases are numbered by counting
-`NEXT_TEST` from the top of the file, so `test 5` means the fifth of them.
-Tests carry no case names on purpose: the number costs nothing to report from
-assembly, and the comment above the case says what it is.
+Each test writes a TAP stream, so `meson test` reports the individual cases
+rather than one verdict per binary, and `--print-errorlogs` shows which case
+failed and what it was checking:
+
+```
+TAP version 13
+# FAIL: asr test 3
+ok 1 - root pcc grants ASR so cbo.inval reports the capability fault
+ok 2 - a pcc without ASR still runs, and consumes its own traps
+not ok 3 - back on the root pcc the ASR-gated CSRs work again
+1..3
+```
+
+The plan comes last, so a test never has to declare how many cases it has.
+Cases are numbered by counting `NEXT_TEST` from the top of the file, and the
+name is the string that `NEXT_TEST` was given. The process also exits with the
+number of the failing case, which is what the summary line shows.
 
 ## What is covered
 
