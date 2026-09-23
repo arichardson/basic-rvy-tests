@@ -106,6 +106,7 @@ number of the failing case, which is what the summary line shows.
 | `test-console` | The shared console helpers, and that they emit what they are asked to |
 | `test-cbo-bounds` | CBO.ZERO/INVAL fault on any byte out of bounds, CBO.CLEAN/FLUSH only if all are |
 | `test-xepc-detag` | mepc/sepc legalization: misaligned writes, and reads/mret under IALIGN=32 |
+| `test-xtvec-detag` | mtvec/stvec legalization and same-block CSR write visibility |
 | `test-branches` | The reserved `BEQ`/`BNE` operand orders, unenforced |
 | `test-reserved-branches` | The same, with `x-rvy-strict-branches=on` |
 | `test-branch-target-faults` | Control-flow faults are taken at the target, not the branch |
