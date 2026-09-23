@@ -41,6 +41,12 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
+#if __riscv_xlen == 64
+#define REP_BELOW 0x1000
+#else
+#define REP_BELOW 0x100
+#endif
+
 /* Write \reg (tagged) to \csr, read it back, and require the given tag. */
 .macro EXPECT_XEPC_TAG csr, reg, tag, desc
     NEXT_TEST "\desc"
@@ -48,7 +54,7 @@
     csrrs a2, \csr, x0
     YTAGR t1, a2
     li   t2, \tag
-    bne  t1, t2, fail
+    bne  t2, t1, fail
 .endm
 
 .option norvc
@@ -91,6 +97,20 @@ _start:
     andi t1, a2, 1
     bnez t1, fail
 
+    /*
+     * Unsealed at the lower representable limit (rep_base = base - REP_BELOW,
+     * which still has bit 0 set because base = victim + 1): the capability is
+     * tagged before the CSR write, and clearing bit 0 moves the cursor 1 byte
+     * below rep_base, which must clear the tag.
+     */
+    li   t2, REP_BELOW
+    sub  t0, t0, t2              /* t0 = (victim + 1) - REP_BELOW = rep_base */
+    YADDRW a3, a1, t0
+    YTAGR t1, a3
+    beqz t1, fail                /* still representable and tagged before write */
+    EXPECT_XEPC_TAG CSR_MEPC, a3, 0, "mepc clears the tag of an unsealed capability rounded below rep_base"
+    EXPECT_XEPC_TAG CSR_SEPC, a3, 0, "sepc clears the tag of an unsealed capability rounded below rep_base"
+
     /* The same capability sealed as a sentry: now the tag is cleared. */
     YSENTRY a1, a1
     EXPECT_XEPC_TAG CSR_MEPC, a1, 0, "mepc clears the tag of a misaligned sentry"
@@ -124,6 +144,40 @@ _start:
     csrrs a1, CSR_MEPC, x0
     andi t1, a1, 2
     bnez t1, fail
+
+    /*
+     * Unsealed at rep_base = (victim + 2) - REP_BELOW (bit 1 set, bit 0
+     * clear): the CSR write keeps the tag, and reading or executing mret
+     * under IALIGN=32 masks bit 1 (2 bytes below rep_base) and clears the tag.
+     */
+    li   t2, REP_BELOW
+    sub  t0, t0, t2
+    YADDRW a3, a0, t0
+    YTAGR t1, a3
+    beqz t1, fail
+    EXPECT_XEPC_TAG CSR_MEPC, a3, 0, "mepc clears the tag of an unsealed capability when masking bit 1 crosses rep_base"
+    EXPECT_XEPC_TAG CSR_SEPC, a3, 0, "sepc clears the tag of an unsealed capability when masking bit 1 crosses rep_base"
+
+    NEXT_TEST "mret detags an unsealed capability when masking bit 1 crosses rep_base"
+    auipc a4, 0
+    la   t0, victim
+    ori  t0, t0, 2
+    YADDRW a4, a4, t0
+    li   t1, 8
+    YBNDSW a4, a4, t1
+    li   t2, REP_BELOW
+    sub  t0, t0, t2
+    YADDRW a4, a4, t0
+    YTAGR t1, a4
+    beqz t1, fail
+    RESUME_AFTER_FAULT ialign32_unsealed_recovered
+    csrw CSR_MEPC, a4
+    li   t0, 0x1800
+    csrs CSR_MSTATUS, t0
+    mret
+ialign32_unsealed_recovered:
+    EXPECT_TRAP TRAP_CAP_FETCH(CAP_TAG)
+    EXPECT_EPC_TAG 0
 
     /* The same capability sealed: reading now legalizes bit 1 and detags. */
     YSENTRY a0, a0
