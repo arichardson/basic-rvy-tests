@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Corner cases of the capability manipulation instructions:
+ * Corner cases of the capability manipulation and inspection instructions:
  *
  *  - YBNDSWI's 9-bit immediate does not encode the length linearly. It has
  *    four regions (page-sized, byte granular, 8-byte granular and 16-byte
@@ -12,6 +12,13 @@
  *    exactly XLEN; any other shift is a reserved encoding.
  *  - YSUNSEAL and YBLD both reconstruct a tag under an authorizing
  *    capability, and both have several ways to be refused.
+ *  - YTYPER zero-extends the 1-bit CT field (0 unsealed, 1 sentry) regardless
+ *    of tag or metadata integrity.
+ *  - YBLD, YSS, and YPERMR check metadata integrity (non-zero RESERVED0/1
+ *    bits, the RV64 SDP relocation to bits 127:124 in v0.9.9, and the RV32
+ *    reserved AP Quadrant 0 encoding Q=0, M=1, Q0=0). In v0.9.9, YPERMR sets
+ *    bits 15:10 to 1 and zeroes both AP and SDP on any integrity failure; in
+ *    0.9.3 (gcperm), bits 15:10 are 0 and SDP is preserved.
  */
 #define TEST_NAME "cap-ops"
 #include "testmacros.h"
@@ -19,8 +26,16 @@
 
 #if __riscv_xlen == 64
 #define XLEN 64
+#define XBYTES 8
+#define LX ld
+#define SX sd
+#define PESBT_RESERVED0_BIT (1 << 28)
 #else
 #define XLEN 32
+#define XBYTES 4
+#define LX lw
+#define SX sw
+#define PESBT_RESERVED0_BIT (1 << 21)
 #endif
 
 .macro EXPECT_TAG reg, tag
@@ -189,6 +204,63 @@ _start:
     YBLD a4, a3, a0              /* a0 is not a subset of a3 */
     EXPECT_TAG a4, 0
     EXPECT_NO_TRAP
+
+    /*
+     * YTYPER returns 0 for unsealed capabilities (including c0) and 1 for
+     * sentries, even if the sentry is untagged and has corrupted reserved
+     * metadata bits.
+     */
+    NEXT_TEST "ytyper returns 0 for unsealed capabilities and 1 for sentries"
+    YTYPER t3, x0
+    bnez t3, fail
+    YTYPER t3, a0
+    bnez t3, fail
+    YSENTRY a2, a1
+    YTYPER t3, a2
+    li   t4, 1
+    bne  t4, t3, fail
+    SY   a2, 0(a0)
+    LX   t1, XBYTES(a0)
+    li   t2, PESBT_RESERVED0_BIT
+    or   t1, t1, t2
+    SX   t1, XBYTES(a0)
+    LY   a3, 0(a0)
+    EXPECT_TAG a3, 0
+    YTYPER t3, a3
+    li   t4, 1
+    bne  t4, t3, fail
+    EXPECT_NO_TRAP
+
+    /*
+     * Non-zero RESERVED0 metadata bits cause YBLD to detag and YSS to return
+     * 0 in both versions, and cause YPERMR to zero all allocated AP and SDP
+     * bits (matching YPERMR of x0) in v0.9.9 while 0.9.3 gcperm preserves AP
+     * and SDP.
+     */
+    NEXT_TEST "non-zero reserved0 metadata fails ybld, yss, and v0.9.9 ypermr"
+    SY   a1, 0(a0)
+    LX   t1, XBYTES(a0)
+    li   t2, PESBT_RESERVED0_BIT
+    or   t1, t1, t2
+    SX   t1, XBYTES(a0)
+    LY   a3, 0(a0)
+    YBLD a4, a0, a3
+    EXPECT_TAG a4, 0
+    YSS  t3, a3, a3
+    bnez t3, fail
+    YPERMR t3, a3
+#ifdef CHERI_093
+    YPERMR t4, a1
+    bne  t4, t3, fail
+    li   t2, 0xfc00
+    and  t3, t3, t2
+    bnez t3, fail
+#else
+    YPERMR t4, x0
+    bne  t4, t3, fail
+#endif
+    EXPECT_NO_TRAP
+
 
     YMODESWI
     TEST_PASS

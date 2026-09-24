@@ -314,6 +314,9 @@
 .macro YBLD cd, cs1, cs2
     .insn r STD_OPC, 5, 0x06, \cd, \cs1, \cs2 /* cbld */
 .endm
+.macro YSS rd, cs1, cs2
+    .insn r STD_OPC, 6, 0x06, \rd, \cs1, \cs2 /* scss */
+.endm
 .macro YADDI cd, cs1, imm
     .insn i 0x1b, 2, \cd, \cs1, \imm          /* caddi */
 .endm
