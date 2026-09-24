@@ -328,6 +328,22 @@ m_done:
      * MPRV=1, MPP=S before each access and clear MPRV before any check that
      * could branch to fail.
      */
+    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg load and store checks"
+    li   t0, 0x1800
+    csrc CSR_MSTATUS, t0
+    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
+    csrs CSR_MSTATUS, t0
+    LY   t1, 0(a5)
+    csrc CSR_MSTATUS, t0
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+
+    li   t0, 0x1800
+    csrc CSR_MSTATUS, t0
+    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
+    csrs CSR_MSTATUS, t0
+    SY   s2, 0(a5)
+    csrc CSR_MSTATUS, t0
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
     TEST_PASS
 fail:
