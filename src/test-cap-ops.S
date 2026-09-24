@@ -261,6 +261,93 @@ _start:
 #endif
     EXPECT_NO_TRAP
 
+#if __riscv_xlen == 64
+    /*
+     * On RV64, v0.9.9 moved the 4-bit SDP field from pesbt[56:53] (bits
+     * 120:117) to pesbt[63:60] (bits 127:124), shifting RESERVED1 to
+     * pesbt[59:53]. Setting both pesbt[63:60]=0xa and pesbt[56:53]=0x5 puts
+     * non-zero bits into RESERVED1 in both versions: 0.9.3 gcperm still
+     * reports SDP=0x5 and AP, whereas v0.9.9 ypermr zeroes both AP and SDP
+     * (matching YPERMR of x0). Clearing pesbt[59:53] leaves a valid v0.9.9
+     * capability with SDP=0xa that passes ybld and yss, while remaining
+     * malformed (RESERVED1 != 0) in 0.9.3.
+     */
+    NEXT_TEST "rv64 sdp and reserved1 relocation between 0.9.3 and v0.9.9"
+    SY   a1, 0(a0)
+    LX   t1, XBYTES(a0)
+    slli t1, t1, 11
+    srli t1, t1, 11              /* clear pesbt[63:53] */
+    li   t2, (0xa << 60) | (0x5 << 53)
+    or   t2, t1, t2
+    SX   t2, XBYTES(a0)
+    LY   a3, 0(a0)
+    YBLD a4, a0, a3
+    EXPECT_TAG a4, 0
+    YSS  t3, a3, a3
+    bnez t3, fail
+    YPERMR t3, a3
+#ifdef CHERI_093
+    srli t3, t3, 6
+    andi t3, t3, 0xf
+    li   t4, 0x5
+    bne  t4, t3, fail
+#else
+    YPERMR t4, x0
+    bne  t4, t3, fail
+#endif
+    li   t2, (0xa << 60)
+    or   t2, t1, t2
+    SX   t2, XBYTES(a0)
+    LY   a3, 0(a0)
+    YBLD a4, a0, a3
+#ifdef CHERI_093
+    EXPECT_TAG a4, 0
+    YSS  t3, a3, a3
+    bnez t3, fail
+    YPERMR t3, a3
+    srli t3, t3, 6
+    andi t3, t3, 0xf
+    bnez t3, fail
+#else
+    EXPECT_TAG a4, 1
+    YSS  t3, a3, a3
+    beqz t3, fail
+    YPERMR t3, a3
+    srli t3, t3, 6
+    andi t3, t3, 0xf
+    li   t4, 0xa
+    bne  t4, t3, fail
+#endif
+    EXPECT_NO_TRAP
+#else /* __riscv_xlen == 32 */
+    /*
+     * On RV32, Quadrant 0 (Q=0) encodings with bit 1 set (such as
+     * AP_M = 0b00010 at pesbt[29:25]) are reserved in both 0.9.3 and v0.9.9:
+     * YBLD clears the tag, YSS returns 0, 0.9.3 gcperm zeroes AP while
+     * preserving SDP (set to 0b10 at pesbt[31:30]), and v0.9.9 ypermr zeroes
+     * both AP and SDP (matching YPERMR of x0).
+     */
+    NEXT_TEST "rv32 reserved ap quadrant 0 encoding is rejected"
+    SY   a1, 0(a0)
+    LX   t1, XBYTES(a0)
+    slli t1, t1, 7
+    srli t1, t1, 7               /* clear pesbt[31:25] (SDP and AP_M) */
+    li   t2, (0x02 << 30) | (0x02 << 25)
+    or   t1, t1, t2
+    SX   t1, XBYTES(a0)
+    LY   a3, 0(a0)
+    YBLD a4, a0, a3
+    EXPECT_TAG a4, 0
+    YSS  t3, a3, a3
+    bnez t3, fail
+    YPERMR t3, a3
+    YPERMR t4, x0
+#ifdef CHERI_093
+    ori  t4, t4, 0x0080          /* 2-bit SDP=0b10 preserved, all AP bits 0 */
+#endif
+    bne  t4, t3, fail
+    EXPECT_NO_TRAP
+#endif
 
     YMODESWI
     TEST_PASS
