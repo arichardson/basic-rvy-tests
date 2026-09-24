@@ -5,7 +5,8 @@
  *  - menvcfg resets to 0 and its CRE bit is bit 9 (bit 28 is not writable)
  *  - misa.Y can only be cleared while pcc, ddc, and every implemented
  *    xtvec/xepc (mtvecc/mepcc, stvecc/sepcc, vstvecc/vsepcc) are currently
- *    root capabilities; each is checked individually below
+ *    equal to root capabilities (including full architectural and
+ *    software-defined permissions and unsealed CT=0)
  *  - once cleared, RVY instructions and every CSR the extension adds raise
  *    illegal instruction, and both come back when it is set again
  *  - misa.Y can be set again
@@ -78,6 +79,39 @@ _start:
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_SEPC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSTVEC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSEPC, s2
+
+    /*
+     * A capability with full bounds and tag=1 that has a single architectural
+     * or software-defined permission stripped, or is sealed as a sentry, is
+     * also not equal to root and must prevent clearing misa.Y.
+     */
+    csrrs s2, CSR_DDC, x0
+    li    t0, PERM_W
+    YPERMC t1, s2, t0
+    csrrw x0, CSR_DDC, t1
+    li    t5, MISA_Y
+    csrc  CSR_MISA, t5
+    csrr  t6, CSR_MISA
+    and   t6, t6, t5
+    beqz  t6, fail
+
+    li    t0, (1 << 6)           /* single SDP bit */
+    YPERMC t1, s2, t0
+    csrrw x0, CSR_DDC, t1
+    csrc  CSR_MISA, t5
+    csrr  t6, CSR_MISA
+    and   t6, t6, t5
+    beqz  t6, fail
+    csrrw x0, CSR_DDC, s2
+
+    csrrs s2, CSR_MEPC, x0
+    YSENTRY t1, s2               /* root bounds and perms, but sealed (CT=1) */
+    csrrw x0, CSR_MEPC, t1
+    csrc  CSR_MISA, t5
+    csrr  t6, CSR_MISA
+    and   t6, t6, t5
+    beqz  t6, fail
+    csrrw x0, CSR_MEPC, s2
 
     /*
      * pcc itself must also be root. There is no CSR to overwrite it
