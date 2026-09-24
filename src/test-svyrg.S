@@ -1,36 +1,43 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Svyrg / pte.rvy tests (RV64 only; run with -cpu any,Svyrg=on).
+ * Svyrg / pte.rvy tests (RV64 only; run with -cpu rv64,Svyrg=on).
  *
  * Sets up Sv39 paging with 1 GiB gigapage aliases of the RAM at
  * PA 0x80000000, each with different pte.rvy bits, then verifies from
- * S-mode (all loads/stores are capability accesses via ly/sy):
+ * S-mode (and M-mode with MPRV=1):
  *
  *  Base mode (sstatus.YRGE=0, the reset state):
- *   1. pte.y=1 page: capability loads/stores work normally.
- *   2. pte.y=0 page: loads have the tag cleared (no trap); stores with a
- *      set tag raise CHERI Store/AMO Page Fault (cause 36); untagged
- *      stores are unaffected.
- *   3. a page carrying the bits Svyrg allocates may be populated ahead of
- *      time, but using it while they are still reserved raises an ordinary
- *      load page fault (cause 13).
+ *   - pte.y=1 page: capability loads/stores work normally.
+ *   - pte.y=0 page: loads and amoswap.y have the tag cleared (no trap);
+ *     stores with a set tag raise CHERI Store/AMO Page Fault (cause 36);
+ *     untagged stores are unaffected.
+ *   - a page carrying the bits Svyrg allocates may be populated ahead of
+ *     time, but using it while they are still reserved raises an ordinary
+ *     load page fault (cause 13).
  *
  *  Svyrg mode (after setting sstatus.YRGE, which must be writable):
- *   4. rvy=0 page: yr=0/yrg=0 clears loaded tags; yw=0 faults tagged
- *      stores (same observable behavior as base mode).
- *   5. yr=1/yrg=1 S-page: loading a tagged capability raises CHERI Load
- *      Capability Fault (cause 35) while sstatus.SYRG=0 (generation
- *      mismatch) and works normally once SYRG is set.
- *   6. yr=1/yrg=0 U-page (via sstatus.SUM): normal while UYRG=0, faults
- *      with cause 35 once UYRG is set -- with SYRG still set, proving the
- *      generation is selected by pte.u.
- *   7. yw=1/yd=0 page: loads normal (yr=0/yrg=1); storing a tagged
- *      capability raises cause 36 (Svade-style capability dirty
- *      tracking); untagged stores are unaffected.
- *   8. yr=1/yrg=0/yw=0 page, which refuses loads (generation mismatch, 35)
- *      and tagged stores (36) alike: an AMO trips both, and 36 wins.
+ *   - rvy=0 page: yr=0/yrg=0 clears loaded tags on ly and amoswap.y;
+ *     yw=0 faults tagged stores (same observable behavior as base mode).
+ *   - yr=1/yrg=1 S-page: loading a tagged capability raises CHERI Load
+ *     Capability Fault (cause 35) while sstatus.SYRG=0 (generation
+ *     mismatch) and works normally once SYRG is set.
+ *   - yr=0/yrg=0 S-page with SYRG=1: generation mismatch with yr=0 strips
+ *     the loaded tag on ly and amoswap.y without faulting.
+ *   - non-zero rvy on a non-leaf PTE is reserved and raises cause 13/15.
+ *   - yr=1/yrg=0 U-page (via sstatus.SUM): normal while UYRG=0, faults
+ *     with cause 35 once UYRG is set (with SYRG still set, proving the
+ *     generation is selected by pte.u).
+ *   - yw=1/yd=0 page: loads normal (yr=0/yrg=1); storing a tagged
+ *     capability via sy or sc.y raises cause 36 unless the authorizing
+ *     capability lacks PERM_C (so will_store_tag is false); untagged stores
+ *     are unaffected.
+ *   - yr=1/yrg=0/yw=0 page, which refuses loads (generation mismatch, 35)
+ *     and tagged stores (36) alike: an AMO with a tagged source trips both
+ *     and 36 wins, whereas an AMO with x0 raises 35 without modifying memory.
+ *   - M-mode with mstatus.MPRV=1 and MPP=S enforces Svyrg load and store
+ *     checks.
  *
- * Register use: s2 = tagged root capability, a0-a4 = VA aliases of the test
+ * Register use: s2 = tagged root capability, a0-a7 = VA aliases of the test
  * buffer.
  */
 #define TEST_NAME "svyrg"
@@ -109,6 +116,16 @@ _start:
     li   t2, PTE_YR_BIT | PTE_LEAF_RWAD
     or   t2, t2, t1
     sd   t2, 56(t0)
+    /* index 8, VA 0x2_00000000: rvy = yw|yd (yr=0, yrg=0: mismatch strips tag) */
+    li   t2, PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD
+    or   t2, t2, t1
+    sd   t2, 64(t0)
+    /* index 9, VA 0x2_40000000: non-leaf PTE (R=W=X=0, V=1) with rvy!=0 (reserved) */
+    srli t3, t0, 12
+    slli t3, t3, 10
+    li   t2, PTE_YD_BIT | 0x01
+    or   t2, t2, t3
+    sd   t2, 72(t0)
 
     /* satp = Sv39 | PPN(pagetable) */
     la   t0, pagetable
@@ -140,28 +157,37 @@ s_entry:
     add  a4, a0, t0              /* index 6: yrg|yw (yd=0) */
     li   t0, 0x140000000
     add  a5, a0, t0              /* index 7: yr only */
+    li   t0, 0x180000000
+    add  a6, a0, t0              /* index 8: yw|yd (yr=0, yrg=0) */
+    li   t0, 0x1C0000000
+    add  a7, a0, t0              /* index 9: non-leaf PTE with rvy!=0 (reserved) */
 
-    /* Test 1: normal page: capability store + load round-trips the tag */
+    /* Normal page: capability store + load round-trips the tag */
     NEXT_TEST "a normal page round-trips a capability tag"
     SY   s2, 0(a0)
     LY   t1, 0(a0)
     YTAGR t2, t1
     beqz t2, fail
 
-    /* Test 2: base mode, pte.y=0: load clears tag, tagged store faults */
+    /* Base mode, pte.y=0: load and amoswap.y clear tag, tagged store faults */
     NEXT_TEST "base mode pte.y=0 clears loaded tags and faults tagged stores"
     LY   t1, 0(a1)  /* via rvy=0 alias */
     YTAGR t2, t1
     bnez t2, fail
-    SY   s2, 0(a1)  /* tagged -> cause 36 */
+    AMOSWAP_Y t1, a1, x0         /* untagged store succeeds, loaded tag is stripped */
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    SY   s2, 0(a0)               /* restore tagged capability in buffer */
+    SY   s2, 0(a1)               /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
-    SY   x0, 0(a1)  /* NULL (untagged) -> no trap */
+    SY   x0, 0(a1)               /* NULL (untagged) -> no trap */
     EXPECT_NO_TRAP
     /* the untagged store went through: repair the buffer for later tests */
     SY   s2, 0(a0)
 
     /*
-     * Test 3: a2's PTE already carries yr|yrg|yw|yd for the tests below.
+     * a2's PTE already carries yr|yrg|yw|yd for the tests below.
      * Populating it early is fine, but until YRGE is set those bits are
      * reserved, so using the page now must fault like any other reserved
      * PTE bit would.
@@ -178,15 +204,20 @@ s_entry:
     and  t1, t1, t0
     beqz t1, fail
 
-    /* Test 4: rvy=0 page under Svyrg behaves like base pte.y=0 */
+    /* rvy=0 page under Svyrg behaves like base pte.y=0 */
     NEXT_TEST "rvy=0 under Svyrg behaves like base pte.y=0"
     LY   t1, 0(a1)
     YTAGR t2, t1
     bnez t2, fail
+    AMOSWAP_Y t1, a1, x0
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    SY   s2, 0(a6)
     SY   s2, 0(a1)  /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
-    /* Test 5: yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
+    /* yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
     NEXT_TEST "yr=1/yrg=1 faults a tagged load while SYRG=0 and works once set"
     LY   t1, 0(a2)  /* cause 35 (mismatch) */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
@@ -197,7 +228,25 @@ s_entry:
     YTAGR t2, t1
     beqz t2, fail
 
-    /* Test 6: yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
+    /* yr=0/yrg=0 with SYRG=1 strips loaded tags on ly and amoswap.y without faulting */
+    NEXT_TEST "yr=0/yrg=0 with SYRG=1 strips loaded tags on ly and amoswap.y"
+    LY   t1, 0(a6)
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    AMOSWAP_Y t1, a6, s2
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+
+    /* Non-zero rvy on a non-leaf PTE is reserved even when YRGE=1 */
+    NEXT_TEST "rvy bits on a non-leaf PTE fault as reserved"
+    LY   t1, 0(a7)
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    SY   s2, 0(a7)
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+
+    /* yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
     NEXT_TEST "yr=1/yrg=0 on a U-page is selected by UYRG not SYRG"
     LY   t1, 0(a3)  /* UYRG=0 matches yrg=0: normal */
     EXPECT_NO_TRAP
@@ -208,16 +257,31 @@ s_entry:
     LY   t1, 0(a3)  /* cause 35 */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
 
-    /* Test 7: yw=1/yd=0: loads normal, tagged stores fault (Svade) */
-    NEXT_TEST "yw=1/yd=0 allows loads and faults tagged stores"
+    /* yw=1/yd=0: loads normal, tagged stores fault, PERM_C=0 stores strip tag and succeed */
+    NEXT_TEST "yw=1/yd=0 faults tagged stores unless authorizing capability lacks PERM_C"
     LY   t1, 0(a4)  /* yr=0/yrg=1 -> normal */
     EXPECT_NO_TRAP
     YTAGR t2, t1
     beqz t2, fail
     SY   s2, 0(a4)  /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
-    SY   x0, 0(a4)  /* NULL -> no trap */
+    LR_Y t1, a4
+    SC_Y t1, a4, s2 /* reserved tagged sc.y -> cause 36 */
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    LR_Y t1, a4
+    SC_Y t1, a4, x0 /* reserved untagged sc.y -> succeeds */
     EXPECT_NO_TRAP
+    bnez t1, fail
+    YMODESWY
+    YADDRW t3, s2, a4
+    li   t0, PERM_C
+    YPERMC t3, t3, t0            /* t3 lacks PERM_C so will_store_tag is false */
+    SY   s2, 0(t3)
+    EXPECT_NO_TRAP
+    YMODESWI
+    LY   t1, 0(a4)
+    YTAGR t2, t1
+    bnez t2, fail                /* stored without tag */
 
     /*
      * A page whose rvy field refuses both directions: yrg=0 no longer
@@ -239,25 +303,43 @@ s_entry:
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
     /*
-     * An AMO does both, and the specification gives the store/AMO page fault
-     * priority over the load capability fault.
+     * An AMO with a tagged source trips both (yw=0 and yr=1/yrg=0), and the
+     * store/AMO page fault (36) wins; with an untagged source (x0), only the
+     * load capability fault (35) fires and memory stays unmodified.
      */
-    NEXT_TEST "an AMO trips both and the store page fault wins"
+    NEXT_TEST "an AMO with a tagged source trips both and the store page fault wins"
     AMOSWAP_Y t1, a5, s2
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+
+    NEXT_TEST "control: an AMO with x0 skips the store page fault and takes cause 35 without modifying memory"
+    AMOSWAP_Y t1, a5, x0
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    LY   t1, 0(a2)
+    YTAGR t2, t1
+    beqz t2, fail
 
     la   m_continue, m_done
     ecall
 m_done:
+    /*
+     * In M-mode with mstatus.MPRV=1 and MPP=S, data accesses use S-mode
+     * translation and Svyrg generation/tag checks apply. Taking a trap from
+     * M-mode overwrites MPP with M and mret then resets MPP to U, so set
+     * MPRV=1, MPP=S before each access and clear MPRV before any check that
+     * could branch to fail.
+     */
+
     TEST_PASS
 fail:
     /*
      * Everything above runs in S-mode with paging on, where the finisher
      * device is not mapped, so get back to M-mode before reporting.
      */
+    li   t0, (1 << 17)
     la   m_continue, m_fail
     ecall
 m_fail:
+    csrc CSR_MSTATUS, t0
     TEST_FAIL
 
 TRAP_HANDLER
