@@ -249,6 +249,14 @@ __rvy_used_resume_after_fault = 1
     bne  trap_epc, \reg, fail
 .endm
 
+/* ... with this fault address in mtval (v0.9.9; 0.9.3 puts causes in mtval2). */
+.macro EXPECT_TVAL reg
+#ifndef CHERI_093
+    mv   t3, trap_tval2
+    bne  t3, \reg, fail
+#endif
+.endm
+
 /* ... and the capability left in mepc had this tag (TRAP_HANDLER_PCC only). */
 .macro EXPECT_EPC_TAG tag
     li   t3, \tag
@@ -260,6 +268,8 @@ __rvy_used_resume_after_fault = 1
     csrr trap_cause, CSR_MCAUSE
 #ifdef CHERI_093
     csrr trap_tval2, CSR_MTVAL2
+#else
+    csrr trap_tval2, CSR_MTVAL
 #endif
     li   t5, CAUSE_S_ECALL
     bne  t5, trap_cause, 8f

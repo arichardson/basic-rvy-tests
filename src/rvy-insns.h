@@ -27,6 +27,7 @@
 #define CSR_MSCRATCH 0x340
 #define CSR_MEPC    0x341
 #define CSR_MCAUSE  0x342
+#define CSR_MTVAL   0x343
 #define CSR_MTVAL2  0x34B
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
