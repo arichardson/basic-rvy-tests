@@ -1,19 +1,18 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * The four cache-block operations split into two different bounds rules:
- * CBO.ZERO and CBO.INVAL fault if *any* byte of the cache block is outside
- * the authorizing capability, while CBO.CLEAN and CBO.FLUSH only fault if
- * *every* byte is. A capability that covers the front of a block but not the
- * rest is therefore accepted by CLEAN/FLUSH and rejected by ZERO/INVAL, even
- * though all four target the same block through the same capability.
+ * The four cache-block operations split into two different bounds rules and
+ * require store permission on the authorizing capability:
  *
- * The asymmetry exists because CLEAN/FLUSH only write memory back out (or
- * discard a clean copy), so partial coverage is still a legitimate thing to
- * ask for; ZERO and INVAL are destructive across the whole block, so any
- * byte outside the capability makes the whole operation unauthorized.
- *
- * 0.9.3 predates this refinement for INVAL specifically: there it shares
- * CLEAN/FLUSH's weaker rule instead, so that one case is version-dependent.
+ *  - CBO.ZERO and CBO.INVAL fault if *any* byte of the cache block is outside
+ *    the authorizing capability, while CBO.CLEAN and CBO.FLUSH only fault if
+ *    *every* byte is. A capability that covers the front of a block but not
+ *    the rest is therefore accepted by CLEAN/FLUSH and rejected by
+ *    ZERO/INVAL, and a faulting CBO.ZERO leaves the cache block unmodified.
+ *  - 0.9.3 predates this refinement for INVAL specifically: there it shares
+ *    CLEAN/FLUSH's weaker rule instead, so that one case is version-dependent.
+ *  - All four CBOs require W (store) permission on the authorizing capability
+ *    (and R as well for CLEAN/FLUSH/INVAL), reporting a store capability
+ *    permission fault when W is missing even if the whole block is in bounds.
  */
 #define TEST_NAME "cbo-bounds"
 #include "testmacros.h"
@@ -33,6 +32,8 @@ _start:
     csrrs a0, CSR_DDC, x0
     la   t0, buf
     YADDRW a0, a0, t0
+    li   t1, 0x5a
+    sb   t1, 0(a0)               /* sentinel byte to check CBO.ZERO atomicity */
     li   t1, CBOM_LEN / 3
     YBNDSW a0, a0, t1            /* [buf, buf + CBOM_LEN/3) */
 
@@ -45,10 +46,17 @@ _start:
     CBO_FLUSH a0
     EXPECT_NO_TRAP
 
-    /* ZERO: the rest of the block is not covered, so this faults. */
+    /*
+     * ZERO: the rest of the block is not covered, so this faults without
+     * modifying the covered front of the block.
+     */
     NEXT_TEST "cbo.zero faults when any byte of the block is out of bounds"
     CBO_ZERO a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
+    EXPECT_TVAL t0
+    lbu  t2, 0(a0)
+    li   t3, 0x5a
+    bne  t3, t2, fail
 
     /*
      * INVAL has the same rule under RVY, but 0.9.3 predates it and instead
@@ -60,6 +68,7 @@ _start:
     EXPECT_NO_TRAP
 #else
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
+    EXPECT_TVAL t0
 #endif
 
     /*
@@ -96,10 +105,39 @@ _start:
     NEXT_TEST "cbo.zero passes when the whole block is in bounds"
     CBO_ZERO a0
     EXPECT_NO_TRAP
+    lbu  t2, 0(a0)
+    bnez t2, fail
 
     NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0
     EXPECT_NO_TRAP
+
+    /*
+     * Dropping W (store permission) while keeping R and full-block bounds
+     * causes all four CBOs to fault with a store permission violation.
+     */
+    li   t1, DROP_MASK(PERM_W)
+    DROP_PERMS a1, a0, t1
+
+    NEXT_TEST "cbo.zero faults on a read-only capability covering the whole block"
+    CBO_ZERO a1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL t0
+
+    NEXT_TEST "cbo.clean faults on a read-only capability covering the whole block"
+    CBO_CLEAN a1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL t0
+
+    NEXT_TEST "cbo.flush faults on a read-only capability covering the whole block"
+    CBO_FLUSH a1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL t0
+
+    NEXT_TEST "cbo.inval faults on a read-only capability covering the whole block"
+    CBO_INVAL a1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL t0
 
     YMODESWI
     TEST_PASS
