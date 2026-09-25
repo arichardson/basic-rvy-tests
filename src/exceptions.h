@@ -249,12 +249,18 @@ __rvy_used_resume_after_fault = 1
     bne  trap_epc, \reg, fail
 .endm
 
-/* ... with this fault address in mtval (v0.9.9; 0.9.3 puts causes in mtval2). */
+/*
+ * ... with this fault address in mtval (on 0.9.3 QEMU only populates mtval2
+ * for CAUSE_CHERI_ANY, while standard RISC-V exceptions still write mtval).
+ */
 .macro EXPECT_TVAL reg
-#ifndef CHERI_093
-    mv   t3, trap_tval2
-    bne  t3, \reg, fail
+#ifdef CHERI_093
+    li   t3, CAUSE_CHERI_ANY
+    beq  trap_cause, t3, 86f
 #endif
+    csrr t3, CSR_MTVAL
+    bne  t3, \reg, fail
+86:
 .endm
 
 /* ... and the capability left in mepc had this tag (TRAP_HANDLER_PCC only). */

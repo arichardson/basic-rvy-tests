@@ -4,9 +4,11 @@
  * checks for capability atomics and cache-block operations:
  *
  *  - Misaligned capability accesses raise *access* faults (not misaligned
- *    faults) since they cannot be emulated in software: cause 5 for LR.Y
- *    (plain load semantics per the spec's LR.Y page), cause 7 for SC.Y and
- *    AMOSWAP.Y. 0.9.3 predates that and reports them as misaligned.
+ *    faults) since they cannot be emulated in software: cause 5 for LY and LR.Y
+ *    (plain load semantics per the spec's LR.Y page), cause 7 for SY, SC.Y, and
+ *    AMOSWAP.Y, in both integer and capability pointer modes, with mtval
+ *    holding the faulting virtual address. 0.9.3 predates that and reports
+ *    them as misaligned faults (causes 4 and 6).
  *  - In capability mode with cs1=x0 (the NULL capability) or an untagged
  *    capability at a non-zero address, the tag check fails; the reported
  *    cause must be selected by the access type: LR.Y -> CHERI Load Access
@@ -36,22 +38,37 @@ _start:
     LR_Y t1, a0
     EXPECT_NO_TRAP
 
+    /* Misaligned LY raises a load fault and reports the address in mtval */
+    NEXT_TEST "misaligned ly raises a load fault"
+    LY   t1, 0(a1)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+
+    /* Misaligned SY raises a store fault and reports the address in mtval */
+    NEXT_TEST "misaligned sy raises a store fault"
+    SY   t2, 0(a1)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+
     /* Misaligned LR.Y raises a load access fault */
     NEXT_TEST "misaligned lr.y raises a load access fault"
     LR_Y t1, a1
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
 
     /* Misaligned SC.Y raises a store/AMO access fault */
     NEXT_TEST "misaligned sc.y raises a store fault"
     SC_Y t1, a1, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
 
     /* ... and so does misaligned AMOSWAP.Y */
     NEXT_TEST "misaligned amoswap.y raises a store fault"
     AMOSWAP_Y t1, a1, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
 
-    /* Derive untagged, read-only, and non-C capabilities for buf. */
+    /* Derive untagged, read-only, non-C, and misaligned capabilities for buf. */
     csrrs t0, CSR_DDC, x0
     YADDRW a2, x0, a0            /* a2: untagged capability at buf */
     YADDRW a3, t0, a0            /* a3: full-permission capability at buf */
@@ -59,9 +76,36 @@ _start:
     DROP_PERMS a4, a3, t2        /* a4: read-only capability (W=0, R=1, C=1) */
     li   t2, DROP_MASK(PERM_C)
     DROP_PERMS a5, a3, t2        /* a5: data-only capability (W=1, R=1, C=0) */
+    YADDRW a6, t0, a1            /* a6: full-permission capability at buf + 4 */
 
     /* Enter capability mode: cs1=x0 is now the untagged NULL capability. */
     YMODESWY
+
+    /* Misaligned capability accesses in capability mode */
+    NEXT_TEST "capability-mode misaligned ly raises a load fault"
+    LY   t1, 0(a6)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+
+    NEXT_TEST "capability-mode misaligned sy raises a store fault"
+    SY   a3, 0(a6)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+
+    NEXT_TEST "capability-mode misaligned lr.y raises a load access fault"
+    LR_Y t1, a6
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+
+    NEXT_TEST "capability-mode misaligned sc.y raises a store fault"
+    SC_Y t1, a6, a3
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+
+    NEXT_TEST "capability-mode misaligned amoswap.y raises a store fault"
+    AMOSWAP_Y t1, a6, a3
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
 
     /* LR.Y via NULL cap: load-classified tag fault */
     NEXT_TEST "lr.y through the NULL capability is load classified"
