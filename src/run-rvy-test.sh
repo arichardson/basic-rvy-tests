@@ -32,7 +32,7 @@ sail)
     LOGDIR=$(mktemp -d)
     trap 'rm -rf "$LOGDIR"' EXIT
     status=0
-    "$EMULATOR" -l "$INSN_LIMIT" -t "$LOGDIR/term" "$ELF" \
+    "$EMULATOR" --inst-limit "$INSN_LIMIT" --terminal-log "$LOGDIR/term" "$ELF" \
         </dev/null >"$LOGDIR/log" 2>&1 || status=$?
     # The console carries the TAP stream, so it always goes to stdout. The
     # model's own chatter stays out of it, and is only worth showing when
