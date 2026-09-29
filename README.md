@@ -57,10 +57,24 @@ under Sail; `virt` has no HTIF but does have a 16550 UART, which the suite
 probes for at startup and writes to when it is there, so a run prints the
 same thing either way.
 
+To build the test ELFs without running them (for example, to run on another
+system or simulator), configure without any emulator options:
+
+```sh
+meson setup build
+ninja -C build
+```
+
+This produces two sets of ELF binaries under `build/src/0.9.3/` and
+`build/src/0.9.9/` (and registers `rvy-elfs-0.9.3` and `rvy-elfs-0.9.9` alias
+targets). Pass `-Dcheri_versions=0.9.9` or `-Dcheri_versions=0.9.3` to build
+only one set.
+
 Additional `-D` options:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `cheri_versions` | `['0.9.3', '0.9.9']` | CHERI specification versions to build test ELFs for |
 | `infer_test_binary_paths` | `false` | Search `~/cheri/output/sdk/bin` when no emulator options are given |
 | `rvy_test_timeout` | `20` | Wall-clock seconds before a test is considered hung |
 | `rvy_sail_insn_limit` | `20000000` | Instruction budget for the Sail model |
