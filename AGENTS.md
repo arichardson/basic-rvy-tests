@@ -14,7 +14,7 @@ change makes it wrong, the comment is part of the change.
 1. `test-<subject>.S`, with `#define TEST_NAME "<subject>"` before including
    `testmacros.h` and `exceptions.h`.
 2. Add it to `rvy_tests` in `src/meson.build`: no `cheri_versions` key if
-   both CHERI versions have the behaviour, `'cheri_versions': ['v0.9.9']` if
+   both CHERI versions have the behaviour, `'cheri_versions': ['0.9.9']` if
    only RVY does. **A test not in that list never runs**, and nothing will
    tell you so.
 3. Place exactly one `TRAP_HANDLER` or `TRAP_HANDLER_PCC` in the file.
