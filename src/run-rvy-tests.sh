@@ -6,7 +6,7 @@
 # test per case and runs them in parallel; this script just drives that
 # through a throwaway build directory.
 #
-# Usage: run-rvy-tests.sh <emulator> [clang]
+# Usage: run-rvy-tests.sh <qemu-dir|emulator> [clang]
 set -eu
 
 SIM=$1
@@ -15,7 +15,7 @@ SRC_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
-set -- -Drvy_emulators="$SIM"
+set -- -Dqemu="$SIM"
 if [ -n "$CC" ]; then
     set -- "$@" -Drvy_test_cc="$CC"
 fi

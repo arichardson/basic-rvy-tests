@@ -97,15 +97,14 @@ if rvy_test_cc_found
   ]
 
   # Which emulators to test against, and the (xlen, CHERI version, harness)
-  # profile each implies -- inferred from its name, the same heuristic
-  # run-rvy-tests.sh has always used.
+  # profile each implies.
+  rvy_qemu_targets = ['riscv64y', 'riscv32y',
+                      'riscv64cheristd', 'riscv32cheristd']
   rvy_emulators_to_test = []
   if is_variable('emulators')
     # Included from QEMU's build: the target name says the profile exactly.
-    foreach dir : ['riscv64y-softmmu', 'riscv32y-softmmu',
-                   'riscv64cheristd-softmmu', 'riscv32cheristd-softmmu']
-      if dir in target_dirs
-        target_base = dir.split('-')[0]
+    foreach target_base : rvy_qemu_targets
+      if (target_base + '-softmmu') in target_dirs
         rvy_emulator = emulators['qemu-system-' + target_base]
         rvy_emulators_to_test += [{
           'label': target_base,
@@ -118,45 +117,87 @@ if rvy_test_cc_found
       endif
     endforeach
   else
-    # Standalone: -Drvy_emulators names already-built binaries somewhere on
-    # the system. Default paths under ~/cheri/output/sdk/bin are only probed
-    # when -Dinfer_test_binary_paths=true is explicitly set.
-    rvy_emulator_paths = get_option('rvy_emulators')
+    # Standalone: -Dqemu takes one or more QEMU build/install directories or
+    # qemu-system-* binary paths. Both a QEMU build root and an SDK bin/
+    # directory have qemu-system-riscv{64,32}{y,cheristd} at the top level
+    # (and an install prefix has them under bin/). Default paths under
+    # ~/cheri/output/sdk/bin are only probed when -Dinfer_test_binary_paths=true
+    # is explicitly set.
+    qemu_opts = get_option('qemu')
     infer_paths = get_option('infer_test_binary_paths')
-    if rvy_emulator_paths.length() == 0 and not infer_paths
-      error('no emulator given: pass -Drvy_emulators=..., or set ' +
+
+    if qemu_opts.length() == 0 and not infer_paths
+      error('no emulator given: pass -Dqemu=..., or set ' +
             '-Dinfer_test_binary_paths=true to search ~/cheri/output/sdk/bin')
     endif
-    if rvy_emulator_paths.length() == 0 and infer_paths
+
+    qemu_inputs = qemu_opts
+    if qemu_inputs.length() == 0 and infer_paths
       rvy_sdk_bin = fs.expanduser('~/cheri/output/sdk/bin')
       if fs.is_dir(rvy_sdk_bin)
-        foreach name : ['qemu-system-riscv64y', 'qemu-system-riscv32y',
-                         'qemu-system-riscv64cheristd', 'qemu-system-riscv32cheristd']
-          candidate = rvy_sdk_bin / name
-          if fs.exists(candidate)
-            rvy_emulator_paths += [candidate]
-          endif
-        endforeach
-      endif
-      if rvy_emulator_paths.length() > 0
-        message('inferred QEMU build(s) under ' + rvy_sdk_bin)
+        qemu_inputs = [rvy_sdk_bin]
       endif
     endif
 
-    foreach emulator : rvy_emulator_paths
-      name = fs.name(emulator)
+    qemu_bins = []
+    foreach qemu_entry : qemu_inputs
+      qemu_path = fs.expanduser(qemu_entry)
+      if fs.is_file(qemu_path)
+        qemu_bins += [qemu_path]
+      elif fs.is_dir(qemu_path)
+        qemu_found = 0
+        foreach target_base : rvy_qemu_targets
+          bin_name = 'qemu-system-' + target_base
+          cand = ''
+          foreach subpath : [bin_name, 'bin' / bin_name,
+                             (target_base + '-softmmu') / bin_name]
+            if cand == '' and fs.exists(qemu_path / subpath)
+              cand = qemu_path / subpath
+            endif
+          endforeach
+          if cand != ''
+            qemu_found += 1
+            qemu_bins += [cand]
+          endif
+        endforeach
+        if qemu_opts.length() == 0 and qemu_found > 0
+          message('inferred QEMU build(s) under ' + qemu_path)
+        elif qemu_opts.length() > 0 and qemu_found == 0
+          error('-Dqemu=@0@ contains no qemu-system-riscv{64,32}{y,cheristd} binaries'
+                .format(qemu_entry))
+        endif
+      elif qemu_opts.length() > 0
+        error('-Dqemu: @0@ not found'.format(qemu_entry))
+      endif
+    endforeach
+
+    foreach qemu_bin : qemu_bins
+      dev_help = run_command(qemu_bin, '-device', 'any-riscv-cpu,help', check: false)
+      cpu_help = run_command(qemu_bin, '-cpu', 'help', check: false)
+      dev_out = dev_help.stdout() + dev_help.stderr()
+      cpu_out = cpu_help.stdout()
+      if dev_out.contains('Zysentry') or dev_out.contains('Svyrg')
+        cheri_ver = 'v0.9.9'
+      elif dev_out.contains('cheri_pte') or dev_out.contains('Zyhybrid')
+        cheri_ver = '0.9.3'
+      else
+        error('@0@ does not support RVY v0.9.9 or CHERI 0.9.3'.format(qemu_bin))
+      endif
+      xlen = cpu_out.contains('rv32') ? 32 : 64
+      label = 'riscv@0@@1@'.format(xlen, cheri_ver == '0.9.3' ? 'cheristd' : 'y')
       rvy_emulators_to_test += [{
-        'label': name,
-        'path': emulator,
+        'label': label,
+        'path': qemu_bin,
         'depends': [],
-        'xlen': (name.contains('riscv32') or name.contains('rv32')) ? 32 : 64,
-        'cheri_version': (name.contains('cheristd') or name.contains('sail')) ? '0.9.3' : 'v0.9.9',
-        'harness': name.contains('sail') ? 'sail' : 'qemu',
+        'xlen': xlen,
+        'cheri_version': cheri_ver,
+        'harness': 'qemu',
       }]
     endforeach
+
     if rvy_emulators_to_test.length() == 0
       error('no emulators found under ~/cheri/output/sdk/bin; pass ' +
-            '-Drvy_emulators=/path/to/qemu-system-riscv64y explicitly')
+            '-Dqemu=... explicitly')
     endif
   endif
 
