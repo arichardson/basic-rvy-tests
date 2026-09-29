@@ -119,11 +119,15 @@ if rvy_test_cc_found
     endforeach
   else
     # Standalone: -Drvy_emulators names already-built binaries somewhere on
-    # the system. Left unset, fall back to whichever of the four QEMU
-    # targets a cheribuild SDK output tree has, so a bare `meson test` does
-    # something useful without always having to be told where they are.
+    # the system. Default paths under ~/cheri/output/sdk/bin are only probed
+    # when -Dinfer_test_binary_paths=true is explicitly set.
     rvy_emulator_paths = get_option('rvy_emulators')
-    if rvy_emulator_paths.length() == 0
+    infer_paths = get_option('infer_test_binary_paths')
+    if rvy_emulator_paths.length() == 0 and not infer_paths
+      error('no emulator given: pass -Drvy_emulators=..., or set ' +
+            '-Dinfer_test_binary_paths=true to search ~/cheri/output/sdk/bin')
+    endif
+    if rvy_emulator_paths.length() == 0 and infer_paths
       rvy_sdk_bin = fs.expanduser('~/cheri/output/sdk/bin')
       if fs.is_dir(rvy_sdk_bin)
         foreach name : ['qemu-system-riscv64y', 'qemu-system-riscv32y',
@@ -135,7 +139,7 @@ if rvy_test_cc_found
         endforeach
       endif
       if rvy_emulator_paths.length() > 0
-        message('no -Drvy_emulators given: defaulting to the SDK build(s) under ' + rvy_sdk_bin)
+        message('inferred QEMU build(s) under ' + rvy_sdk_bin)
       endif
     endif
 
@@ -151,8 +155,8 @@ if rvy_test_cc_found
       }]
     endforeach
     if rvy_emulators_to_test.length() == 0
-      warning('no emulator given: configure with ' +
-              '-Drvy_emulators=/path/to/qemu-system-riscv64y to run the suite')
+      error('no emulators found under ~/cheri/output/sdk/bin; pass ' +
+            '-Drvy_emulators=/path/to/qemu-system-riscv64y explicitly')
     endif
   endif
 

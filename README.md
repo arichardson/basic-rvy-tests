@@ -53,10 +53,11 @@ under Sail; `virt` has no HTIF but does have a 16550 UART, which the suite
 probes for at startup and writes to when it is there, so a run prints the
 same thing either way.
 
-Two more `-D` options, both optional:
+Additional `-D` options:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `infer_test_binary_paths` | `false` | Search `~/cheri/output/sdk/bin` when no emulator options are given |
 | `rvy_test_timeout` | `20` | Wall-clock seconds before a test is considered hung |
 | `rvy_sail_insn_limit` | `20000000` | Instruction budget for the Sail model |
 
