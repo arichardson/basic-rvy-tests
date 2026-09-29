@@ -118,17 +118,19 @@ if rvy_test_cc_found
     endforeach
   else
     # Standalone: -Dqemu takes one or more QEMU build/install directories or
-    # qemu-system-* binary paths. Both a QEMU build root and an SDK bin/
-    # directory have qemu-system-riscv{64,32}{y,cheristd} at the top level
-    # (and an install prefix has them under bin/). Default paths under
-    # ~/cheri/output/sdk/bin are only probed when -Dinfer_test_binary_paths=true
-    # is explicitly set.
+    # qemu-system-* binary paths, and -Dsail_099 / -Dsail_093 point at the
+    # Sail simulators. Both a QEMU build root and an SDK bin/ directory have
+    # qemu-system-riscv{64,32}{y,cheristd} at the top level (and an install
+    # prefix has them under bin/). Default paths under ~/cheri/output/sdk/bin
+    # are only probed when -Dinfer_test_binary_paths=true is explicitly set.
     qemu_opts = get_option('qemu')
+    sail_099 = get_option('sail_099')
+    sail_093 = get_option('sail_093')
     infer_paths = get_option('infer_test_binary_paths')
 
-    if qemu_opts.length() == 0 and not infer_paths
-      error('no emulator given: pass -Dqemu=..., or set ' +
-            '-Dinfer_test_binary_paths=true to search ~/cheri/output/sdk/bin')
+    if qemu_opts.length() == 0 and sail_099.length() == 0 and sail_093.length() == 0 and not infer_paths
+      error('no emulator given: pass -Dqemu=..., -Dsail_099=..., or -Dsail_093=..., ' +
+            'or set -Dinfer_test_binary_paths=true to search ~/cheri/output/sdk/bin')
     endif
 
     qemu_inputs = qemu_opts
@@ -195,9 +197,69 @@ if rvy_test_cc_found
       }]
     endforeach
 
+    rvy_sail_bin_names = ['sail_riscv_sim', 'riscv_sim_rv64d', 'riscv_sim_rv32d',
+                          'cheri_riscv_sim_RV64', 'cheri_riscv_sim_RV32']
+    foreach sail_opt : [
+      {'opt': 'sail_099', 'label': 'sail-0.9.9', 'cheri_version': 'v0.9.9'},
+      {'opt': 'sail_093', 'label': 'sail-0.9.3', 'cheri_version': '0.9.3'},
+    ]
+      sail_bins = []
+      foreach sail_entry : get_option(sail_opt['opt'])
+        sail_path = fs.expanduser(sail_entry)
+        if fs.is_file(sail_path)
+          sail_bins += [sail_path]
+        elif fs.is_dir(sail_path)
+          sail_found = 0
+          foreach bin_name : rvy_sail_bin_names
+            cand = ''
+            foreach subpath : [bin_name, 'c_emulator' / bin_name, 'bin' / bin_name]
+              if cand == '' and fs.exists(sail_path / subpath)
+                cand = sail_path / subpath
+              endif
+            endforeach
+            if cand != ''
+              sail_found += 1
+              sail_bins += [cand]
+            endif
+          endforeach
+          if sail_found == 0
+            error('-D@0@=@1@ contains no Sail simulator binaries'
+                  .format(sail_opt['opt'], sail_entry))
+          endif
+        else
+          error('-D@0@: @1@ not found'.format(sail_opt['opt'], sail_entry))
+        endif
+      endforeach
+
+      foreach sail_bin : sail_bins
+        arch_probe = run_command(sail_bin, '-a', check: false)
+        arch_str = arch_probe.stdout().strip()
+        if arch_probe.returncode() == 0 and (arch_str == 'RV32' or arch_str == 'RV64')
+          xlen = arch_str == 'RV32' ? 32 : 64
+        else
+          cfg_probe = run_command(sail_bin, '--print-default-config', check: false)
+          if cfg_probe.returncode() == 0
+            xlen = cfg_probe.stdout().contains('"xlen": 32') ? 32 : 64
+          else
+            sail_name = fs.name(sail_bin)
+            xlen = (sail_name.contains('riscv32') or sail_name.contains('rv32') or
+                    sail_name.contains('RV32')) ? 32 : 64
+          endif
+        endif
+        rvy_emulators_to_test += [{
+          'label': '@0@-rv@1@'.format(sail_opt['label'], xlen),
+          'path': sail_bin,
+          'depends': [],
+          'xlen': xlen,
+          'cheri_version': sail_opt['cheri_version'],
+          'harness': 'sail',
+        }]
+      endforeach
+    endforeach
+
     if rvy_emulators_to_test.length() == 0
-      error('no emulators found under ~/cheri/output/sdk/bin; pass ' +
-            '-Dqemu=... explicitly')
+      error('no emulators found under ~/cheri/output/sdk/bin; pass -Dqemu=..., ' +
+            '-Dsail_099=..., or -Dsail_093=... explicitly')
     endif
   endif
 

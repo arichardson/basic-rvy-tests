@@ -21,24 +21,27 @@ It is skipped rather than failing if no RISC-V-capable clang is found;
 `-Drvy_test_cc=/path/to/clang` names one explicitly.
 
 Standalone, point it at a QEMU build or install directory (or specific
-`qemu-system-*` binaries):
+`qemu-system-*` binaries) and/or the Sail simulator binaries:
 
 ```sh
-meson setup build -Dqemu=/path/to/qemu/build
+meson setup build -Dqemu=/path/to/qemu/build -Dsail_093=/path/to/sail_riscv_sim
 meson test -C build
 ```
 
 `-Dqemu` accepts a QEMU build directory, an SDK `bin` directory (or install
 prefix), or a comma-separated list of individual `qemu-system-*` binaries.
 When given a directory, it automatically picks up whichever of the four QEMU
-targets (`qemu-system-riscv{64,32}{y,cheristd}`) are present:
+targets (`qemu-system-riscv{64,32}{y,cheristd}`) are present. `-Dsail_099` and
+`-Dsail_093` select the RVY v0.9.9 and CHERI 0.9.3 Sail simulators explicitly:
 
-| Emulator | XLEN | CHERI version |
+| Emulator / option | XLEN | CHERI version |
 | --- | --- | --- |
 | `qemu-system-riscv64y` | 64 | v0.9.9 |
 | `qemu-system-riscv32y` | 32 | v0.9.9 |
 | `qemu-system-riscv64cheristd` | 64 | 0.9.3 |
 | `qemu-system-riscv32cheristd` | 32 | 0.9.3 |
+| `-Dsail_099` | 64 (or 32) | v0.9.9 |
+| `-Dsail_093` | 64 (or 32) | 0.9.3 |
 
 0.9.3 builds get `-DCHERI_093`, and the tests whose subject only exists in
 v0.9.9 are skipped rather than being made to mean something else.
