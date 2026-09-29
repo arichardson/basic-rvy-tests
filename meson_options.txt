@@ -2,6 +2,10 @@ option('rvy_test_cc', type : 'string', value : '',
        description: 'Bare-metal RISC-V clang for the tests/rvy suite')
 option('qemu', type : 'array', value : [],
        description: 'QEMU build/install directory or qemu-system-* binary path(s)')
+option('sail_099', type : 'array', value : [],
+       description: 'RVY v0.9.9 Sail simulator binary or build directory')
+option('sail_093', type : 'array', value : [],
+       description: 'CHERI 0.9.3 Sail simulator binary or build directory')
 option('infer_test_binary_paths', type : 'boolean', value : false,
        description: 'Infer default emulator paths under ~/cheri/output/sdk/bin when none are specified')
 option('rvy_test_timeout', type : 'integer', value : 20,

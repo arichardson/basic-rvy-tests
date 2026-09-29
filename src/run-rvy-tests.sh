@@ -15,7 +15,17 @@ SRC_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
-set -- -Dqemu="$SIM"
+case "$(basename -- "$SIM")" in
+*sail*099*|*sail*0.9.9*|*sail*rvy*)
+    set -- -Dsail_099="$SIM"
+    ;;
+*sail*)
+    set -- -Dsail_093="$SIM"
+    ;;
+*)
+    set -- -Dqemu="$SIM"
+    ;;
+esac
 if [ -n "$CC" ]; then
     set -- "$@" -Drvy_test_cc="$CC"
 fi
