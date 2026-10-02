@@ -50,13 +50,16 @@
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
 #define CSR_STVEC   0x105
+#define CSR_SSCRATCH 0x140
 #define CSR_SEPC    0x141
 #define CSR_VSTVEC  0x205
+#define CSR_VSSCRATCH 0x240
 #define CSR_VSEPC   0x241
 #define CSR_DDC     0x416
 /* CHERI thread ID registers, readable without ASR but writable only with it. */
 #define CSR_UTIDC   0x480
 #define CSR_STIDC   0x580
+#define CSR_VSTIDC  0x680
 #define CSR_MTIDC   0x780
 #define CSR_MSECCFG 0x747
 
