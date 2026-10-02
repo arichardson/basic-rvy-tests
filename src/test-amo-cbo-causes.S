@@ -1,28 +1,35 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Verify the RVY exception causes, fault addresses (mtval), and permission
- * checks for capability atomics and cache-block operations:
- *
- *  - Misaligned capability accesses raise *access* faults (not misaligned
- *    faults) since they cannot be emulated in software: cause 5 for LY and LR.Y
- *    (plain load semantics per the spec's LR.Y page), cause 7 for SY, SC.Y, and
- *    AMOSWAP.Y, in both integer and capability pointer modes, with mtval
- *    holding the faulting virtual address. 0.9.3 predates that and reports
- *    them as misaligned faults (causes 4 and 6).
- *  - In capability mode with cs1=x0 (the NULL capability) or an untagged
- *    capability at a non-zero address, the tag check fails; the reported
- *    cause must be selected by the access type: LR.Y -> CHERI Load Access
- *    Fault (33); SC.Y, AMOSWAP.Y, integer AMOs (amoswap.w) and all CBOs ->
- *    CHERI Store/AMO Access Fault (34), with mtval holding the faulting
- *    virtual address in v0.9.9.
- *  - AMOSWAP.Y requires the authorizing capability cs1 to grant both R and W
- *    permissions even when storing x0 or an untagged capability (while C is
- *    only required when storing a tagged capability); a W-permission fault
- *    must report a store fault without modifying cd or memory.
+ * RVY exception classification and permission checks for capability
+ * load/store, capability atomic (LR.Y, SC.Y, AMOSWAP.Y), integer AMO, and
+ * Zicbom/Zicboz cache-block operations:
+ *  - Misaligned LY and LR.Y raise a load fault (mcause 4 on 0.9.3, mcause 5
+ *    on v0.9.9) with mtval set to the faulting address; misaligned SY, SC.Y,
+ *    and AMOSWAP.Y raise a store/AMO fault (mcause 6 on 0.9.3, mcause 7 on
+ *    v0.9.9) with mtval set to the faulting address.
+ *  - LR.Y capability faults are load-classified; SC.Y, AMOSWAP.Y, integer
+ *    AMOs, and CBOs (cbo.zero, cbo.clean, cbo.flush, cbo.inval) are
+ *    store/AMO-classified across tag, seal, bounds, and permission checks.
+ *  - AMOSWAP.Y and SC.Y check store permission (W) up front, before checking
+ *    load-cap or store-cap (C) permission; missing W raises a store/AMO
+ *    capability permission fault even when storing x0 or an untagged
+ *    capability, without modifying cd or memory.
+ *  - Write-only capabilities (R=0, W=1) reject LR.Y with a load permission
+ *    fault, allow SC.Y (which requires only W), allow CBO.ZERO (which
+ *    requires only W), and reject AMOSWAP.Y, CBO.CLEAN, and CBO.FLUSH with a
+ *    store/AMO permission fault.
+ *  - LR.Y/SC.Y reservations succeed on matching addresses and fail on repeated
+ *    SC.Y or address mismatch (which also cancels the reservation).
  */
 #define TEST_NAME "amo-cbo-causes"
 #include "testmacros.h"
 #include "exceptions.h"
+
+#if __riscv_xlen == 64
+#define YLEN_BYTES 16
+#else
+#define YLEN_BYTES 8
+#endif
 
 .option norvc
 .section .text
@@ -30,7 +37,7 @@
 _start:
     SETUP_TRAPS
 
-    la   a0, buf                 /* aligned to YLEN/8 */
+    la   a0, buf                 /* aligned to 64 bytes */
     addi a1, a0, 4               /* misaligned for YLEN/8 on RV32 and RV64 */
 
     /* Aligned LR.Y via root DDC succeeds (sanity/decode check) */
@@ -62,21 +69,28 @@ _start:
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
     EXPECT_TVAL a1
 
-    /* ... and so does misaligned AMOSWAP.Y */
+    /* Misaligned AMOSWAP.Y also raises a store/AMO access fault */
     NEXT_TEST "misaligned amoswap.y raises a store fault"
     AMOSWAP_Y t1, a1, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
     EXPECT_TVAL a1
 
-    /* Derive untagged, read-only, non-C, and misaligned capabilities for buf. */
-    csrrs t0, CSR_DDC, x0
+    /* Derive test capabilities covering buf. */
+    csrrs s0, CSR_DDC, x0
     YADDRW a2, x0, a0            /* a2: untagged capability at buf */
-    YADDRW a3, t0, a0            /* a3: full-permission capability at buf */
+    YADDRW a3, s0, a0            /* a3: full-permission capability at buf */
     li   t2, DROP_MASK(PERM_W)
     DROP_PERMS a4, a3, t2        /* a4: read-only capability (W=0, R=1, C=1) */
     li   t2, DROP_MASK(PERM_C)
     DROP_PERMS a5, a3, t2        /* a5: data-only capability (W=1, R=1, C=0) */
-    YADDRW a6, t0, a1            /* a6: full-permission capability at buf + 4 */
+    YADDRW a6, s0, a1            /* a6: full-permission capability at buf + 4 */
+    li   t2, DROP_MASK(PERM_R)
+    DROP_PERMS a7, a3, t2        /* a7: write-only capability (W=1, R=0, C=1) */
+    YSENTRY s1, a3               /* s1: sealed sentry capability at buf */
+    li   t2, YLEN_BYTES
+    YBNDSW s2, a3, t2            /* [buf, buf + YLEN_BYTES) */
+    YADDI  s2, s2, YLEN_BYTES    /* s2: cursor at top (out of bounds) */
+    YADDI  s7, a3, YLEN_BYTES    /* s7: full-permission capability at buf + YLEN_BYTES */
 
     /* Enter capability mode: cs1=x0 is now the untagged NULL capability. */
     YMODESWY
@@ -142,11 +156,99 @@ _start:
     EXPECT_TVAL a0
 
     /*
-     * AMOSWAP.Y through a read-only capability (W=0) must fault with a store
-     * capability permission fault even when storing x0 or an untagged
-     * capability, leaving cd and memory unchanged. Control: dropping only C
-     * (W=1, C=0) permits AMOSWAP.Y when storing x0.
+     * Sealed sentry capability (s1): LR.Y reports a load CAP_SEAL fault;
+     * SC.Y, AMOSWAP.Y, integer AMOs, and CBOs report a store CAP_SEAL fault.
      */
+    NEXT_TEST "lr.y through a sealed sentry faults with load CAP_SEAL"
+    LR_Y t1, s1
+    EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "sc.y through a sealed sentry faults with store CAP_SEAL"
+    SC_Y t1, s1, a3
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "amoswap.y through a sealed sentry faults with store CAP_SEAL"
+    AMOSWAP_Y t1, s1, a3
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "sc.w through a sealed sentry faults with store CAP_SEAL"
+    sc.w t1, x0, (s1)
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "amoswap.w through a sealed sentry faults with store CAP_SEAL"
+    amoswap.w t1, x0, (s1)
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.zero through a sealed sentry faults with store CAP_SEAL"
+    CBO_ZERO s1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.clean through a sealed sentry faults with store CAP_SEAL"
+    CBO_CLEAN s1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.flush through a sealed sentry faults with store CAP_SEAL"
+    CBO_FLUSH s1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.inval through a sealed sentry faults with store CAP_SEAL"
+    CBO_INVAL s1
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
+    EXPECT_TVAL a0
+
+    /*
+     * Out-of-bounds capability (s2 at buf + YLEN_BYTES): LR.Y reports load
+     * CAP_BOUNDS; SC.Y, AMOSWAP.Y, and integer SC.W report store CAP_BOUNDS.
+     */
+    NEXT_TEST "lr.y at capability top faults with load CAP_BOUNDS"
+    LR_Y t1, s2
+    EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
+    EXPECT_TVAL s7
+
+    NEXT_TEST "sc.y at capability top faults with store CAP_BOUNDS"
+    SC_Y t1, s2, a3
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
+    EXPECT_TVAL s7
+
+    NEXT_TEST "amoswap.y at capability top faults with store CAP_BOUNDS"
+    AMOSWAP_Y t1, s2, a3
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
+    EXPECT_TVAL s7
+
+    NEXT_TEST "sc.w at capability top faults with store CAP_BOUNDS"
+    sc.w t1, x0, (s2)
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
+    EXPECT_TVAL s7
+
+    /*
+     * Read-only capability (a4, W=0): SC.W, SC.Y, and AMOSWAP.Y must fault
+     * with a store capability permission fault even when storing x0 or an
+     * untagged capability, leaving cd and memory unmodified. Control:
+     * dropping only C (W=1, C=0) permits AMOSWAP.Y when storing x0.
+     */
+    NEXT_TEST "sc.w through a read-only capability faults with store CAP_PERM"
+    lr.w t1, (a4)
+    sc.w t2, x0, (a4)
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "sc.y through a read-only capability faults with store CAP_PERM"
+    SY   a3, 0(a3)
+    SC_Y t1, a4, x0
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL a0
+    LY   t2, 0(a3)
+    YTAGR t3, t2
+    beqz t3, fail
+
     NEXT_TEST "amoswap.y of x0 through a read-only capability faults without side effects"
     SY   a3, 0(a3)
     YMV  t1, a3
@@ -154,10 +256,10 @@ _start:
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
     YTAGR t3, t1
-    beqz t3, fail                /* cd (t1) must remain tagged */
+    beqz t3, fail                /* cd (t1) must stay tagged */
     LY   t2, 0(a3)
     YTAGR t3, t2
-    beqz t3, fail                /* memory must remain tagged */
+    beqz t3, fail                /* memory must stay tagged */
 
     NEXT_TEST "amoswap.y of an untagged capability through a read-only capability faults"
     AMOSWAP_Y t1, a4, a2
@@ -179,7 +281,65 @@ _start:
     YTAGR t3, t2
     bnez t3, fail                /* stored x0 to memory */
 
-    /* Integer AMO via NULL cap: also store-classified (R+W required) */
+    /*
+     * Write-only capability (a7, R=0, W=1):
+     *  - LR.Y faults with load CAP_PERM.
+     *  - SC.W and SC.Y succeed when paired with a prior LR at the same
+     *    address because SC only requires W (and C to retain the tag).
+     *  - AMOSWAP.Y, CBO.CLEAN, and CBO.FLUSH require both R and W and fault
+     *    with store/AMO CAP_PERM.
+     *  - CBO.ZERO requires only W and succeeds.
+     */
+    NEXT_TEST "lr.y through a write-only capability faults with load CAP_PERM"
+    LR_Y t1, a7
+    EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "sc.w through a write-only capability succeeds after a valid lr.w"
+    lr.w t1, (a3)
+    li   t0, 0x33cc33cc
+    sc.w t2, t0, (a7)
+    EXPECT_NO_TRAP
+    bnez t2, fail
+
+    NEXT_TEST "sc.y through a write-only capability succeeds after a valid lr.y"
+    SY   x0, 0(a3)
+    LR_Y t1, a3
+    SC_Y t2, a7, a3
+    EXPECT_NO_TRAP
+    bnez t2, fail
+    LY   t3, 0(a3)
+    YTAGR t4, t3
+    beqz t4, fail
+
+    NEXT_TEST "amoswap.y through a write-only capability faults with store/AMO CAP_PERM"
+    AMOSWAP_Y t1, a7, x0
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.clean through a write-only capability faults with store/AMO CAP_PERM"
+    CBO_CLEAN a7
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.flush through a write-only capability faults with store/AMO CAP_PERM"
+    CBO_FLUSH a7
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
+    EXPECT_TVAL a0
+
+    NEXT_TEST "cbo.zero through a write-only capability succeeds"
+    SY   a3, 0(a3)
+    CBO_ZERO a7
+    EXPECT_NO_TRAP
+    LY   t1, 0(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+
+    /* Integer SC.W and AMO via NULL cap: store-classified */
+    NEXT_TEST "sc.w through the NULL capability is store classified"
+    sc.w t1, x0, (x0)
+    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+
     NEXT_TEST "an integer amo through the NULL capability is store classified"
     amoswap.w t1, t2, (x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
@@ -204,6 +364,43 @@ _start:
     CBO_INVAL x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
+    /*
+     * LR.Y / SC.Y reservation behaviour in Capability Mode:
+     *  - A second consecutive SC.Y without a new LR.Y fails (rd != 0) and
+     *    leaves memory unmodified.
+     *  - An SC.Y to a different address than the preceding LR.Y fails, leaves
+     *    that target location unmodified, and cancels the reservation so a
+     *    subsequent SC.Y to the originally reserved address also fails.
+     */
+    NEXT_TEST "a second consecutive sc.y without a new lr.y fails and leaves memory unmodified"
+    SY   x0, 0(a3)
+    LR_Y t1, a3
+    SC_Y t2, a3, a3
+    bnez t2, fail
+    SC_Y t2, a3, x0
+    EXPECT_NO_TRAP
+    beqz t2, fail                /* second SC.Y must report failure (rd != 0) */
+    LY   t3, 0(a3)
+    YTAGR t4, t3
+    beqz t4, fail                /* tagged capability from first SC.Y stays intact */
+
+    NEXT_TEST "sc.y to a different address than the preceding lr.y fails and cancels the reservation"
+    SY   a3, 0(a3)
+    SY   s7, 0(s7)
+    LR_Y t1, a3
+    SC_Y t2, s7, x0
+    EXPECT_NO_TRAP
+    beqz t2, fail                /* address mismatch must fail */
+    LY   t3, 0(s7)
+    YTAGR t4, t3
+    beqz t4, fail                /* s7 slot stays tagged */
+    SC_Y t2, a3, x0
+    EXPECT_NO_TRAP
+    beqz t2, fail                /* prior SC.Y cancelled the reservation on a3 */
+    LY   t3, 0(a3)
+    YTAGR t4, t3
+    beqz t4, fail                /* a3 slot also stays tagged */
+
     YMODESWI                     /* back to int mode */
     TEST_PASS
 fail:
@@ -214,6 +411,6 @@ fail:
 TRAP_HANDLER
 
 .section .bss
-.balign 16
+.balign 64
 buf:
-    .space 64
+    .space 128
