@@ -311,11 +311,17 @@
     .insn r STD_OPC, 0, 0x08, \cd, \cs2, x8     /* sentry */
 .endm
 
+.macro YADD cd, cs1, rs2
+    .insn r STD_OPC, 0, 0x06, \cd, \cs1, \rs2   /* cadd */
+.endm
 .macro YADDRW cd, cs1, rs2
     .insn r STD_OPC, 1, 0x06, \cd, \cs1, \rs2   /* scaddr */
 .endm
 .macro YBNDSW cd, cs1, rs2
     .insn r STD_OPC, 0, 0x07, \cd, \cs1, \rs2  /* scbnds */
+.endm
+.macro YBNDSRW cd, cs1, rs2
+    .insn r STD_OPC, 1, 0x07, \cd, \cs1, \rs2  /* scbndsr */
 .endm
 
 .macro YMV cd, cs1
@@ -335,6 +341,9 @@
 .endm
 .macro YPERMR rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x1    /* gcperm */
+.endm
+.macro YEQ rd, cs1, cs2
+    .insn r STD_OPC, 4, 0x06, \rd, \cs1, \cs2 /* sceq */
 .endm
 .macro YBLD cd, cs1, cs2
     .insn r STD_OPC, 5, 0x06, \cd, \cs1, \cs2 /* cbld */
