@@ -18,6 +18,11 @@
  *    fault, allow SC.Y (which requires only W), allow CBO.ZERO (which
  *    requires only W), and reject AMOSWAP.Y, CBO.CLEAN, and CBO.FLUSH with a
  *    store/AMO permission fault.
+ *  - Capabilities without PERM_C strip the tag on stored or loaded
+ *    capabilities across LY, SY, LR.Y, SC.Y, and AMOSWAP.Y without trapping;
+ *    capabilities with PERM_C but without PERM_LM strip PERM_W and PERM_LM
+ *    from loaded unsealed capabilities while preserving them on sealed
+ *    sentries.
  *  - LR.Y/SC.Y reservations succeed on matching addresses and fail on repeated
  *    SC.Y or address mismatch (which also cancels the reservation).
  */
@@ -362,6 +367,86 @@ _start:
     NEXT_TEST "cbo.inval through the NULL capability is store classified"
     CBO_INVAL x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+
+    /*
+     * Capability-mode PERM_C tag filtering across SY, SC.Y, AMOSWAP.Y, LY,
+     * and LR.Y through a data-only capability (a5: R=1, W=1, C=0).
+     */
+    NEXT_TEST "capability-mode sy through a capability without PERM_C strips the tag"
+    SY   a3, 0(a5)
+    EXPECT_NO_TRAP
+    LY   t1, 0(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+    bne  a0, t1, fail
+
+    NEXT_TEST "capability-mode lr.y and sc.y without PERM_C strip loaded and stored tags"
+    SY   a3, 0(a3)
+    LR_Y t1, a5
+    YTAGR t2, t1
+    bnez t2, fail
+    SC_Y t3, a5, a3
+    EXPECT_NO_TRAP
+    bnez t3, fail
+    LY   t1, 0(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+
+    NEXT_TEST "capability-mode amoswap.y without PERM_C strips both loaded and stored tags"
+    SY   a3, 0(a3)
+    AMOSWAP_Y t1, a5, a3
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    LY   t3, 0(a3)
+    YTAGR t4, t3
+    bnez t4, fail
+
+    NEXT_TEST "capability-mode ly without PERM_C strips the loaded tag"
+    SY   a3, 0(a3)
+    LY   t1, 0(a5)
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    bne  a0, t1, fail
+
+    /*
+     * Capability-mode PERM_LM permission filtering on LY and LR.Y when
+     * PERM_C is set and PERM_W | PERM_LM are cleared.
+     */
+    li   t0, DROP_MASK(PERM_W | PERM_LM | PERM_X | PERM_ASR)
+    DROP_PERMS s2, a3, t0
+
+    NEXT_TEST "capability-mode ly and lr.y without PERM_LM strip W and LM from an unsealed capability"
+    SY   a3, 0(a3)
+    LY   t1, 0(s2)
+    LR_Y t2, s2
+    EXPECT_NO_TRAP
+    YTAGR t3, t1
+    beqz t3, fail
+    YPERMR t3, t1
+    andi t4, t3, (PERM_W | PERM_LM)
+    bnez t4, fail
+    YTAGR t3, t2
+    beqz t3, fail
+    YPERMR t3, t2
+    andi t4, t3, (PERM_W | PERM_LM)
+    bnez t4, fail
+
+    NEXT_TEST "capability-mode ly and lr.y without PERM_LM preserve W and LM on a sealed sentry"
+    SY   s1, 0(a3)
+    LY   t1, 0(s2)
+    LR_Y t2, s2
+    EXPECT_NO_TRAP
+    YTAGR t3, t1
+    beqz t3, fail
+    YPERMR t3, t1
+    andi t4, t3, (PERM_W | PERM_LM)
+    li   t0, (PERM_W | PERM_LM)
+    bne  t4, t0, fail
+    YPERMR t3, t2
+    andi t4, t3, (PERM_W | PERM_LM)
+    bne  t4, t0, fail
 
     /*
      * LR.Y / SC.Y reservation behaviour in Capability Mode:
