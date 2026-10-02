@@ -73,6 +73,7 @@ if rvy_test_cc_found
     {'name': 'test-insn-encodings'},
     {'name': 'test-branches'},
     {'name': 'test-cap-ops'},
+    {'name': 'test-cap-ops-failures'},
     {'name': 'test-cap-roundtrip'},
     {'name': 'test-cap-reset-regression'},
     {'name': 'test-asr'},
