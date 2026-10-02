@@ -41,6 +41,7 @@
 #pragma once
 
 /* Standard RISC-V causes. */
+#define CAUSE_MISALIGNED_FETCH     0
 #define CAUSE_ILLEGAL_INSN         2
 #define CAUSE_LOAD_ACCESS_FAULT    5
 #define CAUSE_STORE_ACCESS_FAULT   7
