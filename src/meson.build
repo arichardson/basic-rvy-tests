@@ -79,6 +79,7 @@ if rvy_test_cc_found
     {'name': 'test-cap-roundtrip'},
     {'name': 'test-cap-reset-regression'},
     {'name': 'test-asr'},
+    {'name': 'test-cap-csrs'},
     {'name': 'test-console'},
     {'name': 'test-cbo-bounds'},
     {'name': 'test-xepc-detag'},
