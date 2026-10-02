@@ -75,6 +75,7 @@ if rvy_test_cc_found
     {'name': 'test-cap-ops'},
     {'name': 'test-cap-ops-failures'},
     {'name': 'test-representable-range'},
+    {'name': 'test-ddc-access'},
     {'name': 'test-cap-roundtrip'},
     {'name': 'test-cap-reset-regression'},
     {'name': 'test-asr'},
