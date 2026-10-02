@@ -1,22 +1,26 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * RVY exception classification and permission checks for capability
- * load/store, capability atomic (LR.Y, SC.Y, AMOSWAP.Y), integer AMO, and
- * Zicbom/Zicboz cache-block operations:
- *  - Misaligned LY and LR.Y raise a load fault (mcause 4 on 0.9.3, mcause 5
- *    on v0.9.9) with mtval set to the faulting address; misaligned SY, SC.Y,
- *    and AMOSWAP.Y raise a store/AMO fault (mcause 6 on 0.9.3, mcause 7 on
- *    v0.9.9) with mtval set to the faulting address.
- *  - LR.Y capability faults are load-classified; SC.Y, AMOSWAP.Y, integer
- *    AMOs, and CBOs (cbo.zero, cbo.clean, cbo.flush, cbo.inval) are
- *    store/AMO-classified across tag, seal, bounds, and permission checks.
- *  - AMOSWAP.Y and SC.Y check store permission (W) up front, before checking
- *    load-cap or store-cap (C) permission; missing W raises a store/AMO
- *    capability permission fault even when storing x0 or an untagged
- *    capability, without modifying cd or memory.
- *  - Write-only capabilities (R=0, W=1) reject LR.Y with a load permission
- *    fault, allow SC.Y (which requires only W), allow CBO.ZERO (which
- *    requires only W), and reject AMOSWAP.Y, CBO.CLEAN, and CBO.FLUSH with a
+ * Verify the RVY exception causes, fault addresses (mtval), permission and
+ * bounds checks, reservation semantics, and tag filtering for capability
+ * loads/stores, capability atomics, and cache-block operations:
+ *
+ *  - Misaligned capability accesses raise *access* faults (not misaligned
+ *    faults) since they cannot be emulated in software: cause 5 for LY and LR.Y
+ *    (plain load semantics per the spec's LR.Y page), cause 7 for SY, SC.Y, and
+ *    AMOSWAP.Y, in both integer and capability pointer modes, with mtval
+ *    holding the faulting virtual address. 0.9.3 predates that and reports
+ *    them as misaligned faults (causes 4 and 6).
+ *  - In capability mode with cs1=x0 (the NULL capability), an untagged
+ *    capability, a sealed sentry, or an out-of-bounds capability, the check
+ *    fails with CAP_TAG, CAP_SEAL, or CAP_BOUNDS respectively; the reported
+ *    cause must be selected by the access type: LR.Y -> CHERI Load Access
+ *    Fault (33); SC.Y, AMOSWAP.Y, integer AMOs (amoswap.w) and all CBOs ->
+ *    CHERI Store/AMO Access Fault (34), with mtval holding the faulting
+ *    virtual address in v0.9.9.
+ *  - Read-only capabilities (W=0) reject SC.Y and AMOSWAP.Y with a store
+ *    permission fault without modifying cd or memory; write-only capabilities
+ *    (R=0, W=1) permit SC.Y and CBO.ZERO while rejecting LR.Y with a load
+ *    permission fault and AMOSWAP.Y, CBO.CLEAN, and CBO.FLUSH with a
  *    store/AMO permission fault.
  *  - Capabilities without PERM_C strip the tag on stored or loaded
  *    capabilities across LY, SY, LR.Y, SC.Y, and AMOSWAP.Y without trapping;
@@ -25,6 +29,8 @@
  *    sentries.
  *  - LR.Y/SC.Y reservations succeed on matching addresses and fail on repeated
  *    SC.Y or address mismatch (which also cancels the reservation).
+ *  - An unaligned integer store straddling two adjacent capabilities in memory
+ *    clears the tags of both capability slots.
  */
 #define TEST_NAME "amo-cbo-causes"
 #include "testmacros.h"
@@ -484,6 +490,22 @@ _start:
     LY   t3, 0(a3)
     YTAGR t4, t3
     beqz t4, fail                /* a3 slot also stays tagged */
+
+    /*
+     * Unaligned integer store straddling two adjacent capability slots at
+     * buf + 0 and buf + YLEN_BYTES must invalidate the tags of both slots.
+     */
+    NEXT_TEST "an unaligned integer store straddling two capabilities clears both tags"
+    SY   a3, 0(a3)
+    SY   s7, 0(s7)
+    sw   x0, (YLEN_BYTES - 2)(a3)
+    EXPECT_NO_TRAP
+    LY   t1, 0(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+    LY   t3, 0(s7)
+    YTAGR t4, t3
+    bnez t4, fail
 
     YMODESWI                     /* back to int mode */
     TEST_PASS
