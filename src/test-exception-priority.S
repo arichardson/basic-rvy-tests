@@ -21,7 +21,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CAUSE_MISALIGNED_FETCH 0
 #define expected_epc s2          /* address the faulting fetch was at */
 
 /* Jump to \cap, expecting the fetch at \target rather than the jump to fault. */
@@ -92,11 +91,7 @@ _start:
      * updating PCC and taking the target fetch capability fault.
      */
     SKIPPABLE_BLOCK_BEGIN
-    li   t0, (1 << 2)
-    csrrc x0, misa, t0
-    csrr t1, misa
-    and  t1, t1, t0
-    bnez t1, 90f
+    TRY_CLEAR_MISA_C 90f
 
     YMODESWY
     NEXT_TEST "control: an aligned jal out of PCC bounds faults at the target"
@@ -146,6 +141,7 @@ _start:
     li   t1, 8
     YBNDSW a0, a0, t1
     la   expected_epc, ialign_beq_tramp
+    mv   t0, x0
     RESUME_AFTER_FAULT 5f
     jalr x0, a0, 0
 5:
@@ -153,10 +149,10 @@ _start:
     EXPECT_EPC expected_epc
     YMODESWI
 
-    li   t0, (1 << 2)
-    csrrs x0, misa, t0
+    li   t0, MISA_C
+    csrs CSR_MISA, t0
     j    91f
-90: SKIPPABLE_BLOCK_SKIPPED "misa.C is not writable"
+90: SKIPPABLE_BLOCK_SKIPPED "misa.C is hard-wired here so IALIGN=32 is unreachable"
 91:
 
     TEST_PASS
@@ -182,7 +178,7 @@ ialign_jal_tramp:
 
 .balign 8
 ialign_beq_tramp:
-    beq  x0, x0, illegal_target + 2
+    beq  t0, x0, illegal_target + 2
     j    fail
 
 TRAP_HANDLER_PCC
