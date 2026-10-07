@@ -132,8 +132,17 @@
  * always indexes the right table entry. A counter would drift the moment a
  * case was skipped, and the names after it would then be wrong rather than
  * missing, which is not something the reader could spot.
+ *
+ * TEST_PASS takes the plan from the counter where it is expanded, so a case
+ * written after it would run without being counted. Cases therefore have to
+ * come before it in the source (and in the order they run, since a failure
+ * reports every case before it as passed); code called out of line goes
+ * inline instead, with a jump around it.
  */
 .macro NEXT_TEST desc=
+    .ifdef __tap_plan_taken
+      .error "NEXT_TEST after TEST_PASS: the case would be outside the plan"
+    .endif
     .set __tap_cases, __tap_cases + 1
     li   test_id, __tap_cases
     .pushsection .rodata

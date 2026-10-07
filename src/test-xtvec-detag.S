@@ -10,8 +10,9 @@
  *   - Because xtvec applies YADDRW semantics on write, writing a sealed
  *     sentry capability always clears its tag (while preserving CT=1), even
  *     when the low bits select direct or vectored mode.
- *   - Writing reserved modes 2 or 3 retains the previous xtvec.MODE while
- *     updating BASE.
+ *   - Bit 0 alone selects the mode: a write with MODE 2 is direct with
+ *     BASE = v & ~3, and one with MODE 3 is vectored with BASE = v & ~0xFF,
+ *     whatever xtvec held before.
  *   - Writing an unsealed capability at its lower representability boundary
  *     rep_base = (victim + 1) - REP_BELOW (whose low two bits are 0b01,
  *     selecting vectored mode) detags the capability when aligning BASE down
@@ -92,28 +93,34 @@ _start:
     beqz t0, fail
     bne  t1, a1, fail
 
-    NEXT_TEST "mtvec reserved modes 2 and 3 retain the prior mode while updating BASE"
+    /*
+     * legalize_tvec takes the mode from bit 0 of the written value: vectored
+     * BASE is v & ~0xFF, direct BASE is v & ~3 (sail-cheri-riscv
+     * sail-riscv/model/riscv_sys_regs.sail:564-569, reached from
+     * src/cheri_sys_regs_access.sail:41-44).
+     */
+    NEXT_TEST "mtvec mode 2 writes are direct and mode 3 vectored, 256B-aligned"
     addi t1, s1, 1               /* first set mtvec to mode 1 (vectored) */
     YADDRW a2, a0, t1
     csrw CSR_MTVEC, a2
-    addi t2, s1, 2               /* write mode 2 (reserved) */
+    addi t2, s1, 2               /* write mode 2 */
     YADDRW a3, a0, t2
     csrw CSR_MTVEC, a3
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
     YTAGR t0, a1
     beqz t0, fail
-    bne  t1, a1, fail            /* mode 1 retained, BASE = victim */
+    bne  a1, s1, fail            /* direct, BASE = victim */
 
     csrw CSR_MTVEC, a0           /* set mtvec to mode 0 (direct) */
-    addi t2, s1, 3               /* write mode 3 (reserved) */
+    addi t2, s1, 0x43            /* write mode 3, BASE not 256B-aligned */
     YADDRW a3, a0, t2
     csrw CSR_MTVEC, a3
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
     YTAGR t0, a1
     beqz t0, fail
-    bne  a1, s1, fail            /* mode 0 retained, BASE = victim */
+    bne  t1, a1, fail            /* vectored, BASE = victim */
 
     NEXT_TEST "mtvec detags an unsealed capability when aligning BASE down crosses rep_base"
     addi t1, s1, 1               /* base = victim + 1 */

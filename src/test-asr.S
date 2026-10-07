@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Operations gated on the Access_System_Registers permission in PCC. RVY
- * reports a missing ASR as an illegal instruction where 0.9.3 raises a
- * capability exception, so TRAP_ASR_DENIED stands for whichever applies.
+ * Operations gated on the Access_System_Registers permission in PCC.
  *
- * ASR covers CSRs whose number has a non-zero privilege field, so mtvec and
+ * A CSR access without ASR is a CHERI instruction fault on both versions
+ * (cause 32 with tval 0 on RVY): sail-cheri-riscv
+ * src/cheri_addr_checks.sail:146-168 via ext_check_CSR in sail-riscv
+ * model/riscv_insts_zicsr.sail:41-47. ASR covers CSRs whose number has a
+ * non-zero privilege field (and writes to the Zstid CSRs), so mtvec and
  * mscratch need it while ddc does not, and that distinction is checked here
  * too: dropping ASR must not make every CSR inaccessible.
  *
@@ -32,7 +34,7 @@ _start:
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)  /* ... so this is the capability fault */
 
     /* Build a PCC-derived capability with ASR removed and call into it. */
-    NEXT_TEST "a pcc without ASR still runs, and consumes its own traps"
+    NEXT_TEST "a pcc can be derived from the root with only ASR dropped"
     auipc a0, 0
     la   t0, asr_stub
     YADDRW a0, a0, t0
@@ -43,35 +45,28 @@ _start:
     and  t2, t2, t1
     bnez t2, fail                /* ASR really is gone */
     jalr ra, a0, 0
-    EXPECT_NO_TRAP               /* the stub consumed all of its own traps */
-
-    /* Back on the root PCC, ASR-gated CSRs work again. */
-    NEXT_TEST "back on the root pcc the ASR-gated CSRs work again"
-    csrr t0, CSR_MTVEC
-    EXPECT_NO_TRAP
-
-    YMODESWI
-    TEST_PASS
-fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
-    TEST_FAIL
+    j    asr_stub_done
 
 /*
  * Entered with a PCC that grants everything except ASR. Stores still work,
- * so reaching fail from here is fine.
+ * so reaching fail from here is fine. It sits inline, between the call and
+ * the return, so that its cases are numbered in the order they run and come
+ * before TEST_PASS, which is what puts them in the plan.
  */
 .balign 8
 asr_stub:
-    /* Reading an M-mode CSR needs ASR */
+    /*
+     * Reading an M-mode CSR needs ASR; the failure is a CHERI instruction
+     * fault (cheri_addr_checks.sail:160-168), not an illegal instruction.
+     */
     NEXT_TEST "reading an M-mode CSR needs ASR"
     csrr t0, CSR_MTVEC
-    EXPECT_TRAP TRAP_ASR_DENIED
+    EXPECT_TRAP TRAP_CAP_FETCH(CAP_PERM)
 
     /* So does writing one (mscratch is scratch, so a stray write is safe) */
     NEXT_TEST "writing an M-mode CSR needs ASR"
     csrw CSR_MSCRATCH, x0
-    EXPECT_TRAP TRAP_ASR_DENIED
+    EXPECT_TRAP TRAP_CAP_FETCH(CAP_PERM)
 
     /*
      * CBO.INVAL is ASR-gated, but the two versions order that against the
@@ -93,5 +88,19 @@ asr_stub:
     EXPECT_NO_TRAP
 
     ret
+
+asr_stub_done:
+    /* Back on the root PCC, ASR-gated CSRs work again. */
+    NEXT_TEST "back on the root pcc nothing is pending and ASR CSRs work again"
+    EXPECT_NO_TRAP               /* the stub consumed all of its own traps */
+    csrr t0, CSR_MTVEC
+    EXPECT_NO_TRAP
+
+    YMODESWI
+    TEST_PASS
+fail:
+    /* Leave capability mode first so the finisher store cannot fault. */
+    YMODESWI
+    TEST_FAIL
 
 TRAP_HANDLER

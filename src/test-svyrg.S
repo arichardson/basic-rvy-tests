@@ -234,10 +234,25 @@ s_entry:
     EXPECT_NO_TRAP
     YTAGR t2, t1
     bnez t2, fail
-    AMOSWAP_Y t1, a6, s2
+    AMOSWAP_Y t1, a6, x0
     EXPECT_NO_TRAP
     YTAGR t2, t1
     bnez t2, fail
+
+    /*
+     * With a tagged rs2 the access is ReadWrite(Tagged, Tagged), which Sail
+     * treats as a tagged write only: pte_permission_ok
+     * (src/cheri_vmem_pte_ext.sail:31-39) tests isTaggedWrite before
+     * isTaggedRead, so the yr/yrg strip is skipped and the loaded tag is
+     * kept.
+     */
+    NEXT_TEST "amoswap.y with a tagged source keeps the loaded tag"
+    SY   s2, 0(a6)               /* yw|yd: put the tag back */
+    EXPECT_NO_TRAP
+    AMOSWAP_Y t1, a6, s2
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    beqz t2, fail
 
     /* Non-zero rvy on a non-leaf PTE is reserved even when YRGE=1 */
     NEXT_TEST "rvy bits on a non-leaf PTE fault as reserved"

@@ -79,6 +79,7 @@
     la   a0, 94b
     call console_puts
     li   a0, __tap_cases         /* every case in the file, skips included */
+    .set __tap_plan_taken, 1     /* so NEXT_TEST rejects any case after this */
     li   a1, 0
     call console_tap
     li   a0, 0

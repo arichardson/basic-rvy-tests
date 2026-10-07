@@ -12,7 +12,9 @@
  *    violation before any memory access is attempted. Loads must report
  *    CHERI Load Access Fault and stores CHERI Store/AMO Access Fault: the
  *    cause is selected by the access type, not by the failing check (a tag
- *    violation is not a load-only fault).
+ *    violation is not a load-only fault). The exception is ly/sy on RVY:
+ *    with cs1=x0 in capability mode those encodings are reserved and
+ *    illegal (sail-cheri-riscv src/cheri_insts.sail:1140-1144).
  *
  * The test target address (0x400) is deliberately unmapped on the virt
  * machine: nothing needs to be readable/writable there, since the assertions
@@ -99,6 +101,7 @@ _start:
     fsd  ft1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
+#ifdef CHERI_093
     NEXT_TEST "capability mode: ly through the NULL capability is a tag fault"
     LY   t1, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
@@ -106,6 +109,17 @@ _start:
     NEXT_TEST "capability mode: sy through the NULL capability is a tag fault"
     SY   t2, TEST_ADDR(x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+#else
+    /* cs1=x0 is reserved for ly (cheri_insts.sail:1140-1141) */
+    NEXT_TEST "capability mode: ly with cs1=x0 is an illegal instruction"
+    LY   t1, TEST_ADDR(x0)
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    /* ... and for sy (cheri_insts.sail:1143-1144) */
+    NEXT_TEST "capability mode: sy with cs1=x0 is an illegal instruction"
+    SY   t2, TEST_ADDR(x0)
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
 
     YMODESWI                     /* back to int mode */
     TEST_PASS
