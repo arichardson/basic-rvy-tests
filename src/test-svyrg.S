@@ -20,7 +20,8 @@
  *     yw=0 faults tagged stores (same observable behavior as base mode).
  *   - yr=1/yrg=1 S-page: loading a tagged capability raises CHERI Load
  *     Capability Fault (cause 35) while sstatus.SYRG=0 (generation
- *     mismatch) and works normally once SYRG is set.
+ *     mismatch), whereas loading or swapping an untagged value in memory
+ *     does not trap, and tagged loads work normally once SYRG is set.
  *   - yr=0/yrg=0 S-page with SYRG=1: generation mismatch with yr=0 strips
  *     the loaded tag on ly and amoswap.y without faulting.
  *   - non-zero rvy on a non-leaf PTE is reserved and raises cause 13/15.
@@ -217,13 +218,31 @@ s_entry:
     SY   s2, 0(a1)  /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
 
-    /* yr=1/yrg=1 S-page: tagged load faults while SYRG=0 */
-    NEXT_TEST "yr=1/yrg=1 faults a tagged load while SYRG=0 and works once set"
-    LY   t1, 0(a2)  /* cause 35 (mismatch) */
+    /*
+     * yr=1/yrg=1 S-page: a tagged capability in memory faults with cause 35
+     * while SYRG=0, whereas an untagged value in memory loads and swaps
+     * without raising cause 35; once SYRG=1 is set, tagged loads succeed too.
+     */
+    NEXT_TEST "yr=1/yrg=1 faults a tagged load while SYRG=0 and allows untagged loads"
+    LY   t1, 0(a2)               /* tagged in memory -> cause 35 (mismatch) */
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    li   t0, 0x12345678
+    sd   t0, 0(a0)               /* overwrite buffer with untagged data */
+    LY   t1, 0(a2)               /* untagged in memory -> no cause 35 */
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    bne  t1, t0, fail
+    AMOSWAP_Y t1, a2, s2         /* old memory is untagged -> no cause 35, stores tagged s2 */
+    EXPECT_NO_TRAP
+    YTAGR t2, t1
+    bnez t2, fail
+    bne  t1, t0, fail
+    LY   t1, 0(a2)               /* memory is now tagged again -> cause 35 */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     li   t0, SSTATUS_SYRG
-    csrs 0x100, t0                       /* SYRG = 1: generations match */
-    LY   t1, 0(a2)  /* normal */
+    csrs 0x100, t0               /* SYRG = 1: generations match */
+    LY   t1, 0(a2)               /* normal */
     EXPECT_NO_TRAP
     YTAGR t2, t1
     beqz t2, fail
