@@ -41,6 +41,7 @@
 #define CSR_MSTATUS 0x300
 #define CSR_MISA    0x301
 #define CSR_MTVEC   0x305
+#define CSR_MEDELEG 0x302
 #define CSR_MENVCFG 0x30A
 #define CSR_MSCRATCH 0x340
 #define CSR_MEPC    0x341
@@ -52,6 +53,8 @@
 #define CSR_STVEC   0x105
 #define CSR_SSCRATCH 0x140
 #define CSR_SEPC    0x141
+#define CSR_SCAUSE  0x142
+#define CSR_STVAL   0x143
 #define CSR_VSTVEC  0x205
 #define CSR_VSSCRATCH 0x240
 #define CSR_VSEPC   0x241
