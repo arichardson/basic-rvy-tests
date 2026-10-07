@@ -96,7 +96,7 @@ _start:
     DROP_PERMS a5, a3, t2        /* a5: data-only capability (W=1, R=1, C=0) */
     YADDRW a6, s0, a1            /* a6: full-permission capability at buf + 4 */
     li   t2, DROP_MASK(PERM_R)
-    DROP_PERMS a7, a3, t2        /* a7: write-only capability (W=1, R=0, C=1) */
+    DROP_PERMS a7, a3, t2        /* a7: write-only capability (W=1, R=0; C=1 on RV64, C=0 on RV32) */
     YSENTRY s1, a3               /* s1: sealed sentry capability at buf */
     li   t2, YLEN_BYTES
     YBNDSW s2, a3, t2            /* [buf, buf + YLEN_BYTES) */
@@ -321,7 +321,12 @@ _start:
     bnez t2, fail
     LY   t3, 0(a3)
     YTAGR t4, t3
+#if __riscv_xlen == 64
     beqz t4, fail
+#else
+    /* 64-bit compressed capabilities cannot encode C without R, so a7 lacks C and strips the tag */
+    bnez t4, fail
+#endif
 
     NEXT_TEST "amoswap.y through a write-only capability faults with store/AMO CAP_PERM"
     AMOSWAP_Y t1, a7, x0
