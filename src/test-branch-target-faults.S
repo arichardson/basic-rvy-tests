@@ -92,10 +92,11 @@ _start:
     EXPECT_TARGET_FAULT 1
 
     /*
-     * A sentry is only unsealed when the immediate is zero. With a
-     * non-zero one it stays sealed, so applying the target address clears the
-     * tag exactly as scaddr would, and the target takes a tag fault at
-     * cs1.address + 8 rather than a seal fault at cs1.address.
+     * A sentry is only unsealed when the immediate is zero and cs1.address[0]
+     * is zero. With a non-zero immediate or with bit 0 set in the sentry's
+     * sealed address it stays sealed, so applying the target address clears
+     * the tag exactly as YADDRW would, and the target takes a tag fault rather
+     * than unsealing and running.
      */
     NEXT_TEST "a sentry with a non-zero immediate stays sealed and detags"
     auipc a0, 0
@@ -104,6 +105,15 @@ _start:
     YSEALE a0, a0
     addi t1, t0, 8
     JALR_EXPECT_FAULT_AT a0, 8, t1
+    EXPECT_TARGET_FAULT 0
+
+    NEXT_TEST "a sentry with bit 0 set in its address stays sealed and detags on jalr with imm=0"
+    auipc a0, 0
+    la   t0, victim
+    ori  t1, t0, 1
+    YADDRW a0, a0, t1
+    YSEALE a0, a0
+    JALR_EXPECT_FAULT_AT a0, 0, t0
     EXPECT_TARGET_FAULT 0
 
     /* Target outside the bounds of the authorizing capability */
