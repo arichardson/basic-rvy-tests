@@ -30,7 +30,8 @@
  * a0 = an executable capability covering exactly [\stub, \stub + \len), and
  * t0 = \stub. YBNDSW clears the tag when the requested bounds are not
  * exactly representable, which would turn every later check into a tag fault
- * instead, so reject that here rather than misreporting it.
+ * instead, so reject that here, as a failure of the case being set up,
+ * rather than misreporting it.
  */
 .macro BOUNDED_CODE_CAP stub, len
     auipc a0, 0                  /* the only executable capability available */
@@ -39,7 +40,7 @@
     li   t1, \len
     YBNDSW a0, a0, t1
     YTAGR t2, a0
-    beqz t2, fail_inexact_bounds
+    beqz t2, fail                /* ybndsw could not encode these bounds */
 .endm
 
 /*
@@ -154,8 +155,6 @@ _start:
     YMODESWI
     TEST_PASS
 
-fail_inexact_bounds:
-    NEXT_TEST "ybndsw could not encode the bounds this case needs"
 fail:
     /* Leave capability mode first so the finisher store cannot fault. */
     YMODESWI

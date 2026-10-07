@@ -70,9 +70,15 @@ _start:
     LY   t1, 0(a1)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
 
+    /*
+     * A NULL capability in a2 rather than x0: cap-mode ly/sy with rs1 = x0
+     * are reserved and decode as illegal (sail-cheri-riscv
+     * src/cheri_insts.sail:1140-1144).
+     */
     NEXT_TEST "a capability check outranks the misaligned capability load"
-    YMODESWY                     /* capability mode: x0 is the NULL capability */
-    LY   t1, 4(x0)
+    li   a2, 0                   /* the NULL capability */
+    YMODESWY
+    LY   t1, 4(a2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     YMODESWI
 
@@ -81,8 +87,9 @@ _start:
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
 
     NEXT_TEST "a capability check outranks the misaligned capability store"
+    li   a2, 0
     YMODESWY
-    SY   x0, 4(x0)
+    SY   x0, 4(a2)               /* not x0: cheri_insts.sail:1143-1144 */
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     YMODESWI
 

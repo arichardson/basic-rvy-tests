@@ -17,7 +17,8 @@
  *  - YBLD, YSS, and YPERMR check metadata integrity (non-zero RESERVED0/1
  *    bits, the RV64 SDP relocation to bits 127:124 in v0.9.9, and the RV32
  *    reserved AP Quadrant 0 encoding Q=0, M=1, Q0=0). In v0.9.9, YPERMR sets
- *    bits 15:10 to 1 and zeroes both AP and SDP on any integrity failure; in
+ *    bits 15:10 to 1 and zeroes the AP bits on any integrity failure but
+ *    still reports GL and SDP (golden Sail, src/cheri_insts.sail:159-163); in
  *    0.9.3 (gcperm), bits 15:10 are 0 and SDP is preserved.
  */
 #define TEST_NAME "cap-ops"
@@ -233,9 +234,17 @@ _start:
 
     /*
      * Non-zero RESERVED0 metadata bits cause YBLD to detag and YSS to return
-     * 0 in both versions, and cause YPERMR to zero all allocated AP and SDP
-     * bits (matching YPERMR of x0) in v0.9.9 while 0.9.3 gcperm preserves AP
-     * and SDP.
+     * 0 in both versions. In v0.9.9, YPERMR follows golden Sail
+     * sail-cheri-riscv 42e2d75:
+     * X(rd) = packPerms(getArchPermsLegalized(cs1), cs1.gl, cs1.sd_perms)
+     * (src/cheri_insts.sail:159-163). Only the arch perms are zeroed, since
+     * getArchPermsLegalized returns null_perms for a malformed cap
+     * (src/cheri_cap_common.sail:367-383); GL and SDP are still reported, and
+     * bits 23:19 and 15:10 read 1 (packPerms, :425-440). So the result is
+     * YPERMR of the untouched a1 with the arch perm bits (R, X, ASR, C, SL,
+     * EL, LM, W) cleared: 0xF8FFD0 on RV64 for raw metadata
+     * 0xF01FF80014041000. The riscv-cheri text (gcperm_32bit.adoc:28) would
+     * zero SDP and GL as well (0xF8FC00). 0.9.3 gcperm preserves AP and SDP.
      */
     NEXT_TEST "non-zero reserved0 metadata fails ybld, yss, and v0.9.9 ypermr"
     SY   a1, 0(a0)
@@ -256,8 +265,14 @@ _start:
     and  t3, t3, t2
     bnez t3, fail
 #else
-    YPERMR t4, x0
+    YPERMR t4, a1
+    li   t2, ~0x7002f            /* clear R, X, ASR (18:16), C, SL, EL, LM, W */
+    and  t4, t4, t2
     bne  t4, t3, fail
+#if __riscv_xlen == 64
+    li   t2, 0xf8ffd0            /* golden Sail value */
+    bne  t3, t2, fail
+#endif
 #endif
     EXPECT_NO_TRAP
 
@@ -267,8 +282,9 @@ _start:
      * 120:117) to pesbt[63:60] (bits 127:124), shifting RESERVED1 to
      * pesbt[59:53]. Setting both pesbt[63:60]=0xa and pesbt[56:53]=0x5 puts
      * non-zero bits into RESERVED1 in both versions: 0.9.3 gcperm still
-     * reports SDP=0x5 and AP, whereas v0.9.9 ypermr zeroes both AP and SDP
-     * (matching YPERMR of x0). Clearing pesbt[59:53] leaves a valid v0.9.9
+     * reports SDP=0x5 and AP, whereas v0.9.9 ypermr zeroes the AP bits but,
+     * per golden Sail (src/cheri_insts.sail:159-163), still reports GL and
+     * the decoded SDP=0xa. Clearing pesbt[59:53] leaves a valid v0.9.9
      * capability with SDP=0xa that passes ybld and yss, while remaining
      * malformed (RESERVED1 != 0) in 0.9.3.
      */
@@ -292,7 +308,10 @@ _start:
     li   t4, 0x5
     bne  t4, t3, fail
 #else
-    YPERMR t4, x0
+    YPERMR t4, a1
+    li   t2, ~(0x7002f | 0x3c0)  /* clear arch perms and SDP (9:6) */
+    and  t4, t4, t2
+    ori  t4, t4, (0xa << 6)      /* the decoded SDP=0xa */
     bne  t4, t3, fail
 #endif
     li   t2, (0xa << 60)

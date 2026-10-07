@@ -94,6 +94,20 @@ if rvy_test_cc_found
      'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
     {'name': 'test-translation-priority', 'cheri_versions': ['0.9.9'],
      'xlens': [64], 'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
+    # Sv39 is RV64-only, and S-mode needs the default CPU model.
+    {'name': 'test-noncanonical-addr', 'cheri_versions': ['0.9.9'],
+     'xlens': [64], 'qemu_args': ['-cpu', 'rv64']},
+    {'name': 'test-int-amo', 'cheri_versions': ['0.9.9'], 'xlens': [64]},
+    {'name': 'test-pmp', 'cheri_versions': ['0.9.9'], 'xlens': [64],
+     'qemu_args': ['-cpu', 'rv64']},
+    # The capability-mode C and F encodings, the RV64 (128-bit) level and
+    # permission layout, and the RV64 Zba capability operations are what
+    # these check.
+    {'name': 'test-capmode-rvc-fp', 'cheri_versions': ['0.9.9'],
+     'xlens': [64]},
+    {'name': 'test-cap-levels', 'cheri_versions': ['0.9.9'], 'xlens': [64]},
+    {'name': 'test-zba-cap', 'cheri_versions': ['0.9.9'], 'xlens': [64]},
+    {'name': 'test-malformed-cap', 'cheri_versions': ['0.9.9'], 'xlens': [64]},
   ]
 
   used_as_qemu_submodule = is_variable('emulators')

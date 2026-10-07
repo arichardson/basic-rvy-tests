@@ -434,8 +434,18 @@ s_entry:
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
     NEXT_TEST "the mismatching page raises it for amoswap.y too"
-    AMOSWAP_Y t1, a3, s2
+    AMOSWAP_Y t1, a3, x0
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    /*
+     * With a tagged rs2 the access is ReadWrite(Tagged, Tagged), which Sail
+     * treats as a tagged write only: pte_permission_ok
+     * (src/cheri_vmem_pte_ext.sail:31-39) tests isTaggedWrite before
+     * isTaggedRead, so the load-side yr/yrg check is skipped and nothing
+     * traps.
+     */
+    NEXT_TEST "but not for an amoswap.y with a tagged source"
+    AMOSWAP_Y t1, a3, s2
+    EXPECT_NO_TRAP
     NEXT_TEST "and the store page fault still outranks it"
     AMOSWAP_Y t1, a4, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT

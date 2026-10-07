@@ -92,19 +92,18 @@ _start:
     EXPECT_TARGET_FAULT 1
 
     /*
-     * A sentry is only unsealed when the immediate is zero. With a
-     * non-zero one it stays sealed, so applying the target address clears the
-     * tag exactly as scaddr would, and the target takes a tag fault at
-     * cs1.address + 8 rather than a seal fault at cs1.address.
+     * JALR unseals the target whatever the immediate: a sentry plus a
+     * non-zero offset still lands, tagged and unsealed, at cs1.address + 8
+     * and runs there (sail-cheri-riscv src/cheri_insts.sail:93).
      */
-    NEXT_TEST "a sentry with a non-zero immediate stays sealed and detags"
+    NEXT_TEST "a sentry with a non-zero immediate is unsealed and runs"
     auipc a0, 0
-    la   t0, victim
+    la   t0, good_target
+    addi t0, t0, -8
     YADDRW a0, a0, t0
     YSENTRY a0, a0
-    addi t1, t0, 8
-    JALR_EXPECT_FAULT_AT a0, 8, t1
-    EXPECT_TARGET_FAULT 0
+    jalr ra, a0, 8
+    EXPECT_NO_TRAP
 
     /* Target outside the bounds of the authorizing capability */
     NEXT_TEST "a target outside the bounds faults at the target"
@@ -150,11 +149,8 @@ _start:
     EXPECT_EPC expected_epc
     EXPECT_EPC_TAG 1
 
-    /*
-     * The same sentry with a zero immediate is unsealed and runs, so
-     * the checks above are not simply rejecting every sentry.
-     */
-    NEXT_TEST "the same sentry with a zero immediate is unsealed and runs"
+    /* The same with a zero immediate: the sentry is unsealed and runs. */
+    NEXT_TEST "a sentry with a zero immediate is unsealed and runs"
     auipc a0, 0
     la   t0, good_target
     YADDRW a0, a0, t0

@@ -19,23 +19,22 @@
  * form here, per the RVY rule that any instruction writing an address back
  * to a register writes the full capability, not just its low bits.
  *
- * Bit 1 only matters with IALIGN=32 (misa.C cleared), and unlike bit 0 it is
- * legalized on read rather than on write, so a write with bit 1 set stores
- * it untouched and only a later read rounds it down and detags a sealed
- * capability the same way. mret takes the same masked address as its target,
- * so a sentry stored with bit 1 set mismatches its own rounded cursor on
- * mret exactly as it would a JALR to the wrong address, and mret leaves PCC
- * detagged rather than installing it -- even though the capability read out
- * of mepc at face value still carries a tag.
+ * Bit 1 only matters with IALIGN=32 (misa.C cleared). The specification
+ * legalizes it on read rather than on write, but this block tentatively
+ * follows the golden Sail model instead (sail-cheri-riscv rvy-099-20260930,
+ * src/cheri_sys_regs.sail:89-121). With a writable misa.C, legalize_xepc()
+ * only ever clears bit 0 on write; read_ylen_csr() returns mepc_y/sepc_y raw
+ * (its own comment says this "would require legalisation for implementations
+ * with writable misa.C"); and prepare_xret_target() unseals the stored
+ * capability and jumps to its address as-is. So bit 1 survives the write, the
+ * read and the mret, and no tag is cleared on its account, sealed or not. A
+ * target with bit 1 set only faults at the fetch, where the CHERI check comes
+ * before the alignment check.
  *
  * Whether misa.C can be cleared at all is WARL, so this whole block is
  * skipped wherever the write does not take -- every QEMU target here, since
  * none of them support writing misa beyond the Y bit. It is reachable on the
- * Sail model, which needed a fix: Sail's read_CSR clause for mepcc/sepcc
- * returned the raw register, self-documented as needing legalisation for
- * writable-misa.C implementations, while get_mepc()/get_sepc() and the
- * mret/sret return path already applied it correctly. Fixed upstream by
- * giving reads of the full capability the same align_pc() treatment.
+ * Sail model.
  */
 #define TEST_NAME "xepc-detag"
 #include "testmacros.h"
@@ -46,6 +45,8 @@
 #else
 #define REP_BELOW 0x100
 #endif
+
+#define CAUSE_MISALIGNED_FETCH 0
 
 /* Write \reg (tagged) to \csr, read it back, and require the given tag. */
 .macro EXPECT_XEPC_TAG csr, reg, tag, desc
@@ -117,10 +118,11 @@ _start:
     EXPECT_XEPC_TAG CSR_SEPC, a1, 0, "sepc clears the tag of a misaligned sentry"
 
     /*
-     * Bit 1 only matters with IALIGN=32, and only on read: legalizing it on
-     * write would round a compressed-but-momentarily-C-disabled target down
-     * to the wrong instruction, so the specification (and QEMU's read_xepcc)
-     * defer it to whichever read observes the value. Whether misa.C can be
+     * Bit 1 only matters with IALIGN=32. Legalizing it on write would round
+     * a compressed-but-momentarily-C-disabled target down to the wrong
+     * instruction, so the write keeps it; the specification (and QEMU's
+     * read_xepcc) then legalize it on read, but Sail does not, and this
+     * block tentatively follows Sail (see the header). Whether misa.C can be
      * cleared at all is WARL, so this whole block is skipped where it holds
      * at 1 regardless -- currently every QEMU target, not the Sail model.
      */
@@ -138,27 +140,31 @@ _start:
     EXPECT_XEPC_TAG CSR_MEPC, a0, 1, "mepc keeps the tag of an unsealed capability with bit 1 set"
     EXPECT_XEPC_TAG CSR_SEPC, a0, 1, "sepc keeps the tag of an unsealed capability with bit 1 set"
 
-    /* But the address is rounded down on read, same as bit 0 above. */
-    NEXT_TEST "bit 1 is rounded down on read under IALIGN=32"
+    /* Nor is the address rounded down on read (Sail, src/cheri_sys_regs.sail:89). */
+    NEXT_TEST "bit 1 is not legalised on read under IALIGN=32"
     csrw CSR_MEPC, a0
     csrrs a1, CSR_MEPC, x0
-    andi t1, a1, 2
-    bnez t1, fail
+    la   t2, victim
+    ori  t2, t2, 2
+    bne  a1, t2, fail
 
     /*
      * Unsealed at rep_base = (victim + 2) - REP_BELOW (bit 1 set, bit 0
-     * clear): the CSR write keeps the tag, and reading or executing mret
-     * under IALIGN=32 masks bit 1 (2 bytes below rep_base) and clears the tag.
+     * clear): masking bit 1 would land 2 bytes below rep_base, but neither
+     * the write nor the read masks it under Sail, so the tag survives both.
+     * mret installs it unchanged too, and the fetch at rep_base (below the
+     * bounds base) then fails the CHERI bounds check, which Sail makes
+     * before the alignment check, leaving a tagged PCC in mepc.
      */
     li   t2, REP_BELOW
     sub  t0, t0, t2
     YADDRW a3, a0, t0
     YTAGR t1, a3
     beqz t1, fail
-    EXPECT_XEPC_TAG CSR_MEPC, a3, 0, "mepc clears the tag of an unsealed capability when masking bit 1 crosses rep_base"
-    EXPECT_XEPC_TAG CSR_SEPC, a3, 0, "sepc clears the tag of an unsealed capability when masking bit 1 crosses rep_base"
+    EXPECT_XEPC_TAG CSR_MEPC, a3, 1, "mepc keeps the tag of an unsealed capability with bit 1 set at rep_base"
+    EXPECT_XEPC_TAG CSR_SEPC, a3, 1, "sepc keeps the tag of an unsealed capability with bit 1 set at rep_base"
 
-    NEXT_TEST "mret detags an unsealed capability when masking bit 1 crosses rep_base"
+    NEXT_TEST "mret to an unsealed rep_base with bit 1 set takes a fetch bounds fault"
     auipc a4, 0
     la   t0, victim
     ori  t0, t0, 2
@@ -176,27 +182,29 @@ _start:
     csrs CSR_MSTATUS, t0
     mret
 ialign32_unsealed_recovered:
-    EXPECT_TRAP TRAP_CAP_FETCH(CAP_TAG)
-    EXPECT_EPC_TAG 0
-
-    /* The same capability sealed: reading now legalizes bit 1 and detags. */
-    YSENTRY a0, a0
-    EXPECT_XEPC_TAG CSR_MEPC, a0, 0, "mepc clears the tag of a sentry with bit 1 set"
-    EXPECT_XEPC_TAG CSR_SEPC, a0, 0, "sepc clears the tag of a sentry with bit 1 set"
+    EXPECT_TRAP TRAP_CAP_FETCH(CAP_BOUNDS)
+    EXPECT_EPC_TAG 1
 
     /*
-     * mret computes its target the same way: it masks bit 1 out of the
-     * address it is about to install, so a sentry stored with bit 1 set
-     * mismatches its own (now-rounded) cursor. That is the same "wrong
-     * address" case JALR takes as a tag violation, so mret leaves PCC
-     * detagged rather than installing a capability nothing authorized --
-     * even though the value read out of mepc, taken at face value, still
-     * carried a tag.
+     * The same capability sealed: with nothing legalized on read, the
+     * sentry's address is never changed, so it keeps its tag too.
      */
-    NEXT_TEST "mret detags a sentry whose stored address had bit 1 set"
+    YSENTRY a0, a0
+    EXPECT_XEPC_TAG CSR_MEPC, a0, 1, "mepc keeps the tag of a sentry with bit 1 set"
+    EXPECT_XEPC_TAG CSR_SEPC, a0, 1, "sepc keeps the tag of a sentry with bit 1 set"
+
+    /*
+     * mret does not mask bit 1 either: it unseals the sentry and jumps to
+     * its address as stored. The fetch at victim + 2 is within PCC bounds,
+     * so the CHERI check passes and the alignment check (PC[1] set, Zca
+     * off) is what fails: a misaligned fetch at victim + 2, reported with
+     * the tagged, unsealed PCC in mepc.
+     */
+    NEXT_TEST "mret to a sentry with bit 1 set takes a misaligned fetch"
     auipc a0, 0
     la   t0, victim
     ori  t0, t0, 2
+    mv   a5, t0                    /* the expected mtval */
     YADDRW a0, a0, t0
     YSENTRY a0, a0
     RESUME_AFTER_FAULT ialign32_recovered
@@ -205,8 +213,9 @@ ialign32_unsealed_recovered:
     csrs CSR_MSTATUS, t0
     mret
 ialign32_recovered:
-    EXPECT_TRAP TRAP_CAP_FETCH(CAP_TAG)
-    EXPECT_EPC_TAG 0
+    EXPECT_TRAP CAUSE_MISALIGNED_FETCH
+    EXPECT_TVAL a5
+    EXPECT_EPC_TAG 1
 
     li   t0, MISA_C               /* leave misa.C as this test found it */
     csrs CSR_MISA, t0

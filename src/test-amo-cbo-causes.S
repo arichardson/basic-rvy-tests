@@ -10,7 +10,8 @@
  *    holding the faulting virtual address. 0.9.3 predates that and reports
  *    them as misaligned faults (causes 4 and 6).
  *  - In capability mode with cs1=x0 (the NULL capability) or an untagged
- *    capability at a non-zero address, the tag check fails; the reported
+ *    capability at a non-zero address, the tag check fails (but on RVY
+ *    lr.y/sc.y with cs1=x0 are illegal instructions instead); the reported
  *    cause must be selected by the access type: LR.Y -> CHERI Load Access
  *    Fault (33); SC.Y, AMOSWAP.Y, integer AMOs (amoswap.w) and all CBOs ->
  *    CHERI Store/AMO Access Fault (34), with mtval holding the faulting
@@ -107,6 +108,7 @@ _start:
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
     EXPECT_TVAL a1
 
+#ifdef CHERI_093
     /* LR.Y via NULL cap: load-classified tag fault */
     NEXT_TEST "lr.y through the NULL capability is load classified"
     LR_Y t1, x0
@@ -116,8 +118,22 @@ _start:
     NEXT_TEST "sc.y through the NULL capability is store classified"
     SC_Y t1, x0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+#else
+    /*
+     * Capability-mode lr.y/sc.y with cs1=x0 are reserved encodings
+     * (sail-cheri-riscv src/cheri_insts.sail:1149-1153); the untagged-cap
+     * cases below still check how their tag faults are classified.
+     */
+    NEXT_TEST "capability-mode lr.y with cs1=x0 is an illegal instruction"
+    LR_Y t1, x0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    /* AMOSWAP.Y via NULL cap */
+    NEXT_TEST "capability-mode sc.y with cs1=x0 is an illegal instruction"
+    SC_Y t1, x0, t2
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
+
+    /* AMOSWAP.Y via NULL cap: no x0 guard (cheri_insts.sail:1155-1156) */
     NEXT_TEST "amoswap.y through the NULL capability is store classified"
     AMOSWAP_Y t1, x0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)

@@ -32,6 +32,7 @@
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
 #define CSR_STVEC   0x105
+#define CSR_SENVCFG 0x10A
 #define CSR_SEPC    0x141
 #define CSR_VSTVEC  0x205
 #define CSR_VSEPC   0x241
@@ -61,10 +62,19 @@
 #define MISA_Y      (1 << 24)
 #define MISA_C      (1 << 2)
 #ifdef CHERI_093
-/* 0.9.3 put the S-mode CHERI enable at bit 28 rather than bit 9. */
+/* 0.9.3 put the S-mode CHERI enable at bit 28 rather than bit 8. */
 #define MENVCFG_CRE (1 << 28)
+#define SENVCFG_CRE (1 << 28)
 #else
+/*
+ * v0.9.9 menvcfg/senvcfg.Y (formerly CRE; S-/U-mode CHERI enable) is bit 9,
+ * following golden Sail sail-cheri-riscv 42e2d75
+ * (src/cheri_sys_regs_types.sail:12, :32; bit 8 is WPRI there). Sail
+ * legalizes it to read-only 1 (src/cheri_sys_regs_envcfg.sail:20, :33), while
+ * the riscv-cheri diagrams (cheri/img/menvcfgmodereg.edn) still say bit 8.
+ */
 #define MENVCFG_CRE (1 << 9)
+#define SENVCFG_CRE (1 << 9)
 #endif
 
 /* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */

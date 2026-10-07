@@ -2,15 +2,17 @@
  *
  * RVY misa.Y enable/disable and Xenvcfg.CRE tests:
  *  - misa.Y is set (1) at reset
- *  - menvcfg resets to 0 and its CRE bit is bit 9 (bit 28 is not writable)
+ *  - menvcfg/senvcfg reset to just Y (bit 9, formerly CRE), which is
+ *    read-only 1; bits 8 and 28 are WPRI (golden Sail, see Test 2)
  *  - misa.Y can only be cleared while pcc, ddc, and every implemented
  *    xtvec/xepc (mtvecc/mepcc, stvecc/sepcc, vstvecc/vsepcc) are currently
  *    equal to root capabilities (including full architectural and
  *    software-defined permissions and unsealed CT=0)
- *  - once cleared, RVY instructions and every CSR the extension adds raise
- *    illegal instruction, and both come back when it is set again
+ *  - once cleared, RVY instructions and ddc raise illegal instruction, and
+ *    both come back when it is set again; the Zstid CSRs (mtidc, stidc,
+ *    utidc) do not depend on misa.Y and stay accessible
  *  - misa.Y can be set again
- *  - S-mode CHERI enable is gated by menvcfg.CRE
+ *  - S-mode CHERI stays enabled: clearing menvcfg.Y is ignored
  */
 #define TEST_NAME "misa-y"
 #ifdef CHERI_093
@@ -32,19 +34,37 @@ _start:
     and  t2, t0, t1
     beqz t2, fail
 
-    /* Test 2: menvcfg resets to 0; CRE is bit 9; bit 28 is not writable */
-    NEXT_TEST "menvcfg resets to 0 and CRE is bit 9 not bit 28"
-    csrr t0, CSR_MENVCFG
-    bnez t0, fail
+    /*
+     * Test 2: menvcfg/senvcfg.Y (formerly CRE) is bit 9 and read-only 1.
+     * Golden Sail sail-cheri-riscv 42e2d75: Y : 9 in
+     * src/cheri_sys_regs_types.sail:12, :32 (bit 8 is wpri_1, :14);
+     * legalize_menvcfg/legalize_senvcfg force Y = 0b1 and keep every other
+     * field read-only 0 bar FIOM (src/cheri_sys_regs_envcfg.sail:10-36), and
+     * the reset value is that legalization applied to zeros (sail-riscv
+     * model/riscv_sys_regs.sail:408-409). So clearing Y is ignored, and the
+     * bit-8 (spec-text diagram) and bit-28 (0.9.3) positions are WPRI.
+     */
+    NEXT_TEST "menvcfg/senvcfg.Y is bit 9 and read-only 1; bits 8, 28 WPRI"
     li   t1, MENVCFG_CRE
-    csrs CSR_MENVCFG, t1
     csrr t0, CSR_MENVCFG
-    bne  t1, t0, fail
-    li   t2, 1 << 28             /* pre-0.9.9 CRE position */
+    bne  t1, t0, fail            /* reset value: Y only */
+    csrc CSR_MENVCFG, t1
+    csrr t0, CSR_MENVCFG
+    bne  t1, t0, fail            /* clearing Y is ignored */
+    li   t2, 1 << 8              /* WPRI (riscv-cheri diagram CRE position) */
     csrs CSR_MENVCFG, t2
     csrr t0, CSR_MENVCFG
     bne  t1, t0, fail
-    csrc CSR_MENVCFG, t1         /* back to the reset value */
+    li   t2, 1 << 28             /* WPRI (0.9.3 CRE position) */
+    csrs CSR_MENVCFG, t2
+    csrr t0, CSR_MENVCFG
+    bne  t1, t0, fail
+    li   t1, SENVCFG_CRE
+    csrr t0, CSR_SENVCFG
+    bne  t1, t0, fail
+    csrc CSR_SENVCFG, t1
+    csrr t0, CSR_SENVCFG
+    bne  t1, t0, fail
 
     /*
      * Test 3: misa.Y writes of 0 are ignored while pcc, ddc, or any
@@ -77,8 +97,13 @@ _start:
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_MEPC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_STVEC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_SEPC, s2
+    /* vstvec/vsepc only exist (and only count) when misa.H is set. */
+    csrr  t0, CSR_MISA
+    andi  t0, t0, (1 << 7)               /* misa.H */
+    beqz  t0, 1f
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSTVEC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSEPC, s2
+1:
 
     /*
      * A capability with full bounds and tag=1 that has a single architectural
@@ -148,9 +173,9 @@ _start:
     bnez t2, fail
 
     /*
-     * Test 5: with Y=0 the extension is gone, so its instructions and every
-     * CSR it adds must read as illegal rather than as some stale value. The
-     * CSRs are checked one at a time so a failure names the one at fault.
+     * Test 5: with Y=0 the extension is gone, so its instructions and ddc
+     * must read as illegal rather than as some stale value. The CSRs are
+     * checked one at a time so a failure names the one at fault.
      */
     NEXT_TEST "with Y clear an RVY instruction is illegal"
     YAMASK t2, t0
@@ -160,22 +185,26 @@ _start:
     csrrs t2, CSR_DDC, x0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    NEXT_TEST "with Y clear reading mtidc is illegal"
+    /*
+     * The Zstid CSRs are defined by haveZstid() alone, not misa.Y
+     * (sail-cheri-riscv src/cheri_csr_ext.sail:9-11), unlike ddc (:8).
+     */
+    NEXT_TEST "with Y clear reading mtidc still works"
     csrrs t2, CSR_MTIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_NO_TRAP
 
-    NEXT_TEST "with Y clear reading stidc is illegal"
+    NEXT_TEST "with Y clear reading stidc still works"
     csrrs t2, CSR_STIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_NO_TRAP
 
-    NEXT_TEST "with Y clear reading utidc is illegal"
+    NEXT_TEST "with Y clear reading utidc still works"
     csrrs t2, CSR_UTIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_NO_TRAP
 
-    /* Writes are gone too, not just reads. */
-    NEXT_TEST "with Y clear writing mtidc is illegal"
+    /* Writes too (root pcc grants the ASR a Zstid write needs). */
+    NEXT_TEST "with Y clear writing mtidc still works"
     csrw CSR_MTIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_NO_TRAP
 
     /* Test 6: misa.Y can be set again and RVY instructions work */
     NEXT_TEST "misa.Y can be set again and RVY instructions work"
@@ -196,33 +225,25 @@ _start:
     csrrs t2, CSR_UTIDC, x0
     EXPECT_NO_TRAP
 
-    /* Test 7: S-mode CHERI enable is menvcfg.CRE */
-    NEXT_TEST "S-mode CHERI is gated by menvcfg.CRE"
+    /*
+     * Test 7: S-mode CHERI stays enabled because menvcfg.Y is read-only 1.
+     * Golden Sail forces Y = 0b1 on every write
+     * (src/cheri_sys_regs_envcfg.sail:20), and cheri_registers_enabled()
+     * grants S-mode access when misa.Y and menvcfg.Y are both 1
+     * (src/cheri_sys_regs.sail:41-47). So an attempt to clear it does not
+     * make RVY instructions illegal in S-mode.
+     */
+    NEXT_TEST "S-mode CHERI stays enabled: menvcfg.Y cannot be cleared"
     li   t0, -1                  /* PMP entry 0: allow everything */
     csrw CSR_PMPADDR0, t0
     li   t0, 0x1f                /* NAPOT, RWX */
     csrw CSR_PMPCFG0, t0
     li   t1, MENVCFG_CRE
     csrc CSR_MENVCFG, t1
+    csrr t0, CSR_MENVCFG
+    and  t0, t0, t1
+    beqz t0, fail                /* Y still reads 1 */
     li   t0, 0x1800              /* mstatus.MPP = S */
-    csrc CSR_MSTATUS, t0
-    li   t0, 0x0800
-    csrs CSR_MSTATUS, t0
-    la   t0, s_code_disabled
-    csrw CSR_MEPC, t0
-    la   m_continue, m_cont_a
-    mv   s0, trap_count
-    addi s0, s0, 1
-    mret
-s_code_disabled:
-    YAMASK t2, t0                        /* in S-mode: illegal */
-    ecall
-m_cont_a:
-    bne  trap_count, s0, fail
-    /* enable S-mode CHERI and retry */
-    li   t1, MENVCFG_CRE
-    csrs CSR_MENVCFG, t1
-    li   t0, 0x1800
     csrc CSR_MSTATUS, t0
     li   t0, 0x0800
     csrs CSR_MSTATUS, t0
@@ -239,6 +260,12 @@ m_cont_b:
 
     TEST_PASS
 fail:
+    /*
+     * A failed check may have left misa.Y clear, and TEST_FAIL needs RVY
+     * to be enabled; csrs is a base instruction, so set it back first.
+     */
+    li   t5, MISA_Y
+    csrs CSR_MISA, t5
     TEST_FAIL
 
 TRAP_HANDLER
