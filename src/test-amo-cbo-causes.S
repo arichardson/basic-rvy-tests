@@ -337,11 +337,23 @@ _start:
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
 
-    NEXT_TEST "cbo.zero through a write-only capability succeeds"
+    NEXT_TEST "cbo.zero through a write-only capability clears tags across the 64-byte block"
     SY   a3, 0(a3)
+    SY   a3, 16(a3)
+    SY   a3, 32(a3)
+    SY   a3, 48(a3)
     CBO_ZERO a7
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+    LY   t1, 16(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+    LY   t1, 32(a3)
+    YTAGR t2, t1
+    bnez t2, fail
+    LY   t1, 48(a3)
     YTAGR t2, t1
     bnez t2, fail
 

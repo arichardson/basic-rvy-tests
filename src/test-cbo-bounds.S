@@ -13,12 +13,18 @@
  *  - All four CBOs require W (store) permission on the authorizing capability
  *    (and R as well for CLEAN/FLUSH/INVAL), reporting a store capability
  *    permission fault when W is missing even if the whole block is in bounds.
+ *  - CBO.ZERO clears the capability tag and data of every capability granule
+ *    across the entire 64-byte cache block, including the middle granules at
+ *    offsets +16 and +32.
+ *  - In S-mode, CBO.ZERO, CBO.CLEAN/FLUSH, and CBO.INVAL are gated by
+ *    menvcfg.CBZE, menvcfg.CBCFE, and menvcfg.CBIE respectively.
  */
 #define TEST_NAME "cbo-bounds"
 #include "testmacros.h"
 #include "exceptions.h"
 
 #define CBOM_LEN 64
+#define MENVCFG_CBO_ALL 0xf0         /* CBIE (3 << 4) | CBCFE (1 << 6) | CBZE (1 << 7) */
 
 .option norvc
 .section .text
@@ -95,18 +101,64 @@ _start:
     CBO_FLUSH a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
-    /* A capability over the whole block passes every CBO (sanity/decode check). */
+    /*
+     * A capability over the whole 64-byte block passes every CBO, and CBO.ZERO
+     * clears the capability tag and data of every granule across the block
+     * (including the middle granules at +16 and +32).
+     */
     csrrs a0, CSR_DDC, x0
     la   t0, buf
     YADDRW a0, a0, t0
     li   t1, CBOM_LEN
     YBNDSW a0, a0, t1
 
-    NEXT_TEST "cbo.zero passes when the whole block is in bounds"
+    NEXT_TEST "cbo.zero clears capability tags and data across the entire 64-byte block"
+    SY   a0, 0(a0)
+    SY   a0, 16(a0)
+    SY   a0, 32(a0)
+    SY   a0, 48(a0)
+#if __riscv_xlen == 32
+    SY   a0, 8(a0)
+    SY   a0, 24(a0)
+    SY   a0, 40(a0)
+    SY   a0, 56(a0)
+#endif
     CBO_ZERO a0
     EXPECT_NO_TRAP
-    lbu  t2, 0(a0)
+    LY   t1, 0(a0)
+    YTAGR t2, t1
     bnez t2, fail
+    bnez t1, fail
+    LY   t1, 16(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+    LY   t1, 32(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+    LY   t1, 48(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+#if __riscv_xlen == 32
+    LY   t1, 8(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+    LY   t1, 24(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+    LY   t1, 40(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+    LY   t1, 56(a0)
+    YTAGR t2, t1
+    bnez t2, fail
+    bnez t1, fail
+#endif
 
     NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0
@@ -138,6 +190,86 @@ _start:
     CBO_INVAL a1
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL t0
+
+    /*
+     * S-mode CBO gating via menvcfg.{CBZE,CBCFE,CBIE}: when clear (0), S-mode
+     * CBOs raise illegal instruction; once set in menvcfg, S-mode CBOs
+     * execute normally.
+     */
+    li   t1, -1
+    csrw CSR_PMPADDR0, t1
+    li   t1, 0x1f
+    csrw CSR_PMPCFG0, t1
+    li   t1, MENVCFG_CRE
+    csrs CSR_MENVCFG, t1
+    li   t1, MENVCFG_CBO_ALL
+    csrc CSR_MENVCFG, t1
+
+    li   t1, 0x1800
+    csrc CSR_MSTATUS, t1
+    li   t1, 0x0800
+    csrs CSR_MSTATUS, t1
+    auipc t2, 0
+    la   t1, s_cbo_disabled
+    YADDRW t2, t2, t1
+    csrw CSR_MEPC, t2
+    la   m_continue, s_cbo_disabled_done
+    li   s2, 0
+    mret
+
+s_cbo_disabled:
+    NEXT_TEST "S-mode CBOs fault with illegal instruction when menvcfg CBO bits are clear"
+    CBO_ZERO a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    CBO_CLEAN a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    CBO_FLUSH a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    CBO_INVAL a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    ecall
+
+s_cbo_disabled_done:
+    li   t1, MENVCFG_CBO_ALL
+    csrs CSR_MENVCFG, t1
+    csrr t2, CSR_MENVCFG
+    and  t2, t2, t1
+    bne  t2, t1, fail            /* menvcfg CBO enable fields must be writable */
+
+    li   t1, 0x1800
+    csrc CSR_MSTATUS, t1
+    li   t1, 0x0800
+    csrs CSR_MSTATUS, t1
+    auipc t2, 0
+    la   t1, s_cbo_enabled
+    YADDRW t2, t2, t1
+    csrw CSR_MEPC, t2
+    la   m_continue, s_cbo_enabled_done
+    mret
+
+s_cbo_enabled:
+    NEXT_TEST "S-mode CBOs succeed once menvcfg CBZE, CBCFE, and CBIE are set"
+    SY   a0, 16(a0)
+    SY   a0, 32(a0)
+    CBO_ZERO a0
+    CBO_CLEAN a0
+    CBO_FLUSH a0
+    CBO_INVAL a0
+    EXPECT_NO_TRAP
+    LY   t1, 16(a0)
+    YTAGR t2, t1
+    bnez t2, s_cbo_fail
+    LY   t1, 32(a0)
+    YTAGR t2, t1
+    bnez t2, s_cbo_fail
+    ecall
+
+s_cbo_fail:
+    li   s2, 1
+    ecall
+
+s_cbo_enabled_done:
+    bnez s2, fail
 
     YMODESWI
     TEST_PASS
