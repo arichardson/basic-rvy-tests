@@ -26,7 +26,7 @@
  */
 #define TEST_NAME "branch-target-faults"
 #ifdef CHERI_093
-#error "RVY v0.9.9 only: 0.9.3 checks the jump target at the branch instead"
+#error "Requires RVY >= 0.9.6 (0.9.3 checks jump targets at the branch instead of fetch)"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"

@@ -42,7 +42,7 @@
  */
 #define TEST_NAME "svyrg"
 #ifdef CHERI_093
-#error "RVY v0.9.9 only: the pte.rvy field is a v0.9.9 redefinition"
+#error "Requires RVY >= 0.9.7 for the 4-bit pte.rvy field and the Svyrg extension"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"

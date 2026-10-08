@@ -47,7 +47,7 @@
  */
 #define TEST_NAME "translation-priority"
 #ifdef CHERI_093
-#error "RVY v0.9.9 only: the pte.rvy field and its faults are a v0.9.9 addition"
+#error "Requires RVY >= 0.9.7 for the pte.rvy field and the RVY exception priority order"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"
