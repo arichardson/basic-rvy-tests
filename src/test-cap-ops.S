@@ -114,7 +114,7 @@ _start:
     EXPECT_LEN a2, 64
     YBASER t3, a2
     la   t4, buf
-    bne  t3, t4, fail
+    bne  t4, t3, fail
     EXPECT_NO_TRAP
 
     NEXT_TEST "ybndsrw rounds inexact bounds outward and keeps the tag"
@@ -138,15 +138,15 @@ _start:
     bnez t1, fail
     YLENR t1, s0
     li   t2, -1
-    bne  t1, t2, fail
+    bne  t2, t1, fail
 #ifndef CHERI_093
     YTOPR t1, s0
-    bne  t1, t2, fail
+    bne  t2, t1, fail
     YTOPR t1, x0
-    bne  t1, t2, fail
+    bne  t2, t1, fail
     YTOPR t1, a0
     la   t2, buf + 4096
-    bne  t1, t2, fail
+    bne  t2, t1, fail
 #endif
     EXPECT_NO_TRAP
 

@@ -120,7 +120,7 @@ _start:
     beqz  t0, fail
     YLENR t0, t4
     li    t2, 64
-    bne   t0, t2, fail
+    bne   t2, t0, fail
     addi  t0, s1, 0x10
     bne   t4, t0, fail
 
@@ -159,7 +159,7 @@ _start:
     beqz  t0, fail
     YLENR t0, t3
     li    t4, 64
-    bne   t0, t4, fail
+    bne   t4, t0, fail
     addi  t0, s1, 0x18
     bne   t3, t0, fail
 

@@ -65,7 +65,7 @@
     bne  t3, \base_reg, fail
     YLENR t3, \reg
     li   t4, \len
-    bne  t3, t4, fail
+    bne  t4, t3, fail
 .endm
 
 .option norvc

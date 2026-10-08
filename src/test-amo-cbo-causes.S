@@ -390,7 +390,7 @@ _start:
     LY   t1, 0(a3)
     YTAGR t2, t1
     bnez t2, fail
-    bne  t1, a0, fail
+    bne  a0, t1, fail
 
     NEXT_TEST "capability-mode lr.y and sc.y without PERM_C strip loaded and stored tags"
     SY   a3, 0(a3)
@@ -420,7 +420,7 @@ _start:
     EXPECT_NO_TRAP
     YTAGR t2, t1
     bnez t2, fail
-    bne  t1, a0, fail
+    bne  a0, t1, fail
 
     /*
      * Capability-mode PERM_LM permission filtering on LY and LR.Y when

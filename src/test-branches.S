@@ -95,13 +95,15 @@ _start:
 
     YMODESWY
 
+    li   t0, 1
+    li   t1, 1
     NEXT_TEST "capability-mode untaken branch to a 2-byte-aligned target does not fault"
-    bne  x0, x0, ialign_target + 2
+    bne  t1, t0, ialign_target + 2
     EXPECT_NO_TRAP
 
     NEXT_TEST "capability-mode taken branch to a 2-byte-aligned target faults at the branch"
     la   s2, 1f
-1:  beq  x0, x0, ialign_target + 2
+1:  beq  t1, t0, ialign_target + 2
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
 

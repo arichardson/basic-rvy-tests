@@ -141,6 +141,7 @@ _start:
     li   t1, 8
     YBNDSW a0, a0, t1
     la   expected_epc, ialign_beq_tramp
+    mv   t0, x0
     RESUME_AFTER_FAULT 5f
     jalr x0, a0, 0
 5:
@@ -177,7 +178,7 @@ ialign_jal_tramp:
 
 .balign 8
 ialign_beq_tramp:
-    beq  x0, x0, illegal_target + 2
+    beq  t0, x0, illegal_target + 2
     j    fail
 
 TRAP_HANDLER_PCC
