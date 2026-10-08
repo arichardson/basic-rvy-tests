@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * RVY v0.9.9 instruction encoding and semantics tests, including YAMASK,
- * YBNDSWI, YSENTRY (and its pre-0.9.9 opcode), SRLIY by XLEN vs reserved
- * shift amounts, and YMODEW (both valid cd != x0 updates and the v0.9.9
- * reservation of cd = x0 outside YMODESWY/YMODESWI). RVY instructions are
- * emitted via the macros in testmacros.h since assemblers do not know the
- * new encodings yet.
+ * RVY instruction encoding and semantics tests across v0.9.10, v0.9.9, and
+ * 0.9.3, including YAMASK, YBNDSWI, YSEALE (and its pre-0.9.9 opcode),
+ * YHIR (v0.9.10) vs SRLIY by XLEN (v0.9.9) and reserved shift amounts, and
+ * YMODEW (both valid cd != x0 updates and the RVY reservation of cd = x0
+ * outside YMODESWY/YMODESWI). RVY instructions are emitted via the macros in
+ * testmacros.h since assemblers do not know the new encodings yet.
  */
 #define TEST_NAME "insn-encodings"
 #include "testmacros.h"
@@ -74,40 +74,45 @@ _start:
 #endif
 #endif /* !CHERI_093 */
 
-    /* YSENTRY (the macro picks each version's encoding) */
-    NEXT_TEST "ysentry seals as a sentry and sealing again detags"
-    YSENTRY t1, t0
+    /* YSEALE (the macro picks each version's encoding) */
+    NEXT_TEST "yseale seals as a sentry and sealing again detags"
+    YSEALE t1, t0
     YTAGR t2, t1                 /* ytagr = 1 */
     beqz t2, fail
     YTYPER t2, t1                /* ytyper = 1 (sentry) */
     li   t3, 1
     bne  t3, t2, fail
     /* sealing an already sealed capability clears the tag */
-    YSENTRY t4, t1
+    YSEALE t4, t1
     YTAGR t2, t4                 /* ytagr = 0 */
     bnez t2, fail
 
 #ifndef CHERI_093
-    /* The pre-0.9.9 YSENTRY encoding (2OP space) must be illegal */
-    NEXT_TEST "the pre-0.9.9 ysentry encoding is illegal"
-    .insn r 0x7b, 0, 0x7b, t1, t0, x0    /* pre-0.9.9 YSENTRY: now illegal */
+    /* The pre-0.9.9 YSEALE encoding (2OP space) must be illegal */
+    NEXT_TEST "the pre-0.9.9 yseale encoding is illegal"
+    .insn r 0x7b, 0, 0x7b, t1, t0, x0    /* pre-0.9.9 YSEALE: now illegal */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif
 
 #ifndef CHERI_093
-    /* SRLIY only accepts shamt == XLEN (0.9.3 has no such form) */
-    NEXT_TEST "srliy by XLEN reads the metadata"
-    SRLIY t1, t0, __riscv_xlen
+    /*
+     * Reading the metadata half: v0.9.10 uses YHIR (2OP rs2=7), whereas
+     * v0.9.9 uses SRLIY by XLEN.
+     */
+    NEXT_TEST "yhir (or v0.9.9 srliy by XLEN) reads the metadata"
+    YHIR t1, t0
     beqz t1, fail                /* pesbt of the root cap is non-zero */
     EXPECT_NO_TRAP
 
+#ifdef CHERI_099
     NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
     SRLIY t1, t0, __riscv_xlen - 1    /* reserved shamt */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
 
-    /* funct3=5 immediates in neither the SRLIY nor YBNDSWI range */
-    NEXT_TEST "a funct3=5 immediate outside both ranges is illegal"
-    SRLIY t1, t0, 0x100
+    /* funct3=5 immediates outside the YBNDSWI (and v0.9.9 SRLIY) range */
+    NEXT_TEST "a funct3=5 immediate outside the ybndswi range is illegal"
+    .insn i RVY_OPC, 5, t1, t0, 0x100
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif
 

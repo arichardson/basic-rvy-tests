@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * The enforcing half of test-branches: run with x-rvy-strict-branches=on,
- * where QEMU implements the architectural reservation, each reserved-order
- * BEQ/BNE in capability mode must raise an illegal instruction.
+ * The enforcing half of test-branches: on RVY v0.9.9 (where BEQ/BNE with
+ * rs1 <= rs2 are reserved in capability mode), each reserved-order BEQ/BNE
+ * in capability mode must raise an illegal instruction.
  *
  * The reservation is capability-mode only, so the identical sequence in
  * integer pointer mode must still execute -- that is what lets hybrid
  * binaries keep using these encodings for their integer code.
  */
 #define TEST_NAME "reserved-branches"
-#ifdef CHERI_093
-#error "RVY v0.9.9 only: the reserved BEQ/BNE encodings are a v0.9.9 addition"
+#ifndef CHERI_099
+#error "Requires RVY v0.9.9 (BEQ/BNE with rs1 <= rs2 is only reserved in 0.9.6-0.9.9)"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"

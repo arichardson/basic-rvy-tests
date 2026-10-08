@@ -91,7 +91,7 @@ _start:
     YADDRW a6, s0, a1            /* a6: full-permission capability at buf + 4 */
     li   t2, DROP_MASK(PERM_R)
     DROP_PERMS a7, a3, t2        /* a7: write-only capability (W=1, R=0; C=1 on RV64, C=0 on RV32) */
-    YSENTRY s1, a3               /* s1: sealed sentry capability at buf */
+    YSEALE s1, a3                /* s1: sealed sentry capability at buf */
     li   t2, YLEN_BYTES
     YBNDSW s2, a3, t2            /* [buf, buf + YLEN_BYTES) */
     YADDI  s2, s2, YLEN_BYTES    /* s2: cursor at top (out of bounds) */

@@ -74,10 +74,10 @@ _start:
 
     YMODESWY                     /* capability mode: jalr takes a capability */
 
-    /* Untagged target (PACKY builds a capability with tag = 0) */
+    /* Untagged target (YHIW builds a capability with tag = 0) */
     NEXT_TEST "an untagged target faults at the target and still writes the link sentry"
     la   t0, victim
-    PACKY a0, t0, x0
+    YHIW a0, t0, x0
     JALR_EXPECT_FAULT_AT a0, 0, t0
     EXPECT_TARGET_FAULT 0
 
@@ -101,7 +101,7 @@ _start:
     auipc a0, 0
     la   t0, victim
     YADDRW a0, a0, t0
-    YSENTRY a0, a0
+    YSEALE a0, a0
     addi t1, t0, 8
     JALR_EXPECT_FAULT_AT a0, 8, t1
     EXPECT_TARGET_FAULT 0
@@ -159,7 +159,7 @@ _start:
     auipc a0, 0
     la   t0, good_target
     YADDRW a0, a0, t0
-    YSENTRY a0, a0
+    YSEALE a0, a0
     jalr ra, a0, 0
     EXPECT_NO_TRAP
 

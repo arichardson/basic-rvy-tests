@@ -208,7 +208,7 @@ s_entry:
     YADDRW a0, a0, t0
 
     /* a1 = the same address, untagged: the capability check fails first. */
-    YSUNSEAL a1, x0, a0
+    YUNSEALS a1, x0, a0
 
     /* a2 = the same page, misaligned for a capability access. */
     li   t0, VA_OF(IDX_INVALID) + 4

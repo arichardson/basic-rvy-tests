@@ -112,7 +112,7 @@ _start:
     EXPECT_XEPC_TAG CSR_SEPC, a3, 0, "sepc clears the tag of an unsealed capability rounded below rep_base"
 
     /* The same capability sealed as a sentry: now the tag is cleared. */
-    YSENTRY a1, a1
+    YSEALE a1, a1
     EXPECT_XEPC_TAG CSR_MEPC, a1, 0, "mepc clears the tag of a misaligned sentry"
     EXPECT_XEPC_TAG CSR_SEPC, a1, 0, "sepc clears the tag of a misaligned sentry"
 
@@ -180,7 +180,7 @@ ialign32_unsealed_recovered:
     EXPECT_EPC_TAG 0
 
     /* The same capability sealed: reading now legalizes bit 1 and detags. */
-    YSENTRY a0, a0
+    YSEALE a0, a0
     EXPECT_XEPC_TAG CSR_MEPC, a0, 0, "mepc clears the tag of a sentry with bit 1 set"
     EXPECT_XEPC_TAG CSR_SEPC, a0, 0, "sepc clears the tag of a sentry with bit 1 set"
 
@@ -198,7 +198,7 @@ ialign32_unsealed_recovered:
     la   t0, victim
     ori  t0, t0, 2
     YADDRW a0, a0, t0
-    YSENTRY a0, a0
+    YSEALE a0, a0
     RESUME_AFTER_FAULT ialign32_recovered
     csrw CSR_MEPC, a0
     li   t0, 0x1800                /* mstatus.MPP = M, so mret returns to M-mode */
