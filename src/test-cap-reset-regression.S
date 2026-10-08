@@ -19,16 +19,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#if __riscv_xlen == 64
-#define SX      sd
-#define LX      ld
-#define XBYTES  8
-#else
-#define SX      sw
-#define LX      lw
-#define XBYTES  4
-#endif
-
 /* Store \reg, load it back, store that, and compare the two memory images. */
 .macro EXPECT_RESET_ROUNDTRIP reg
     NEXT_TEST "\reg holds bits it can store back untouched since reset"

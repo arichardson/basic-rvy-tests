@@ -189,8 +189,8 @@ console_skip:
     add  t3, t3, t4
     YADDRW t3, t0, t3
     STORE_X a1, 0(t3)
-    STORE_X a2, PTR_BYTES(t3)
-    STORE_X a0, 2 * PTR_BYTES(t3)
+    STORE_X a2, XBYTES(t3)
+    STORE_X a0, 2 * XBYTES(t3)
     addi t2, t2, 1
     STORE_X t2, 0(t1)
     ret
@@ -265,15 +265,15 @@ console_tap:
 8:  beqz t1, 7f
     LOAD_X t3, 0(t2)
     blt  a5, t3, 9f              /* before this range */
-    LOAD_X t3, PTR_BYTES(t2)
+    LOAD_X t3, XBYTES(t2)
     blt  t3, a5, 9f              /* after it */
-    LOAD_X a3, 2 * PTR_BYTES(t2) /* the reason; survives console_puts */
+    LOAD_X a3, 2 * XBYTES(t2)    /* the reason; survives console_puts */
     la   a0, .Ltap_skip
     jal  ra, console_puts
     mv   a0, a3
     jal  ra, console_puts
     j    7f
-9:  YADDI t2, t2, 3 * PTR_BYTES
+9:  YADDI t2, t2, 3 * XBYTES
     addi t1, t1, -1
     j    8b
 7:  la   a0, .Ltap_nl
@@ -342,7 +342,7 @@ tap_skip_overflow:
     WORD_X 0
 .globl tap_skips
 tap_skips:
-    .space 3 * PTR_BYTES * TAP_MAX_SKIPS
+    .space 3 * XBYTES * TAP_MAX_SKIPS
 
 /* Set by console_init: non-zero where this machine has the virt UART. */
 .globl console_uart

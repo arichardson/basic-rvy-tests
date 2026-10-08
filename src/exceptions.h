@@ -269,6 +269,13 @@ __rvy_used_resume_after_fault = 1
     bne  t3, trap_epc_tag, fail
 .endm
 
+/* The capability in \reg carries \tag. */
+.macro EXPECT_TAG reg, tag
+    YTAGR t3, \reg
+    li   t4, \tag
+    bne  t4, t3, fail
+.endm
+
 /* Shared prologue: record the trap, letting an S-mode ecall back to M-mode. */
 .macro TRAP_RECORD_AND_LET_ECALL_THROUGH
     csrr trap_cause, CSR_MCAUSE

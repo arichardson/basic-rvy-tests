@@ -25,24 +25,10 @@
 #include "exceptions.h"
 
 #if __riscv_xlen == 64
-#define XLEN 64
-#define XBYTES 8
-#define LX ld
-#define SX sd
 #define PESBT_RESERVED0_BIT (1 << 28)
 #else
-#define XLEN 32
-#define XBYTES 4
-#define LX lw
-#define SX sw
 #define PESBT_RESERVED0_BIT (1 << 21)
 #endif
-
-.macro EXPECT_TAG reg, tag
-    YTAGR t3, \reg
-    li   t4, \tag
-    bne  t4, t3, fail
-.endm
 
 .macro EXPECT_LEN reg, len
     YLENR t3, \reg
