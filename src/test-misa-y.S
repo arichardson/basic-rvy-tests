@@ -14,7 +14,7 @@
  */
 #define TEST_NAME "misa-y"
 #ifdef CHERI_093
-#error "RVY v0.9.9 only: 0.9.3 gates CHERI on mseccfg.CRE rather than misa.Y"
+#error "Requires RVY >= 0.9.9 (0.9.3 gates CHERI on mseccfg.CRE rather than misa.Y)"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"

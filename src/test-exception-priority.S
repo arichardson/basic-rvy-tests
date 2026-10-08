@@ -16,7 +16,7 @@
  */
 #define TEST_NAME "exception-priority"
 #ifdef CHERI_093
-#error "RVY v0.9.9 only: 0.9.3 orders these differently and has one cause"
+#error "Requires RVY >= 0.9.6 (0.9.3 has a single CHERI cause and different priority order)"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"

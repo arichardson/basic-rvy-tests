@@ -18,7 +18,7 @@
  */
 #define TEST_NAME "xepc-return"
 #ifdef CHERI_093
-#error "RVY v0.9.9 only: 0.9.3 checks the mepc target at mret instead of the fetch"
+#error "Requires RVY >= 0.9.6 (0.9.3 checks the mepc target at mret instead of fetch)"
 #endif
 #include "testmacros.h"
 #include "exceptions.h"
