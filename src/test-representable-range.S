@@ -252,7 +252,7 @@ _start:
      * YADD, YADDI (even with imm == 0), and YSH1ADD clear the tag.
      */
     NEXT_TEST "cursor updates on a sealed sentry clear the tag while ymv preserves it"
-    YSENTRY a2, a0
+    YSEALE a2, a0
     YMV  a3, a2
     EXPECT_TAG a3, 1
     YADDRW a3, a2, s1            /* same address, still detags */

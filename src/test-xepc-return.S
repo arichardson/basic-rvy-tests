@@ -8,7 +8,7 @@
  * installs cannot execute.
  *
  * Sealing here always produces a sentry: RVY has no general-purpose sealing
- * instruction, only YSENTRY, so a sealed-but-not-a-sentry epcc cannot be
+ * instruction, only YSEALE, so a sealed-but-not-a-sentry epcc cannot be
  * constructed and is not covered.
  *
  * SRET shares the same unseal logic (cheri_update_pcc_for_exc_return in
@@ -52,7 +52,7 @@ _start:
     auipc a0, 0
     la   t0, good_target
     YADDRW a0, a0, t0
-    YSENTRY a0, a0
+    YSEALE a0, a0
     csrw CSR_MEPC, a0
     li   t5, 0x1800
     csrs CSR_MSTATUS, t5

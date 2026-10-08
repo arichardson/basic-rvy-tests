@@ -14,11 +14,10 @@
  *    representable and clearing the tag when the CSR holds a sealed sentry.
  *  - In Integer Mode, reading an extended capability CSR (mscratch, sscratch,
  *    mepc, sepc, mtvec, stvec) returns only the XLEN integer address in rd
- *    (untagged), whereas reading ddc (and utidc/stidc/mtidc on RVY v0.9.9,
- *    which adds them as YLEN-wide CSRs rather than extending XLEN CSRs)
- *    returns the full YLEN capability in both execution modes; writing any
- *    capability CSR in Integer Mode updates only the cursor of the CSR's
- *    existing capability.
+ *    (untagged), whereas reading ddc (and utidc/stidc/mtidc on RVY, which adds
+ *    them as YLEN-wide CSRs rather than extending XLEN CSRs) returns the full
+ *    YLEN capability in both execution modes; writing any capability CSR in
+ *    Integer Mode updates only the cursor of the CSR's existing capability.
  *  - The thread ID capability CSRs (utidc, stidc, mtidc) are readable without
  *    ASR in PCC (via rs1=x0 or uimm=0) and require ASR for any write (including
  *    CSRRWI with uimm=0).
@@ -42,7 +41,7 @@ _start:
     YADDRW a0, s0, s1
     li    t0, 64
     YBNDSW a0, a0, t0            /* a0: tagged capability [buf, buf + 64) */
-    YSENTRY a1, a0               /* a1: sealed sentry at buf */
+    YSEALE a1, a0                /* a1: sealed sentry at buf */
 
     /* =====================================================================
      * Capability Mode: CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI

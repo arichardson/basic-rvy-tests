@@ -15,8 +15,8 @@
  *    YSH4ADD.UW instructions increment capability cursors by register or
  *    shifted-register offsets.
  *  - YEQ compares full capability state (tag, cursor, and metadata).
- *  - SRLIY by XLEN reads the capability metadata half.
- *  - YSENTRY, YSUNSEAL, YBLD, YSS, and YTYPER seal, unseal, rebuild, compare
+ *  - YHIR reads the capability metadata half.
+ *  - YSEALE, YUNSEALS, YBLD, YSS, and YTYPER seal, unseal, rebuild, compare
  *    subsets, and inspect capability types.
  *  - YPERMC / ACPERM restricts permissions, and clearing PERM_X on an
  *    integer-mode capability forces its execution mode to capability mode.
@@ -234,7 +234,7 @@ _start:
     DROP_PERMS a2, a0, t2
     YEQ  t1, a0, a2              /* different permissions */
     bnez t1, fail
-    YSENTRY a2, a0
+    YSEALE a2, a0
     YEQ  t1, a0, a2              /* different otype */
     bnez t1, fail
     la   t2, buf
@@ -244,9 +244,9 @@ _start:
     EXPECT_NO_TRAP
 
 #ifndef CHERI_093
-    /* SRLIY by XLEN reads the metadata, which 0.9.3 has no encoding for */
-    NEXT_TEST "srliy by XLEN reads the capability metadata"
-    SRLIY t1, a0, XLEN
+    /* YHIR (or SRLIY by XLEN on v0.9.9) reads the capability metadata half. */
+    NEXT_TEST "yhir reads the capability metadata"
+    YHIR t1, a0
     beqz t1, fail
     EXPECT_NO_TRAP
 #endif
@@ -260,23 +260,23 @@ _start:
 
 #ifndef CHERI_093
     /*
-     * YSUNSEAL, which 0.9.3 does not have: sealing a1 as a sentry and then
+     * YUNSEALS, which 0.9.3 does not have: sealing a1 as a sentry and then
      * unsealing it under a0 is allowed, and the result comes back unsealed
      * and tagged. cs1 = x0 copies, untags, and unseals.
      */
-    NEXT_TEST "ysunseal of a sentry under a superset returns it unsealed"
-    YSENTRY a2, a1               /* a2 = a1 sealed as a sentry */
+    NEXT_TEST "yunseals of a sentry under a superset returns it unsealed"
+    YSEALE a2, a1                /* a2 = a1 sealed as a sentry */
     EXPECT_TAG a2, 1
     YTYPER t3, a2
     beqz t3, fail                /* it really is sealed */
-    YSUNSEAL a3, a0, a2
+    YUNSEALS a3, a0, a2
     EXPECT_TAG a3, 1
     YTYPER t3, a3
     bnez t3, fail                /* comes back unsealed */
     EXPECT_NO_TRAP
 
-    NEXT_TEST "ysunseal with cs1=x0 copies untags and unseals"
-    YSUNSEAL a3, x0, a2
+    NEXT_TEST "yunseals with cs1=x0 copies untags and unseals"
+    YUNSEALS a3, x0, a2
     EXPECT_TAG a3, 0
     YTYPER t3, a3
     bnez t3, fail
@@ -298,7 +298,7 @@ _start:
     EXPECT_LEN a4, 8
     YSS  t3, a0, a4              /* a4 is a tagged subset of a0 */
     beqz t3, fail
-    YSENTRY a2, a4
+    YSEALE a2, a4
     YSS  t3, a0, a2              /* YSS ignores otype when bounds and perms are a subset */
     beqz t3, fail
     YSS  t3, a3, a3              /* untagged capability is a subset of itself */
@@ -317,7 +317,7 @@ _start:
     bnez t3, fail
     YTYPER t3, a0
     bnez t3, fail
-    YSENTRY a2, a1
+    YSEALE a2, a1
     YTYPER t3, a2
     li   t4, 1
     bne  t4, t3, fail

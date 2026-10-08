@@ -16,7 +16,7 @@
  *    preserve every bit;
  *  - capability-mode CSR round-trip through mscratch;
  *  - atomic capability memory operations (AMOSWAP.Y and LR.Y/SC.Y);
- *  - PACKY -> SY and LY -> SRLIY by XLEN on RVY.
+ *  - YHIW -> SY and LY -> YHIR (or SRLIY by XLEN on v0.9.9) on RVY.
  */
 #define TEST_NAME "cap-roundtrip"
 #include "testmacros.h"
@@ -120,18 +120,19 @@
 
 #ifndef CHERI_093
 /*
- * RVY PACKY assembles an untagged capability from two integer registers and
- * SRLIY by XLEN extracts the metadata half back to an integer register.
+ * RVY YHIW assembles an untagged capability from two integer registers and
+ * YHIR (or SRLIY by XLEN on v0.9.9) extracts the metadata half back to an
+ * integer register.
  */
-.macro EXPECT_PACKY_SRLIY_ROUNDTRIP desc, lo, hi
-    NEXT_TEST "\desc (packy -> sy and srliy)"
+.macro EXPECT_YHIW_YHIR_ROUNDTRIP desc, lo, hi
+    NEXT_TEST "\desc (yhiw -> sy and yhir)"
     li   t0, \lo
     li   t1, \hi
     SX   x0, 0(a2)
     SX   x0, XBYTES(a2)
-    PACKY  a1, t0, t1
-    YBASER t4, a1                /* force decompression before SRLIY/SY */
-    SRLIY  t3, a1, XLEN
+    YHIW   a1, t0, t1
+    YBASER t4, a1                /* force decompression before YHIR/SY */
+    YHIR   t3, a1
     bne    t3, t1, fail
     SY     a1, 0(a2)
     EXPECT_NO_TRAP
@@ -231,11 +232,11 @@ _start:
     bne  t4, t3, fail
 
 #ifndef CHERI_093
-    EXPECT_PACKY_SRLIY_ROUNDTRIP "all-zero bits", 0, 0
-    EXPECT_PACKY_SRLIY_ROUNDTRIP "all-one bits", -1, -1
-    EXPECT_PACKY_SRLIY_ROUNDTRIP "crossed alternating bits", PAT_ALT_55, PAT_ALT_AA
-    EXPECT_PACKY_SRLIY_ROUNDTRIP "distinct byte pattern", PAT_SEQ_LO, PAT_SEQ_HI
-    EXPECT_PACKY_SRLIY_ROUNDTRIP "malformed E>maxE bits", PAT_SEQ_LO, EBT_MALFORMED_E_GT_MAX
+    EXPECT_YHIW_YHIR_ROUNDTRIP "all-zero bits", 0, 0
+    EXPECT_YHIW_YHIR_ROUNDTRIP "all-one bits", -1, -1
+    EXPECT_YHIW_YHIR_ROUNDTRIP "crossed alternating bits", PAT_ALT_55, PAT_ALT_AA
+    EXPECT_YHIW_YHIR_ROUNDTRIP "distinct byte pattern", PAT_SEQ_LO, PAT_SEQ_HI
+    EXPECT_YHIW_YHIR_ROUNDTRIP "malformed E>maxE bits", PAT_SEQ_LO, EBT_MALFORMED_E_GT_MAX
 #endif
 
     YMODESWI

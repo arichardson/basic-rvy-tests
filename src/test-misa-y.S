@@ -105,7 +105,7 @@ _start:
     csrrw x0, CSR_DDC, s2
 
     csrrs s2, CSR_MEPC, x0
-    YSENTRY t1, s2               /* root bounds and perms, but sealed (CT=1) */
+    YSEALE t1, s2                /* root bounds and perms, but sealed (CT=1) */
     csrrw x0, CSR_MEPC, t1
     csrc  CSR_MISA, t5
     csrr  t6, CSR_MISA
