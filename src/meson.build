@@ -63,8 +63,10 @@ if rvy_test_cc_found
   rvy_machines = ['virt', 'spike']
 
   # Every case, and which (xlen, CHERI version) profiles it applies to; a key
-  # left out defaults to both xlens and both CHERI versions. This is the
-  # canonical list -- a test not named here never runs.
+  # left out defaults to both xlens and all CHERI versions. Set 'min_version'
+  # when a test's subject was introduced in a later version, and
+  # 'cheri_versions' when a test is specific to particular version(s). This is
+  # the canonical list -- a test not named here never runs.
   rvy_tests = [
     {'name': 'test-loadstore-x0'},
     {'name': 'test-amo-cbo-causes'},
@@ -84,21 +86,27 @@ if rvy_test_cc_found
     {'name': 'test-cbo-bounds'},
     {'name': 'test-xepc-detag'},
     {'name': 'test-xtvec-detag'},
-    # misa.Y, taking control-flow faults at the target, and the exception
-    # priority table are all 0.9.9 only.
-    {'name': 'test-misa-y', 'cheri_versions': ['0.9.9']},
-    {'name': 'test-branch-target-faults', 'cheri_versions': ['0.9.9']},
-    {'name': 'test-exception-priority', 'cheri_versions': ['0.9.9']},
-    {'name': 'test-xepc-return', 'cheri_versions': ['0.9.9']},
+    # 0.9.6 removed capability checks from branches, jumps, and xRET so target
+    # faults are taken on instruction fetch, split CHERI fault causes into
+    # mcause 24-28 and 33-36, and defined the synchronous exception priority
+    # table.
+    {'name': 'test-branch-target-faults', 'min_version': '0.9.6'},
+    {'name': 'test-exception-priority', 'min_version': '0.9.6'},
+    {'name': 'test-xepc-return', 'min_version': '0.9.6'},
+    # 0.9.7 replaced the 1-bit/3-bit PTE layout with the 4-bit pte.rvy field
+    # (yd, yw, yrg, yr in bits 58:55) and defined the Svyrg extension (RV64
+    # only). The "any" CPU has no supervisor mode, so this needs the default
+    # CPU model.
+    {'name': 'test-svyrg', 'min_version': '0.9.7', 'xlens': [64],
+     'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
+    {'name': 'test-translation-priority', 'min_version': '0.9.7',
+     'xlens': [64], 'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
+    # 0.9.9 made misa.Y reset to 1, gated clearing misa.Y on pc/ddc/xtvec/xepc
+    # holding root capabilities, and moved menvcfg.CRE from bit 28 to bit 9.
+    {'name': 'test-misa-y', 'min_version': '0.9.9'},
     # The reservation is only enforced when asked for.
     {'name': 'test-reserved-branches', 'cheri_versions': ['0.9.9'],
      'qemu_args': ['-cpu', 'any,x-rvy-strict-branches=on']},
-    # Svyrg (and the pte.rvy field it redefines) is RV64-only. The "any" CPU
-    # has no supervisor mode, so this needs the default CPU model.
-    {'name': 'test-svyrg', 'cheri_versions': ['0.9.9'], 'xlens': [64],
-     'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
-    {'name': 'test-translation-priority', 'cheri_versions': ['0.9.9'],
-     'xlens': [64], 'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
   ]
 
   used_as_qemu_submodule = is_variable('emulators')
@@ -117,8 +125,10 @@ if rvy_test_cc_found
     rvy_cflags_cheri = rvy_cheri_ver == '0.9.3' ? ['-DCHERI_093'] : []
     foreach t : rvy_tests
       xlens = t.get('xlens', [32, 64])
-      cheri_versions = t.get('cheri_versions', ['0.9.3', '0.9.9'])
-      if rvy_cheri_ver not in cheri_versions
+      if 'min_version' in t and rvy_cheri_ver.version_compare('<' + t['min_version'])
+        continue
+      endif
+      if 'cheri_versions' in t and rvy_cheri_ver not in t['cheri_versions']
         continue
       endif
       foreach xlen : xlens
