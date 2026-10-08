@@ -15,10 +15,13 @@
  *    on RV32.
  *  - YUNSEALS, YBLD, and YSS reject untagged, sealed, malformed, or
  *    non-superset operands.
- *  - YMODEW and YPERMC / ACPERM clear the tag on sealed inputs, and YMODEW
- *    leaves the mode bit unmodified when PERM_X is absent.
- *  - YPERMR, YBLD, and YSS enforce metadata integrity on non-zero RESERVED0/1
- *    bits and (on RV32) reserved AP Quadrant 0 encodings.
+ *  - YMODEW clears the tag on sealed inputs and leaves the mode bit
+ *    unmodified when PERM_X is absent; YPERMC / ACPERM clears the tag on
+ *    sealed inputs when clearing a permission that was granted before
+ *    sealing, and preserves the tag when clearing only permissions that were
+ *    already zero.
+ *  - YPERMR, YPERMC, YBLD, YSS, and YSEALE enforce metadata integrity on
+ *    non-zero RESERVED0/1 bits and (on RV32) reserved AP Quadrant 0 encodings.
  */
 #define TEST_NAME "cap-ops-failures"
 #include "testmacros.h"
@@ -219,8 +222,17 @@ _start:
     DROP_PERMS a4, a3, t2
     EXPECT_TAG a4, 0
 #ifndef CHERI_093
-    /* RVY YPERMC on a sentry preserves the tag when AP and SDP are not changed. */
+    /*
+     * RVY YPERMC on a sentry preserves the tag when no AP or SDP bits in the
+     * sentry are changed, both for rs2 == x0 and when rs2 requests clearing a
+     * permission bit (PERM_W) that was already 0 before sealing.
+     */
     YPERMC a4, a3, x0
+    EXPECT_TAG a4, 1
+    li   t2, PERM_W
+    YPERMC a4, a2, t2
+    YSEALE a4, a4                /* sentry with PERM_W already cleared */
+    YPERMC a4, a4, t2            /* clearing PERM_W again changes no bits */
     EXPECT_TAG a4, 1
 #endif
     li   t2, DROP_MASK(PERM_X)
@@ -232,12 +244,12 @@ _start:
     EXPECT_NO_TRAP
 
     /*
-     * Non-zero RESERVED0 metadata bits cause YBLD to detag and YSS to return
-     * 0 in both versions, and cause YPERMR to zero all allocated AP and SDP
-     * bits (matching YPERMR of x0) in v0.9.9 while 0.9.3 gcperm preserves AP
-     * and SDP.
+     * Non-zero RESERVED0 metadata bits cause YBLD and YSEALE to detag and YSS
+     * to return 0 in all versions, and cause RVY YPERMR and YPERMC to zero all
+     * allocated AP and SDP bits (with YPERMC also clearing the tag) while 0.9.3
+     * gcperm preserves AP and SDP.
      */
-    NEXT_TEST "non-zero reserved0 metadata fails ybld, yss, and v0.9.9 ypermr"
+    NEXT_TEST "non-zero reserved0 metadata fails ybld, yseale, yss, and RVY ypermr/ypermc"
     SY   a1, 0(a0)
     LX   t1, XBYTES(a0)
     li   t2, PESBT_RESERVED0_BIT
@@ -246,6 +258,11 @@ _start:
     LY   a3, 0(a0)
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
+    YSEALE a4, a3
+    EXPECT_TAG a4, 0
+    YTYPER t3, a4
+    li   t4, 1
+    bne  t4, t3, fail
     YSS  t3, a3, a3
     bnez t3, fail
     YSS  t3, x0, a3              /* cs1 valid untagged, cs2 malformed untagged */
@@ -260,21 +277,26 @@ _start:
 #else
     YPERMR t4, x0
     bne  t4, t3, fail
+    YPERMC a4, a3, x0            /* malformed cs1: zeroes AP/SDP in cd */
+    EXPECT_TAG a4, 0
+    YHIR t3, a3
+    YHIR t4, a4
+    beq  t4, t3, fail            /* AP was non-zero in a3 and is zeroed in a4 */
 #endif
     EXPECT_NO_TRAP
 
 #if __riscv_xlen == 64
     /*
-     * On RV64, v0.9.9 moved the 4-bit SDP field from pesbt[56:53] (bits
-     * 120:117) to pesbt[63:60] (bits 127:124), shifting RESERVED1 to
-     * pesbt[59:53]. Setting both pesbt[63:60]=0xa and pesbt[56:53]=0x5 puts
-     * non-zero bits into RESERVED1 in both versions: 0.9.3 gcperm still
-     * reports SDP=0x5 and AP, whereas v0.9.9 ypermr zeroes both AP and SDP
-     * (matching YPERMR of x0). Clearing pesbt[59:53] leaves a valid v0.9.9
-     * capability with SDP=0xa that passes ybld and yss, while still
-     * malformed (RESERVED1 != 0) in 0.9.3.
+     * On RV64, RVY moved the 4-bit SDP field from pesbt[56:53] (bits 120:117)
+     * to pesbt[63:60] (bits 127:124), shifting RESERVED1 to pesbt[59:53].
+     * Setting both pesbt[63:60]=0xa and pesbt[56:53]=0x5 puts non-zero bits
+     * into RESERVED1 in both formats: 0.9.3 gcperm still reports SDP=0x5 and
+     * AP, whereas RVY ypermr and ypermc zero both AP and SDP (matching YPERMR
+     * of x0). Clearing pesbt[59:53] leaves a valid RVY capability with
+     * SDP=0xa that passes ybld, yss, and ypermc, while still malformed
+     * (RESERVED1 != 0) in 0.9.3.
      */
-    NEXT_TEST "rv64 sdp and reserved1 relocation between 0.9.3 and v0.9.9"
+    NEXT_TEST "rv64 sdp and reserved1 relocation between 0.9.3 and RVY"
     SY   a1, 0(a0)
     LX   t1, XBYTES(a0)
     slli t1, t1, 11
@@ -296,6 +318,11 @@ _start:
 #else
     YPERMR t4, x0
     bne  t4, t3, fail
+    YPERMC a4, a3, x0
+    EXPECT_TAG a4, 0
+    YHIR t3, a4
+    srli t3, t3, 60              /* SDP in pesbt[63:60] must be zeroed */
+    bnez t3, fail
 #endif
     li   t2, (0xa << 60)
     or   t2, t1, t2
@@ -319,15 +346,17 @@ _start:
     andi t3, t3, 0xf
     li   t4, 0xa
     bne  t4, t3, fail
+    YPERMC a4, a4, x0
+    EXPECT_TAG a4, 1
 #endif
     EXPECT_NO_TRAP
 #else /* __riscv_xlen == 32 */
     /*
      * On RV32, Quadrant 0 (Q=0) encodings with bit 1 set (such as
-     * AP_M = 0b00010 at pesbt[29:25]) are reserved in both 0.9.3 and v0.9.9:
+     * AP_M = 0b00010 at pesbt[29:25]) are reserved in both 0.9.3 and RVY:
      * YBLD clears the tag, YSS returns 0, 0.9.3 gcperm zeroes AP while
-     * preserving SDP (set to 0b10 at pesbt[31:30]), and v0.9.9 ypermr zeroes
-     * both AP and SDP (matching YPERMR of x0).
+     * preserving SDP (set to 0b10 at pesbt[31:30]), and RVY ypermr and ypermc
+     * zero both AP and SDP (matching YPERMR of x0).
      */
     NEXT_TEST "rv32 reserved ap quadrant 0 encoding is rejected"
     SY   a1, 0(a0)
@@ -348,6 +377,13 @@ _start:
     ori  t4, t4, 0x0080          /* 2-bit SDP=0b10 preserved, all AP bits 0 */
 #endif
     bne  t4, t3, fail
+#ifndef CHERI_093
+    YPERMC a4, a3, x0
+    EXPECT_TAG a4, 0
+    YHIR t3, a4
+    srli t3, t3, 25              /* SDP, P, and AP in pesbt[31:25] must be zeroed */
+    bnez t3, fail
+#endif
     EXPECT_NO_TRAP
 #endif
 
