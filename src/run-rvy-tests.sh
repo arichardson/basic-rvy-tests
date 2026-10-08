@@ -16,8 +16,14 @@ BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 case "$(basename -- "$SIM")" in
-*sail*099*|*sail*0.9.9*|*sail*rvy*)
+*sail*0910*|*sail*0.9.10*)
+    set -- -Dsail_0910="$SIM"
+    ;;
+*sail*099*|*sail*0.9.9*)
     set -- -Dsail_099="$SIM"
+    ;;
+*sail*rvy*)
+    set -- -Dsail_0910="$SIM"
     ;;
 *sail*)
     set -- -Dsail_093="$SIM"

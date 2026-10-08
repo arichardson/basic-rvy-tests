@@ -112,15 +112,16 @@ if rvy_test_cc_found
   rvy_version_cflags = {
     '0.9.3': ['-DCHERI_093'],
     '0.9.9': ['-DCHERI_099'],
+    '0.9.10': ['-DCHERI_0910'],
   }
   used_as_qemu_submodule = is_variable('emulators')
-  rvy_enabled_cheri_versions = used_as_qemu_submodule ? ['0.9.3', '0.9.9'] : get_option('cheri_versions')
+  rvy_enabled_cheri_versions = used_as_qemu_submodule ? rvy_version_cflags.keys() : get_option('cheri_versions')
 
   # Build one set of ELF files per enabled CHERI version in its own
-  # subdirectory (<build>/src/0.9.3/ and <build>/src/0.9.9/). Standalone builds
-  # enable build_by_default so `ninja -C build` produces the ELFs without
-  # needing an emulator; when included as QEMU's tests/rvy submodule, only the
-  # ELFs pulled in by active test() targets are built.
+  # subdirectory (<build>/src/<version>/). Standalone builds enable
+  # build_by_default so `ninja -C build` produces the ELFs without needing an
+  # emulator; when included as QEMU's tests/rvy submodule, only the ELFs pulled
+  # in by active test() targets are built.
   rvy_depend_files = files('link.ld', 'testmacros.h', 'exceptions.h',
                            'console.h', 'rvy-insns.h')
   rvy_elf_targets = {}
@@ -166,34 +167,62 @@ if rvy_test_cc_found
   rvy_emulators_to_test = []
   if used_as_qemu_submodule
     # Included from QEMU's build: the target name says the profile exactly.
+    # riscv{64,32}y defaults to 0.9.10 and also runs 0.9.9 via rvy_spec=0.9.9.
     foreach target_base : rvy_qemu_targets
       if (target_base + '-softmmu') in target_dirs
         rvy_emulator = emulators['qemu-system-' + target_base]
-        rvy_emulators_to_test += [{
-          'label': target_base,
-          'path': rvy_emulator.full_path(),
-          'depends': [rvy_emulator],
-          'xlen': target_base.contains('riscv32') ? 32 : 64,
-          'cheri_version': target_base.contains('cheristd') ? '0.9.3' : '0.9.9',
-          'harness': 'qemu',
-        }]
+        xlen = target_base.contains('riscv32') ? 32 : 64
+        if target_base.contains('cheristd')
+          rvy_emulators_to_test += [{
+            'label': target_base,
+            'path': rvy_emulator.full_path(),
+            'depends': [rvy_emulator],
+            'xlen': xlen,
+            'cheri_version': '0.9.3',
+            'harness': 'qemu',
+          }]
+        else
+          rvy_emulators_to_test += [
+            {
+              'label': target_base,
+              'path': rvy_emulator.full_path(),
+              'depends': [rvy_emulator],
+              'xlen': xlen,
+              'cheri_version': '0.9.10',
+              'harness': 'qemu',
+              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.10'],
+            },
+            {
+              'label': target_base + '-0.9.9',
+              'path': rvy_emulator.full_path(),
+              'depends': [rvy_emulator],
+              'xlen': xlen,
+              'cheri_version': '0.9.9',
+              'harness': 'qemu',
+              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.9'],
+            },
+          ]
+        endif
       endif
     endforeach
   else
     # Standalone: -Dqemu takes one or more QEMU build/install directories or
-    # qemu-system-* binary paths, and -Dsail_099 / -Dsail_093 point at the
-    # Sail simulators. Both a QEMU build root and an SDK bin/ directory have
-    # qemu-system-riscv{64,32}{y,cheristd} at the top level (and an install
-    # prefix has them under bin/). Default paths under ~/cheri/output/sdk/bin
-    # are only probed when -Dinfer_test_binary_paths=true is explicitly set.
+    # qemu-system-* binary paths, and -Dsail_0910 / -Dsail_099 / -Dsail_093
+    # point at the Sail simulators. Both a QEMU build root and an SDK bin/
+    # directory have qemu-system-riscv{64,32}{y,cheristd} at the top level
+    # (and an install prefix has them under bin/). Default paths under
+    # ~/cheri/output/sdk/bin are only probed when -Dinfer_test_binary_paths=true
+    # is explicitly set.
     qemu_opts = get_option('qemu')
+    sail_0910 = get_option('sail_0910')
     sail_099 = get_option('sail_099')
     sail_093 = get_option('sail_093')
     infer_paths = get_option('infer_test_binary_paths')
 
-    if qemu_opts.length() == 0 and sail_099.length() == 0 and sail_093.length() == 0 and not infer_paths
+    if (qemu_opts.length() == 0 and sail_0910.length() == 0 and
+        sail_099.length() == 0 and sail_093.length() == 0 and not infer_paths)
       message('no emulator given: building test ELFs only; pass -Dqemu=..., ' +
-              '-Dsail_099=..., or -Dsail_093=... to also register test targets')
+              '-Dsail_0910=..., -Dsail_099=..., or -Dsail_093=... to also register test targets')
     else
       qemu_inputs = qemu_opts
       if qemu_inputs.length() == 0 and infer_paths
@@ -240,28 +269,46 @@ if rvy_test_cc_found
         cpu_help = run_command(qemu_bin, '-cpu', 'help', check: false)
         dev_out = dev_help.stdout() + dev_help.stderr()
         cpu_out = cpu_help.stdout()
-        if dev_out.contains('Zysentry') or dev_out.contains('Svyrg')
-          cheri_ver = '0.9.9'
-        elif dev_out.contains('cheri_pte') or dev_out.contains('Zyhybrid')
-          cheri_ver = '0.9.3'
-        else
-          error('@0@ does not support RVY v0.9.9 or CHERI 0.9.3'.format(qemu_bin))
-        endif
         xlen = cpu_out.contains('rv32') ? 32 : 64
-        label = 'riscv@0@@1@'.format(xlen, cheri_ver == '0.9.3' ? 'cheristd' : 'y')
-        rvy_emulators_to_test += [{
-          'label': label,
-          'path': qemu_bin,
-          'depends': [],
-          'xlen': xlen,
-          'cheri_version': cheri_ver,
-          'harness': 'qemu',
-        }]
+        if dev_out.contains('rvy_spec')
+          rvy_emulators_to_test += [
+            {
+              'label': 'riscv@0@y'.format(xlen),
+              'path': qemu_bin,
+              'depends': [],
+              'xlen': xlen,
+              'cheri_version': '0.9.10',
+              'harness': 'qemu',
+              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.10'],
+            },
+            {
+              'label': 'riscv@0@y-0.9.9'.format(xlen),
+              'path': qemu_bin,
+              'depends': [],
+              'xlen': xlen,
+              'cheri_version': '0.9.9',
+              'harness': 'qemu',
+              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.9'],
+            },
+          ]
+        elif dev_out.contains('cheri_pte') or dev_out.contains('Zyhybrid')
+          rvy_emulators_to_test += [{
+            'label': 'riscv@0@cheristd'.format(xlen),
+            'path': qemu_bin,
+            'depends': [],
+            'xlen': xlen,
+            'cheri_version': '0.9.3',
+            'harness': 'qemu',
+          }]
+        else
+          error('@0@ does not support RVY (rvy_spec) or CHERI 0.9.3'.format(qemu_bin))
+        endif
       endforeach
 
       rvy_sail_bin_names = ['sail_riscv_sim', 'riscv_sim_rv64d', 'riscv_sim_rv32d',
                             'cheri_riscv_sim_RV64', 'cheri_riscv_sim_RV32']
       foreach sail_opt : [
+        {'opt': 'sail_0910', 'label': 'sail-0.9.10', 'cheri_version': '0.9.10'},
         {'opt': 'sail_099', 'label': 'sail-0.9.9', 'cheri_version': '0.9.9'},
         {'opt': 'sail_093', 'label': 'sail-0.9.3', 'cheri_version': '0.9.3'},
       ]
@@ -321,7 +368,7 @@ if rvy_test_cc_found
 
       if rvy_emulators_to_test.length() == 0
         error('no emulators found under ~/cheri/output/sdk/bin; pass -Dqemu=..., ' +
-              '-Dsail_099=..., or -Dsail_093=... explicitly')
+              '-Dsail_0910=..., -Dsail_099=..., or -Dsail_093=... explicitly')
       endif
     endif
   endif
@@ -344,7 +391,7 @@ if rvy_test_cc_found
              protocol: 'tap',
              suite: ['rvy'])
       else
-        qemu_args = t.get('qemu_args', [])
+        qemu_args = emulator.get('qemu_args', []) + t.get('qemu_args', [])
         foreach machine : rvy_machines
           test(test_id + '-' + machine, rvy_run_test,
                args: ['qemu', emulator['path'], elf, machine] + qemu_args,
