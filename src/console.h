@@ -56,23 +56,3 @@
 
 /* Room for a 64-bit value in decimal, and the NUL. */
 #define DEC_BUF_LEN 24
-
-/*
- * The address the HTIF writes go to, held in memory rather than baked into
- * each store so that test-console can point it at a buffer and read back what
- * was actually emitted. It holds &tohost for every real run; that default is
- * what the harness relies on, so test-console checks it as well.
- */
-#if __riscv_xlen == 64
-#define LOAD_X  ld
-#define STORE_X sd
-#define WORD_X  .dword
-#define PTR_SHIFT 3
-#define PTR_BYTES 8
-#else
-#define LOAD_X  lw
-#define STORE_X sw
-#define WORD_X  .word
-#define PTR_SHIFT 2
-#define PTR_BYTES 4
-#endif
