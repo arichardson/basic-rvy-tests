@@ -70,7 +70,7 @@ _start:
     bne  t1, a1, fail
 
     NEXT_TEST "mtvec detags a sealed sentry even when mode is direct or vectored"
-    YSENTRY a2, a0               /* sentry at victim (mode 0) */
+    YSEALE a2, a0                /* sentry at victim (mode 0) */
     csrw CSR_MTVEC, a2
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
@@ -82,7 +82,7 @@ _start:
 
     addi t1, s1, 1
     YADDRW a2, a0, t1
-    YSENTRY a2, a2               /* sentry at victim + 1 (mode 1) */
+    YSEALE a2, a2                /* sentry at victim + 1 (mode 1) */
     csrw CSR_MTVEC, a2
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
@@ -137,7 +137,7 @@ _start:
      * ========================================================================= */
 
     NEXT_TEST "stvec detags a sealed sentry even when mode is direct"
-    YSENTRY a2, a0
+    YSEALE a2, a0
     csrw CSR_STVEC, a2
     csrrs a1, CSR_STVEC, x0
     YTAGR t0, a1

@@ -104,11 +104,15 @@ if rvy_test_cc_found
     # 0.9.9 made misa.Y reset to 1, gated clearing misa.Y on pc/ddc/xtvec/xepc
     # holding root capabilities, and moved menvcfg.CRE from bit 28 to bit 9.
     {'name': 'test-misa-y', 'min_version': '0.9.9'},
-    # The reservation is only enforced when asked for.
-    {'name': 'test-reserved-branches', 'cheri_versions': ['0.9.9'],
-     'qemu_args': ['-cpu', 'any,x-rvy-strict-branches=on']},
+    # BEQ/BNE with rs1 <= rs2 in capability mode was reserved in 0.9.6-0.9.9 and
+    # removed in 0.9.10.
+    {'name': 'test-reserved-branches', 'cheri_versions': ['0.9.9']},
   ]
 
+  rvy_version_cflags = {
+    '0.9.3': ['-DCHERI_093'],
+    '0.9.9': ['-DCHERI_099'],
+  }
   used_as_qemu_submodule = is_variable('emulators')
   rvy_enabled_cheri_versions = used_as_qemu_submodule ? ['0.9.3', '0.9.9'] : get_option('cheri_versions')
 
@@ -122,7 +126,7 @@ if rvy_test_cc_found
   rvy_elf_targets = {}
   foreach rvy_cheri_ver : rvy_enabled_cheri_versions
     rvy_ver_elfs = []
-    rvy_cflags_cheri = rvy_cheri_ver == '0.9.3' ? ['-DCHERI_093'] : []
+    rvy_cflags_cheri = rvy_version_cflags[rvy_cheri_ver]
     foreach t : rvy_tests
       xlens = t.get('xlens', [32, 64])
       if 'min_version' in t and rvy_cheri_ver.version_compare('<' + t['min_version'])

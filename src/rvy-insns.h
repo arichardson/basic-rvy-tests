@@ -55,12 +55,20 @@
 #define CSR_VSTVEC  0x205
 #define CSR_VSSCRATCH 0x240
 #define CSR_VSEPC   0x241
+/* CHERI default data and thread ID CSRs (readable without ASR, writable only with it). */
+#if defined(CHERI_093) || defined(CHERI_099)
 #define CSR_DDC     0x416
-/* CHERI thread ID registers, readable without ASR but writable only with it. */
 #define CSR_UTIDC   0x480
 #define CSR_STIDC   0x580
-#define CSR_VSTIDC  0x680
+#define CSR_VSTIDC  0xa80
 #define CSR_MTIDC   0x780
+#else
+#define CSR_DDC     0x03f
+#define CSR_UTIDC   0x07f
+#define CSR_STIDC   0x17f
+#define CSR_VSTIDC  0x27f
+#define CSR_MTIDC   0x37f
+#endif
 #define CSR_MSECCFG 0x747
 
 #define MSECCFG_CRE (1 << 3)
@@ -116,7 +124,7 @@
 /* ---------------------------------------------------------------- RVY --- */
 
 /* Three-operand instructions (funct3 = 0, sub-op selected by funct7) */
-.macro PACKY cd, rs1, rs2
+.macro YHIW cd, rs1, rs2
     .insn r RVY_OPC, 0, 0x01, \cd, \rs1, \rs2
 .endm
 .macro YADD cd, cs1, rs2
@@ -179,7 +187,7 @@
 .macro YSS rd, cs1, cs2
     .insn r RVY_OPC, 0, 0x0e, \rd, \cs1, \cs2
 .endm
-.macro YSUNSEAL cd, cs1, cs2
+.macro YUNSEALS cd, cs1, cs2
     .insn r RVY_OPC, 0, 0x07, \cd, \cs1, \cs2
 .endm
 .macro YBLD cd, cs1, cs2
@@ -187,7 +195,7 @@
 .endm
 
 /* Two-operand instructions: funct7 = 0x7a, sub-op selected via the rs2
- * field (0=YBASER 1=YPERMR 2=YTOPR 3=YLENR 4=YTAGR 5=YTYPER 6=YMODER). */
+ * field (0=YBASER 1=YPERMR 2=YTOPR 3=YLENR 4=YTAGR 5=YTYPER 6=YMODER 7=YHIR). */
 .macro YBASER rd, cs1
     .insn r RVY_OPC, 0, 0x7a, \rd, \cs1, x0
 .endm
@@ -209,6 +217,13 @@
 .macro YMODER rd, cs1                 /* hybrid-only */
     .insn r RVY_OPC, 0, 0x7a, \rd, \cs1, x6
 .endm
+.macro YHIR rd, cs1
+#ifdef CHERI_099
+    SRLIY \rd, \cs1, __riscv_xlen
+#else
+    .insn r RVY_OPC, 0, 0x7a, \rd, \cs1, x7
+#endif
+.endm
 
 .macro YAMASK rd, rs1
     .insn r RVY_OPC, 0, 0x78, \rd, \rs1, x0
@@ -216,7 +231,7 @@
 
 /* cs1 must be x0 (reserved for a future YSEAL); the source capability sits
  * in the cs2/rs2 field position instead. */
-.macro YSENTRY cd, cs2
+.macro YSEALE cd, cs2
     .insn r RVY_OPC, 0, 0x17, \cd, x0, \cs2
 .endm
 
@@ -225,9 +240,11 @@
     .insn i RVY_OPC, 4, \cd, \cs1, \imm
 .endm
 
+#ifdef CHERI_099
 .macro SRLIY rd, cs1, shamt
     .insn i RVY_OPC, 5, \rd, \cs1, \shamt
 .endm
+#endif
 
 /*
  * YBNDSWI's 9-bit immediate does not map linearly onto the requested
@@ -310,8 +327,8 @@
 .macro YAMASK rd, rs1
     .insn r STD_OPC, 0, 0x08, \rd, \rs1, x7     /* cram */
 .endm
-/* sentry takes its source in cs1, unlike the v0.9.9 YSENTRY which uses cs2. */
-.macro YSENTRY cd, cs2
+/* sentry takes its source in cs1, unlike RVY YSEALE which uses cs2. */
+.macro YSEALE cd, cs2
     .insn r STD_OPC, 0, 0x08, \cd, \cs2, x8     /* sentry */
 .endm
 
@@ -334,8 +351,11 @@
 .macro ACPERM cd, cs1, rs2
     .insn r STD_OPC, 2, 0x06, \cd, \cs1, \rs2 /* acperm: keeps rs2's bits */
 .endm
-.macro PACKY cd, rs1, rs2
+.macro YHIW cd, rs1, rs2
     .insn r STD_OPC, 3, 0x06, \cd, \rs1, \rs2 /* schi */
+.endm
+.macro YHIR rd, cs1
+    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x4    /* gchi */
 .endm
 .macro YMODER rd, cs1
     .insn r STD_OPC, 0, 0x08, \rd, \cs1, x3    /* gcmode */
@@ -382,14 +402,6 @@
 .endm
 .macro SC_Y rd, cs1, cs2
     .insn r STD_AMO_OPC, 4, 0x0c, \rd, \cs1, \cs2
-.endm
-
-/* 0.9.3 spells the metadata read gchi (2-op rs2=4) rather than a shift. */
-.macro SRLIY rd, cs1, shamt
-    .if (\shamt) != __riscv_xlen
-        .error "SRLIY with shamt != XLEN does not exist in the 0.9.3 standard"
-    .endif
-    .insn r STD_OPC, 0, 0x08, \rd, \cs1, x4     /* gchi */
 .endm
 
 #endif /* CHERI_093 */

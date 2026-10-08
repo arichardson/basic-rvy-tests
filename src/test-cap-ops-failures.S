@@ -10,9 +10,10 @@
  *    capability is sealed.
  *  - YTOPR returns 0 on capabilities with malformed EBT bounds (matching
  *    YBASER and YLENR).
- *  - SRLIY with any shift amount other than XLEN is a reserved encoding, as
- *    are YSH4ADD and the unsigned-word shifted-add instructions on RV32.
- *  - YSUNSEAL, YBLD, and YSS reject untagged, sealed, malformed, or
+ *  - SRLIY (in v0.9.9) with any shift amount other than XLEN is a reserved
+ *    encoding, as are YSH4ADD and the unsigned-word shifted-add instructions
+ *    on RV32.
+ *  - YUNSEALS, YBLD, and YSS reject untagged, sealed, malformed, or
  *    non-superset operands.
  *  - YMODEW and YPERMC / ACPERM clear the tag on sealed inputs, and YMODEW
  *    leaves the mode bit unmodified when PERM_X is absent.
@@ -80,7 +81,7 @@ _start:
     EXPECT_TAG a2, 0
     YBNDSRW a2, a1, t2
     EXPECT_TAG a2, 0
-    YSENTRY a3, a1
+    YSEALE a3, a1
     li   t2, 8
     YBNDSW a2, a3, t2
     EXPECT_TAG a2, 0
@@ -91,7 +92,7 @@ _start:
     /* YBASER, YLENR, and (on RVY) YTOPR all return 0 when EBT bounds are malformed. */
     NEXT_TEST "ytopr, ybaser, and ylenr return 0 on malformed bounds"
     li   t1, EBT_MALFORMED_E_GT_MAX
-    PACKY a2, x0, t1
+    YHIW a2, x0, t1
     YBASER t2, a2
     bnez t2, fail
     YLENR t2, a2
@@ -103,7 +104,8 @@ _start:
     EXPECT_NO_TRAP
 
 #ifndef CHERI_093
-    /* Any SRLIY shift amount other than XLEN is a reserved encoding. */
+#ifdef CHERI_099
+    /* Any SRLIY shift amount other than XLEN is a reserved encoding in v0.9.9. */
     NEXT_TEST "srliy by 8 is a reserved shift amount"
     SRLIY t1, a0, 8
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
@@ -111,6 +113,7 @@ _start:
     NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
     SRLIY t1, a0, XLEN - 1
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+#endif
 
 #if __riscv_xlen == 32
     /* YSH4ADD and the .UW shifted-add forms are RV64-only. */
@@ -128,31 +131,31 @@ _start:
 #endif
 
     /*
-     * YSUNSEAL refusal cases: non-superset authority, unsealed input,
+     * YUNSEALS refusal cases: non-superset authority, unsealed input,
      * untagged input, untagged authority (non-x0), and sealed authority.
      */
-    NEXT_TEST "ysunseal under an authority that is not a superset is refused"
-    YSENTRY a2, a0
-    YSUNSEAL a3, a1, a2          /* a0 is not a subset of a1 */
+    NEXT_TEST "yunseals under an authority that is not a superset is refused"
+    YSEALE a2, a0
+    YUNSEALS a3, a1, a2          /* a0 is not a subset of a1 */
     EXPECT_TAG a3, 0
     EXPECT_NO_TRAP
 
-    NEXT_TEST "ysunseal of something that was never sealed is refused"
-    YSUNSEAL a3, a0, a1
+    NEXT_TEST "yunseals of something that was never sealed is refused"
+    YUNSEALS a3, a0, a1
     EXPECT_TAG a3, 0
     EXPECT_NO_TRAP
 
-    NEXT_TEST "ysunseal of an untagged sentry or under an untagged or sealed authority is refused"
-    YSENTRY a2, a1               /* tagged sentry subset of a0 */
-    YSUNSEAL a4, x0, a1          /* a4 = untagged copy of a1 */
-    YSENTRY a5, a4               /* a5 = untagged sentry */
-    YSUNSEAL a3, a0, a5          /* untagged input */
+    NEXT_TEST "yunseals of an untagged sentry or under an untagged or sealed authority is refused"
+    YSEALE a2, a1                /* tagged sentry subset of a0 */
+    YUNSEALS a4, x0, a1          /* a4 = untagged copy of a1 */
+    YSEALE a5, a4                /* a5 = untagged sentry */
+    YUNSEALS a3, a0, a5          /* untagged input */
     EXPECT_TAG a3, 0
-    YSUNSEAL a4, x0, a0          /* a4 = untagged copy of a0 */
-    YSUNSEAL a3, a4, a2          /* untagged authority */
+    YUNSEALS a4, x0, a0          /* a4 = untagged copy of a0 */
+    YUNSEALS a3, a4, a2          /* untagged authority */
     EXPECT_TAG a3, 0
-    YSENTRY a4, a0               /* a4 = sealed copy of a0 */
-    YSUNSEAL a3, a4, a2          /* sealed authority */
+    YSEALE a4, a0                /* a4 = sealed copy of a0 */
+    YUNSEALS a3, a4, a2          /* sealed authority */
     EXPECT_TAG a3, 0
     EXPECT_NO_TRAP
 #endif /* !CHERI_093 */
@@ -176,7 +179,7 @@ _start:
     EXPECT_TAG a2, 0
     YBLD a4, a2, a1              /* untagged authority */
     EXPECT_TAG a4, 0
-    YSENTRY a2, a0
+    YSEALE a2, a0
     YBLD a4, a2, a1              /* sealed authority */
     EXPECT_TAG a4, 0
     EXPECT_NO_TRAP
@@ -208,7 +211,7 @@ _start:
      */
     NEXT_TEST "ymodew and permission changes detag a sentry, and ymodew without PERM_X is a no-op"
     auipc a2, 0
-    YSENTRY a3, a2
+    YSEALE a3, a2
     li   t1, CHERI_MODE_INT
     YMODEW a4, a3, t1
     EXPECT_TAG a4, 0

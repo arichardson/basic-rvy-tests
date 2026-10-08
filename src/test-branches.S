@@ -1,15 +1,13 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * RVY reserves the BEQ/BNE encodings whose operands are in rs1 <= rs2
- * register number order, but only in capability mode: the reservation exists
- * so the encodings can be reused for capability-specific branches later, which
- * only makes sense when the operands are capabilities.
- *
- * QEMU does not enforce the reservation unless x-rvy-strict-branches is set,
- * because compilers do not swap the operands yet and existing binaries use
- * the reserved forms. This test covers that default configuration: nothing
- * here may trap. test-reserved-branches covers the enforcing one. 0.9.3 has
- * no such reservation at all, so the same expectations hold there.
+ * RVY v0.9.6 through v0.9.9 reserved the BEQ/BNE encodings whose operands
+ * are in rs1 <= rs2 register number order, but only in capability mode: the
+ * reservation existed so the encodings could be reused for capability-specific
+ * branches later, which only makes sense when the operands are capabilities.
+ * 0.9.3 predates the reservation and v0.9.10 removed it, so on both of those
+ * versions reserved-order BEQ/BNE execute in capability mode without trapping
+ * (test-reserved-branches covers v0.9.9, where capability-mode rs1 <= rs2
+ * raises an illegal-instruction exception).
  *
  * The reserved-order branches are arranged never to be taken, so the flow is
  * the same whichever way they are treated.
@@ -38,16 +36,20 @@ _start:
     RESERVED_ORDER_BRANCHES
     EXPECT_NO_TRAP
 
-    /* Capability mode: not enforced in this configuration either. */
-    NEXT_TEST "and is not enforced in capability mode either by default"
+#ifndef CHERI_099
+    /* Capability mode: not reserved in 0.9.3 or v0.9.10. */
+    NEXT_TEST "reserved operand order is not reserved in capability mode on 0.9.3 and v0.9.10"
     YMODESWY
     RESERVED_ORDER_BRANCHES
     YMODESWI
     EXPECT_NO_TRAP
+#endif
 
     /* Legal operand orders must of course still work. */
     NEXT_TEST "the canonical operand orders still work"
+    YMODESWY
     LEGAL_ORDER_BRANCHES
+    YMODESWI
     EXPECT_NO_TRAP
 
     /*
@@ -141,7 +143,7 @@ _start:
     auipc a0, 0
     la   t0, ialign_target + 2
     YADDRW a0, a0, t0
-    YSENTRY a0, a0
+    YSEALE a0, a0
     mv   ra, x0
     la   s2, 1f
 1:  jalr ra, a0, 0

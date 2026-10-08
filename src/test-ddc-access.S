@@ -311,7 +311,7 @@ _start:
     /* =====================================================================
      * Sealed sentry DDC in Integer Mode
      * ===================================================================== */
-    YSENTRY a2, a0
+    YSEALE a2, a0
     csrrw x0, CSR_DDC, a2
 
     NEXT_TEST "integer lw with a sealed DDC faults with CAP_SEAL"
@@ -565,7 +565,7 @@ _start:
 
     NEXT_TEST "ly through a DDC without PERM_LM preserves W and LM on a sealed sentry"
     csrrw x0, CSR_DDC, a0
-    YSENTRY a7, s7
+    YSEALE a7, s7
     SY    a7, 0(s1)
     csrrw x0, CSR_DDC, a6
     LY    t1, 0(s1)
