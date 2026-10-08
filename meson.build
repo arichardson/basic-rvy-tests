@@ -10,7 +10,7 @@
 # QEMU does not read this file: its tests/meson.build includes src/ directly,
 # which is where the logic both entry points share lives.
 # Meson 1.10.0 added the `build_subdir` keyword argument on `custom_target()`,
-# used to place the 0.9.3 and 0.9.9 ELF sets into separate subdirectories.
+# used to place each CHERI version's ELF set into its own subdirectory.
 project('rvy-tests', meson_version: '>=1.10.0')
 
 subdir('src')

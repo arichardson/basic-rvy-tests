@@ -1,10 +1,12 @@
 option('rvy_test_cc', type : 'string', value : '',
        description: 'Bare-metal RISC-V clang for the tests/rvy suite')
-option('cheri_versions', type : 'array', choices : ['0.9.3', '0.9.9'],
-       value : ['0.9.3', '0.9.9'],
+option('cheri_versions', type : 'array', choices : ['0.9.3', '0.9.9', '0.9.10'],
+       value : ['0.9.3', '0.9.9', '0.9.10'],
        description: 'CHERI specification versions to build test ELFs for')
 option('qemu', type : 'array', value : [],
        description: 'QEMU build/install directory or qemu-system-* binary path(s)')
+option('sail_0910', type : 'array', value : [],
+       description: 'RVY v0.9.10 Sail simulator binary or build directory')
 option('sail_099', type : 'array', value : [],
        description: 'RVY v0.9.9 Sail simulator binary or build directory')
 option('sail_093', type : 'array', value : [],

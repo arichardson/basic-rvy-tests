@@ -1,8 +1,8 @@
 # Basic RVY tests
 
-Bare-metal assembly tests for CHERI RISC-V, written against the RVY v0.9.9
-specification and also buildable against CHERI 0.9.3. Each test boots on its
-own, checks one area of the architecture, and reports a single pass or fail.
+Bare-metal assembly tests for CHERI RISC-V, written against the RVY v0.9.10 and
+v0.9.9 specifications and also buildable against CHERI 0.9.3. Each test boots on
+its own, checks one area of the architecture, and reports a single pass or fail.
 
 The suite is deliberately small and self-contained: there is no libc and no
 runtime. Every RVY instruction is emitted with `.insn`, so **the toolchain
@@ -31,20 +31,26 @@ meson test -C build
 `-Dqemu` accepts a QEMU build directory, an SDK `bin` directory (or install
 prefix), or a comma-separated list of individual `qemu-system-*` binaries.
 When given a directory, it automatically picks up whichever of the four QEMU
-targets (`qemu-system-riscv{64,32}{y,cheristd}`) are present. `-Dsail_099` and
-`-Dsail_093` select the RVY v0.9.9 and CHERI 0.9.3 Sail simulators explicitly:
+targets (`qemu-system-riscv{64,32}{y,cheristd}`) are present. When
+`qemu-system-riscv{64,32}y` supports `rvy_spec`, both v0.9.10
+(`-global riscv-cpu.rvy_spec=0.9.10`) and v0.9.9
+(`-global riscv-cpu.rvy_spec=0.9.9`) are tested. `-Dsail_0910`, `-Dsail_099`,
+and `-Dsail_093` select the RVY v0.9.10, RVY v0.9.9, and CHERI 0.9.3 Sail
+simulators explicitly:
 
 | Emulator / option | XLEN | CHERI version |
 | --- | --- | --- |
-| `qemu-system-riscv64y` | 64 | v0.9.9 |
-| `qemu-system-riscv32y` | 32 | v0.9.9 |
+| `qemu-system-riscv64y` | 64 | v0.9.10 (`rvy_spec=0.9.10`) and v0.9.9 (`rvy_spec=0.9.9`) |
+| `qemu-system-riscv32y` | 32 | v0.9.10 (`rvy_spec=0.9.10`) and v0.9.9 (`rvy_spec=0.9.9`) |
 | `qemu-system-riscv64cheristd` | 64 | 0.9.3 |
 | `qemu-system-riscv32cheristd` | 32 | 0.9.3 |
+| `-Dsail_0910` | 64 (or 32) | v0.9.10 |
 | `-Dsail_099` | 64 (or 32) | v0.9.9 |
 | `-Dsail_093` | 64 (or 32) | 0.9.3 |
 
-0.9.3 builds get `-DCHERI_093`, and the tests whose subject only exists in
-v0.9.9 are skipped rather than being made to mean something else.
+0.9.3 builds get `-DCHERI_093`, v0.9.9 builds get `-DCHERI_099`, and v0.9.10
+builds get `-DCHERI_0910`; tests whose subject only exists in RVY (or only in
+v0.9.9) are skipped rather than being made to mean something else.
 
 Each test is run on both the `virt` and `spike` machines, because results are
 reported twice over: through the HTIF `tohost` register, which spike-like
@@ -65,16 +71,17 @@ meson setup build
 ninja -C build
 ```
 
-This produces two sets of ELF binaries under `build/src/0.9.3/` and
-`build/src/0.9.9/` (and registers `rvy-elfs-0.9.3` and `rvy-elfs-0.9.9` alias
-targets). Pass `-Dcheri_versions=0.9.9` or `-Dcheri_versions=0.9.3` to build
-only one set.
+This produces three sets of ELF binaries under `build/src/0.9.3/`,
+`build/src/0.9.9/`, and `build/src/0.9.10/` (and registers `rvy-elfs-0.9.3`,
+`rvy-elfs-0.9.9`, and `rvy-elfs-0.9.10` alias targets). Pass
+`-Dcheri_versions=0.9.10`, `-Dcheri_versions=0.9.9`, or `-Dcheri_versions=0.9.3`
+to build only a subset.
 
 Additional `-D` options:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `cheri_versions` | `['0.9.3', '0.9.9']` | CHERI specification versions to build test ELFs for |
+| `cheri_versions` | `['0.9.3', '0.9.9', '0.9.10']` | CHERI specification versions to build test ELFs for |
 | `infer_test_binary_paths` | `false` | Search `~/cheri/output/sdk/bin` when no emulator options are given |
 | `rvy_test_timeout` | `20` | Wall-clock seconds before a test is considered hung |
 | `rvy_sail_insn_limit` | `20000000` | Instruction budget for the Sail model |
@@ -115,19 +122,24 @@ number of the failing case, which is what the summary line shows.
 | Test | Subject |
 | --- | --- |
 | `test-insn-encodings` | Encoding and semantics of the RVY instructions |
-| `test-cap-ops` | Corner cases of the capability manipulation instructions |
+| `test-cap-ops` | Capability manipulation and inspection instructions |
+| `test-cap-ops-failures` | Negative, malformed-metadata, and reserved-encoding capability cases |
+| `test-representable-range` | Representable range boundaries across E=0 and internal-exponent capabilities |
+| `test-ddc-access` | Integer-mode explicit memory accesses authorized through DDC |
+| `test-cap-roundtrip` | Storing and loading arbitrary capability bit patterns without loss |
 | `test-bounds-causes` | The cause reported for bounds violations, per access type |
 | `test-amo-cbo-causes` | Causes for capability atomics and cache-block operations |
 | `test-loadstore-x0` | `x0` as a base register: zero in integer mode, NULL in capability mode |
 | `test-pcc-bounds-fetch` | Fetching across the end of PCC, including straddling instructions |
 | `test-cap-reset-regression` | A stored capability writes out the bits the register holds |
 | `test-asr` | Operations gated on the `ASR` permission |
+| `test-cap-csrs` | Capability CSR read/write semantics across modes and privileges |
 | `test-console` | The shared console helpers, and that they emit what they are asked to |
 | `test-cbo-bounds` | CBO.ZERO/INVAL fault on any byte out of bounds, CBO.CLEAN/FLUSH only if all are |
 | `test-xepc-detag` | mepc/sepc legalization: misaligned writes, and reads/mret under IALIGN=32 |
 | `test-xtvec-detag` | mtvec/stvec legalization and same-block CSR write visibility |
-| `test-branches` | The reserved `BEQ`/`BNE` operand orders, unenforced |
-| `test-reserved-branches` | The same, with `x-rvy-strict-branches=on` |
+| `test-branches` | `BEQ`/`BNE` with `rs1 <= rs2` in integer and capability modes |
+| `test-reserved-branches` | Reserved `BEQ`/`BNE` with `rs1 <= rs2` in capability mode (v0.9.9 only) |
 | `test-branch-target-faults` | Control-flow faults are taken at the target, not the branch |
 | `test-exception-priority` | Which exception wins when an instruction trips two checks |
 | `test-xepc-return` | MRET unseals a sentry epcc and installs it as PCC unchecked |
@@ -135,7 +147,10 @@ number of the failing case, which is what the summary line shows.
 | `test-svyrg` | `Svyrg` and the `pte.rvy` field, under Sv39 paging |
 | `test-translation-priority` | Page table walk faults, and where they rank against the capability checks |
 
-The last seven are v0.9.9 only.
+`test-branch-target-faults`, `test-exception-priority`, and `test-xepc-return`
+require `>= 0.9.6`; `test-svyrg` and `test-translation-priority` require
+`>= 0.9.7`; `test-misa-y` requires `>= 0.9.9`; and `test-reserved-branches` is
+v0.9.9 only.
 
 ## Layout
 
