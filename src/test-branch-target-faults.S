@@ -143,6 +143,7 @@ _start:
     li   t1, 8
     YBNDSW a0, a0, t1            /* covers beq_trampoline, excludes victim */
     la   expected_epc, victim
+    mv   t0, x0
     RESUME_AFTER_FAULT 2f
     jalr x0, a0, 0
 2:
@@ -185,7 +186,7 @@ jal_trampoline_link:
 
 .balign 8
 beq_trampoline:
-    beq  x0, x0, victim
+    beq  t0, x0, victim
     j    fail
 
 /* Returns through the backward-edge sentry that jalr wrote to ra. */
