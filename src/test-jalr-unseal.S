@@ -1,11 +1,25 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * RVY JALR semantic forbids unsealing when the sealed entry capability
- * has a non-zero offset LSB or the JALR immediate is non-zero.
+ * Capability-mode JALR unseals a sentry capability in rs1 only when both
+ * rs1.address[0] == 0 and the I-immediate offset is zero. Otherwise the target
+ * capability remains sealed, JALR sets the target PCC address using YADDRW
+ * semantics (which clears the tag because the capability is still sealed), and
+ * the subsequent instruction fetch at the target address faults with
+ * CAUSE_CHERI_INST and an untagged mepc.
  */
 #define TEST_NAME "jalr-unseal"
 #include "testmacros.h"
 #include "exceptions.h"
+
+.macro EXPECT_JALR_SENTRY_FAULT target_addr
+    j       fail
+88:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC \target_addr
+    EXPECT_EPC_TAG 0
+    YTYPER  t3, trap_epc
+    beqz    t3, fail
+.endm
 
 .option norvc
 .section .text
@@ -15,23 +29,30 @@ _start:
 
     YMODESWY
     auipc   t2, 0
+
+    NEXT_TEST "a sentry with an even address and zero offset is unsealed and runs"
+    la      t1, good_target
+    YADDRW  a0, t2, t1
+    YSEALE  a0, a0
+    jalr    ra, a0, 0
+    EXPECT_NO_TRAP
+
     la      t1, target
     YADDRW  t2, t2, t1
 
-    NEXT_TEST "Test jalr with non-zero LSB in sealed entry"
-    RESUME_AFTER_FAULT 1f
+    NEXT_TEST "a sentry with bit 0 set in its address is not unsealed on jalr with zero offset"
     YADDI   a0, t2, 1
     YSEALE  a0, a0
+    RESUME_AFTER_FAULT 88f
     jalr    ra, a0, 0
-1:
-    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_JALR_SENTRY_FAULT t1
 
-    NEXT_TEST "Test jalr with non-zero offset"
-    RESUME_AFTER_FAULT 1f
+    NEXT_TEST "a sentry with a non-zero aligned offset is not unsealed on jalr"
     YSEALE  a0, t2
+    addi    t0, t1, 4
+    RESUME_AFTER_FAULT 88f
     jalr    ra, a0, 4
-1:
-    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_JALR_SENTRY_FAULT t0
 
     YMODESWI
     TEST_PASS
@@ -42,7 +63,11 @@ fail:
 
 .balign 8
 target:
-    YMODESWI
-    TEST_FAIL
+    j       fail
+    j       fail
+
+.balign 8
+good_target:
+    ret
 
 TRAP_HANDLER_PCC
