@@ -207,9 +207,40 @@ ialign32_unsealed_recovered:
 ialign32_recovered:
     EXPECT_TRAP TRAP_CAP_FETCH(CAP_TAG)
     EXPECT_EPC_TAG 0
-
-    li   t0, MISA_C               /* leave misa.C as this test found it */
+    /*
+     * Writing mepc/sepc while misa.C is 1 (IALIGN=16) preserves bit 1 and the
+     * tag on read; clearing misa.C afterwards masks bit 1 on subsequent reads
+     * without another write to mepc/sepc, detagging both the sentry and the
+     * unsealed capability at rep_base, and restoring misa.C brings the original
+     * unmasked capability back.
+     */
+    NEXT_TEST "clearing misa.C after writing xepc with bit 1 set legalizes and detags on read"
+    li   t0, MISA_C
     csrs CSR_MISA, t0
+    csrw CSR_MEPC, a0             /* sentry with bit 1 set */
+    csrw CSR_SEPC, a3             /* unsealed at rep_base with bit 1 set */
+    csrrs a1, CSR_MEPC, x0
+    YTAGR t1, a1
+    beqz t1, fail
+    andi t1, a1, 2
+    beqz t1, fail
+    csrrs a1, CSR_SEPC, x0
+    YTAGR t1, a1
+    beqz t1, fail
+    andi t1, a1, 2
+    beqz t1, fail
+    csrc CSR_MISA, t0             /* switch to IALIGN=32 without rewriting xepc */
+    csrrs a1, CSR_MEPC, x0
+    YTAGR t1, a1
+    bnez t1, fail
+    andi t1, a1, 2
+    bnez t1, fail
+    csrrs a1, CSR_SEPC, x0
+    YTAGR t1, a1
+    bnez t1, fail
+    andi t1, a1, 2
+    bnez t1, fail
+    csrs CSR_MISA, t0             /* leave misa.C as this test found it */
     j    ialign32_done
 skip_ialign32:
     SKIPPABLE_BLOCK_SKIPPED "misa.C is hard-wired here so IALIGN=32 is unreachable"

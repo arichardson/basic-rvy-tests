@@ -25,6 +25,8 @@
  *    capability CSRs (sscratch, sepc, stvec, stidc, utidc, ddc) are accessible
  *    while M-mode capability CSRs (mscratch, mepc, mtvec, mtidc) fault with an
  *    illegal-instruction exception.
+ *  - Setting the CHERI exception bits in medeleg delegates S-mode CHERI
+ *    capability faults to stvec.
  */
 #define TEST_NAME "cap-csrs"
 #include "testmacros.h"
@@ -383,6 +385,58 @@ s_mode_done:
     YEQ   t0, t2, a0
     beqz  t0, fail
 
+#if __riscv_xlen == 64 || defined(CHERI_093)
+    /*
+     * Delegating CHERI exceptions via medeleg (causes 32-36 on RV64 RVY,
+     * cause 28 on 0.9.3; RV32 RVY would need Smaia medelegh for causes >= 32)
+     * delivers S-mode capability faults to stvec rather than mtvec.
+     */
+    NEXT_TEST "medeleg delegates CHERI exceptions to S-mode stvec"
+#ifdef CHERI_093
+    li    t0, (1 << CAUSE_CHERI_ANY)
+#else
+    li    t0, (0x1f << 32)
+#endif
+    csrs  CSR_MEDELEG, t0
+    csrr  t1, CSR_MEDELEG
+    and   t1, t1, t0
+    bne   t1, t0, fail           /* medeleg CHERI bits must be writable */
+
+    auipc t1, 0
+    la    t0, s_trap_handler
+    YADDRW t1, t1, t0
+    csrrw x0, CSR_STVEC, t1
+
+    li    t0, 0x1800
+    csrc  CSR_MSTATUS, t0
+    li    t0, 0x0800
+    csrs  CSR_MSTATUS, t0
+    auipc t1, 0
+    la    t0, s_deleg_entry
+    YADDRW t1, t1, t0
+    csrrw x0, CSR_MEPC, t1
+    la    m_continue, s_deleg_done
+    li    a3, 0
+    li    a4, 0
+    mret
+
+s_deleg_entry:
+    LY    t1, 0(x0)              /* NULL capability fault delegated to S-mode */
+    ecall
+
+s_deleg_done:
+    EXPECT_NO_TRAP               /* trap was handled by stvec, not mtvec */
+#ifdef CHERI_093
+    li    t0, CAUSE_CHERI_ANY
+#else
+    li    t0, CAUSE_CHERI_LOAD
+#endif
+    bne   a3, t0, fail
+    li    t0, 1
+    bne   a4, t0, fail
+    csrw  CSR_MEDELEG, x0
+#endif
+
     YMODESWI
     csrrw x0, CSR_DDC, s0
     TEST_PASS
@@ -390,6 +444,18 @@ fail:
     YMODESWI
     csrrw x0, CSR_DDC, s0
     TEST_FAIL
+
+#if __riscv_xlen == 64 || defined(CHERI_093)
+.balign 8
+s_trap_handler:
+    csrr  a3, CSR_SCAUSE
+    addi  a4, a4, 1
+    csrrs t0, CSR_SEPC, x0
+    addi  t1, t0, 4
+    YADDRW t0, t0, t1
+    csrrw x0, CSR_SEPC, t0
+    sret
+#endif
 
 /*
  * Entered in Capability Mode with a PCC that has PERM_ASR cleared.
