@@ -75,6 +75,56 @@ _start:
     jalr    ra, a0, -1
     EXPECT_JALR_SENTRY_FAULT t1
 
+    /*
+     * Regression tests (Sail 716106581bb5): if a failed sentry jalr updates
+     * the sentry's address without detagging PCC via YADDRW semantics, mepc
+     * holds a tagged, even-addressed sentry for the target address that mret
+     * (which unseals sentry capabilities in mepc) would unseal and execute.
+     */
+    NEXT_TEST "mepc from jalr to an odd-LSB sentry is not a valid sentry for mret"
+    auipc   a0, 0
+    la      t1, target
+    YADDRW  a0, a0, t1
+    YADDI   a0, a0, 1
+    YSEALE  a0, a0
+    RESUME_AFTER_FAULT 1f
+    jalr    ra, a0, 0
+    j       fail
+1:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    YMV     a0, trap_epc
+    RESUME_AFTER_FAULT 1f
+    csrw    CSR_MEPC, a0
+    li      t3, 0x1800            /* mstatus.MPP = M */
+    csrs    CSR_MSTATUS, t3
+    mret
+1:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC t1
+    EXPECT_EPC_TAG 0
+
+    NEXT_TEST "mepc from jalr with a non-zero offset is not a valid sentry for mret"
+    auipc   a0, 0
+    la      t1, target
+    YADDRW  a0, a0, t1
+    YSEALE  a0, a0
+    addi    t0, t1, 4
+    RESUME_AFTER_FAULT 1f
+    jalr    ra, a0, 4
+    j       fail
+1:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    YMV     a0, trap_epc
+    RESUME_AFTER_FAULT 1f
+    csrw    CSR_MEPC, a0
+    li      t3, 0x1800            /* mstatus.MPP = M */
+    csrs    CSR_MSTATUS, t3
+    mret
+1:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC t0
+    EXPECT_EPC_TAG 0
+
     YMODESWI
     TEST_PASS
 
