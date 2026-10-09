@@ -2,23 +2,35 @@
  *
  * Capability-mode JALR unseals a sentry capability in rs1 only when both
  * rs1.address[0] == 0 and the I-immediate offset is zero. Otherwise the target
- * capability remains sealed, JALR sets the target PCC address using YADDRW
- * semantics (which clears the tag because the capability is still sealed), and
- * the subsequent instruction fetch at the target address faults with
- * CAUSE_CHERI_INST and an untagged mepc.
+ * capability remains sealed:
+ * - On RVY >= 0.9.6, JALR sets the target PCC address using YADDRW semantics
+ *   (which clears the tag because the capability is still sealed), and the
+ *   subsequent instruction fetch at the target address faults with
+ *   CAUSE_CHERI_INST and an untagged mepc. If an implementation instead
+ *   updated the address without clearing the tag on a sealed capability, mepc
+ *   would hold a valid, even-aligned, tagged sentry at the new address that
+ *   MRET could unseal and execute.
+ * - On 0.9.3, JALR checks the target capability at the jump instruction and
+ *   raises a seal violation at the JALR with mepc tagged.
  */
 #define TEST_NAME "jalr-unseal"
 #include "testmacros.h"
 #include "exceptions.h"
 
-.macro EXPECT_JALR_SENTRY_FAULT target_addr
+.macro EXPECT_JALR_SENTRY_FAULT branch_label, target_addr
     j       fail
 88:
-    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_TRAP TRAP_CAP_BRANCH(CAP_SEAL)
+#ifdef CHERI_093
+    la      t3, \branch_label
+    EXPECT_EPC t3
+    EXPECT_EPC_TAG 1
+#else
     EXPECT_EPC \target_addr
     EXPECT_EPC_TAG 0
     YTYPER  t3, trap_epc
     beqz    t3, fail
+#endif
 .endm
 
 .option norvc
@@ -44,15 +56,15 @@ _start:
     YADDI   a0, t2, 1
     YSEALE  a0, a0
     RESUME_AFTER_FAULT 88f
-    jalr    ra, a0, 0
-    EXPECT_JALR_SENTRY_FAULT t1
+1:  jalr    ra, a0, 0
+    EXPECT_JALR_SENTRY_FAULT 1b, t1
 
     NEXT_TEST "a sentry with a non-zero aligned offset is not unsealed on jalr"
     YSEALE  a0, t2
     addi    t0, t1, 4
     RESUME_AFTER_FAULT 88f
-    jalr    ra, a0, 4
-    EXPECT_JALR_SENTRY_FAULT t0
+2:  jalr    ra, a0, 4
+    EXPECT_JALR_SENTRY_FAULT 2b, t0
 
     /*
      * Regression tests: the unseal check must test imm == 0 and
@@ -65,16 +77,17 @@ _start:
     NEXT_TEST "a sentry with offset 1 is not unsealed even though bit 0 is masked"
     YSEALE  a0, t2
     RESUME_AFTER_FAULT 88f
-    jalr    ra, a0, 1
-    EXPECT_JALR_SENTRY_FAULT t1
+3:  jalr    ra, a0, 1
+    EXPECT_JALR_SENTRY_FAULT 3b, t1
 
     NEXT_TEST "a sentry with bit 0 set and offset -1 is not unsealed"
     YADDI   a0, t2, 1
     YSEALE  a0, a0
     RESUME_AFTER_FAULT 88f
-    jalr    ra, a0, -1
-    EXPECT_JALR_SENTRY_FAULT t1
+4:  jalr    ra, a0, -1
+    EXPECT_JALR_SENTRY_FAULT 4b, t1
 
+#ifndef CHERI_093
     /*
      * Regression tests (Sail 716106581bb5): if a failed sentry jalr updates
      * the sentry's address without detagging PCC via YADDRW semantics, mepc
@@ -124,6 +137,7 @@ _start:
     EXPECT_TRAP CAUSE_CHERI_INST
     EXPECT_EPC t0
     EXPECT_EPC_TAG 0
+#endif
 
     YMODESWI
     TEST_PASS

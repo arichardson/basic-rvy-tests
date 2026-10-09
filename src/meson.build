@@ -86,6 +86,7 @@ if rvy_test_cc_found
     {'name': 'test-cbo-bounds'},
     {'name': 'test-xepc-detag'},
     {'name': 'test-xtvec-detag'},
+    {'name': 'test-jalr-unseal'},
     # 0.9.6 removed capability checks from branches, jumps, and xRET so target
     # faults are taken on instruction fetch, split CHERI fault causes into
     # mcause 24-28 and 33-36, and defined the synchronous exception priority
@@ -93,7 +94,6 @@ if rvy_test_cc_found
     {'name': 'test-branch-target-faults', 'min_version': '0.9.6'},
     {'name': 'test-exception-priority', 'min_version': '0.9.6'},
     {'name': 'test-xepc-return', 'min_version': '0.9.6'},
-    {'name': 'test-jalr-unseal', 'min_version': '0.9.6'},
     # 0.9.7 replaced the 1-bit/3-bit PTE layout with the 4-bit pte.rvy field
     # (yd, yw, yrg, yr in bits 58:55) and defined the Svyrg extension (RV64
     # only). The "any" CPU has no supervisor mode, so this needs the default
