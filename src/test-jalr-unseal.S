@@ -54,6 +54,27 @@ _start:
     jalr    ra, a0, 4
     EXPECT_JALR_SENTRY_FAULT t0
 
+    /*
+     * Regression tests: the unseal check must test imm == 0 and
+     * rs1.address[0] == 0 before adding the offset or masking bit 0 of the
+     * target address. Masking bit 0 before comparing target_addr == rs1.address
+     * wrongly unseals an even-addressed sentry when imm == 1, and checking only
+     * whether (rs1.address + imm) is even wrongly unseals an odd-addressed
+     * sentry when imm == -1.
+     */
+    NEXT_TEST "a sentry with offset 1 is not unsealed even though bit 0 is masked"
+    YSEALE  a0, t2
+    RESUME_AFTER_FAULT 88f
+    jalr    ra, a0, 1
+    EXPECT_JALR_SENTRY_FAULT t1
+
+    NEXT_TEST "a sentry with bit 0 set and offset -1 is not unsealed"
+    YADDI   a0, t2, 1
+    YSEALE  a0, a0
+    RESUME_AFTER_FAULT 88f
+    jalr    ra, a0, -1
+    EXPECT_JALR_SENTRY_FAULT t1
+
     YMODESWI
     TEST_PASS
 
