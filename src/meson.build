@@ -86,6 +86,7 @@ if rvy_test_cc_found
     {'name': 'test-cbo-bounds'},
     {'name': 'test-xepc-detag'},
     {'name': 'test-xtvec-detag'},
+    {'name': 'test-jalr-unseal'},
     # 0.9.6 removed capability checks from branches, jumps, and xRET so target
     # faults are taken on instruction fetch, split CHERI fault causes into
     # mcause 24-28 and 33-36, and defined the synchronous exception priority
