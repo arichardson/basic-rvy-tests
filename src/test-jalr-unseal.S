@@ -17,10 +17,10 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-.macro EXPECT_JALR_SENTRY_FAULT branch_label, target_addr
+.macro EXPECT_JALR_SENTRY_FAULT branch_label, target_addr, check=CAP_SEAL, expected_sealed=1
     j       fail
 88:
-    EXPECT_TRAP TRAP_CAP_BRANCH(CAP_SEAL)
+    EXPECT_TRAP TRAP_CAP_BRANCH(\check)
 #ifdef CHERI_093
     la      t3, \branch_label
     EXPECT_EPC t3
@@ -29,7 +29,8 @@
     EXPECT_EPC \target_addr
     EXPECT_EPC_TAG 0
     YTYPER  t3, trap_epc
-    beqz    t3, fail
+    li      t4, \expected_sealed
+    bne     t4, t3, fail
 #endif
 .endm
 
@@ -138,6 +139,29 @@ _start:
     EXPECT_EPC t0
     EXPECT_EPC_TAG 0
 #endif
+
+    /*
+     * Regression test (QEMU cap_unseal_entry assert): on RVY >= 0.9.6, JALR
+     * does not check the tag at the branch, so jumping with imm == 0 to an
+     * even-addressed untagged sentry still clears its sealed bit (while
+     * leaving tag == 0) and faults on fetch at the target rather than
+     * asserting in the emulator that the sentry being unsealed is tagged.
+     * With a non-zero offset the untagged sentry stays sealed (CT == 1).
+     */
+    NEXT_TEST "an untagged sentry with zero offset is unsealed and faults at the target"
+    YSEALE  a0, t2
+    YADDRW  a0, a0, t1
+    RESUME_AFTER_FAULT 88f
+5:  jalr    ra, a0, 0
+    EXPECT_JALR_SENTRY_FAULT 5b, t1, CAP_TAG, 0
+
+    NEXT_TEST "an untagged sentry with a non-zero offset stays sealed and faults at the target"
+    YSEALE  a0, t2
+    YADDRW  a0, a0, t1
+    addi    t0, t1, 4
+    RESUME_AFTER_FAULT 88f
+6:  jalr    ra, a0, 4
+    EXPECT_JALR_SENTRY_FAULT 6b, t0, CAP_TAG, 1
 
     YMODESWI
     TEST_PASS
