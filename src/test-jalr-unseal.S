@@ -11,7 +11,10 @@
  *   would hold a valid, even-aligned, tagged sentry at the new address that
  *   MRET could unseal and execute.
  * - On 0.9.3, JALR checks the target capability at the jump instruction and
- *   raises a seal violation at the JALR with mepc tagged.
+ *   raises a seal violation at the JALR with mepc tagged. The 0.9.3
+ *   specification and Sail model omit the rs1.address[0] == 0 check and only
+ *   test imm == 0, so that case is recorded as an expected failure when the
+ *   jump succeeds.
  */
 #define TEST_NAME "jalr-unseal"
 #include "testmacros.h"
@@ -50,15 +53,28 @@ _start:
     jalr    ra, a0, 0
     EXPECT_NO_TRAP
 
-    la      t1, target
-    YADDRW  t2, t2, t1
-
     NEXT_TEST "a sentry with bit 0 set in its address is not unsealed on jalr with zero offset"
-    YADDI   a0, t2, 1
+    YADDRW  a0, t2, t1
+    YADDI   a0, a0, 1
     YSEALE  a0, a0
     RESUME_AFTER_FAULT 88f
 1:  jalr    ra, a0, 0
+#ifdef CHERI_093
+    /*
+     * The 0.9.3 specification and Sail model only check imm != 0 and unseal
+     * sentries with address[0] == 1, whereas QEMU rejects them as in
+     * RVY >= 0.9.6.
+     */
+    EXPECT_NO_TRAP
+    li      resume_at, 0
+    MARK_XFAIL "0.9.3 Sail unseals sentries with address[0] == 1"
+    j       89f
+#endif
     EXPECT_JALR_SENTRY_FAULT 1b, t1
+89:
+    auipc   t2, 0
+    la      t1, target
+    YADDRW  t2, t2, t1
 
     NEXT_TEST "a sentry with a non-zero aligned offset is not unsealed on jalr"
     YSEALE  a0, t2
