@@ -175,6 +175,20 @@
     call console_skip
 .endm
 
+/*
+ * Mark the current case as an expected failure (TAP # TODO). Used when an
+ * implementation has a known bug that the test can detect and recover from
+ * without aborting the remaining cases. Clobbers a0-a1 and t0-t4.
+ */
+.macro MARK_XFAIL reason
+    .pushsection .rodata
+77: .asciz "\reason"
+    .popsection
+    la   a0, 77b
+    mv   a1, test_id
+    call console_xfail
+.endm
+
 /* Forget any traps taken so far; the next EXPECT_TRAP starts from zero. */
 .macro CLEAR_TRAPS
     li   trap_count, 0

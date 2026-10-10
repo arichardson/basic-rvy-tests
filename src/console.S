@@ -202,6 +202,30 @@ console_skip:
     ret
 
 /*
+ * Record that case a1 is an expected failure (TAP # TODO), for the reason a0
+ * names.
+ */
+.globl console_xfail
+console_xfail:
+    CONSOLE_ENTER
+    csrrs t0, CSR_DDC, x0
+    la   t1, tap_xfail_count
+    YADDRW t1, t0, t1
+    LOAD_X t2, 0(t1)
+    li   t3, TAP_MAX_XFAILS
+    bge  t2, t3, 1b              /* no room: say so rather than lose it */
+
+    slli t3, t2, PTR_SHIFT + 1   /* slot = count * 2 pointers */
+    la   t4, tap_xfails
+    add  t3, t3, t4
+    YADDRW t3, t0, t3
+    STORE_X a1, 0(t3)
+    STORE_X a0, XBYTES(t3)
+    addi t2, t2, 1
+    STORE_X t2, 0(t1)
+    ret
+
+/*
  * Emit the whole TAP stream: a0 = how many cases ran, a1 = which one failed
  * (0 if none). It is written out here at the end rather than a line at a time
  * as the cases run, because NEXT_TEST would then have to clobber the argument
@@ -210,7 +234,7 @@ console_skip:
  * Clobbers a0-a7 and t0-t4, which is more than the rest of this file, but the
  * only callers are TEST_PASS and TEST_FAIL and nothing runs after them.
  *
- * Note the operand order of the bne below: RVY reserves BEQ/BNE with the
+ * Note the operand order of the bne/beq below: RVY reserves BEQ/BNE with the
  * operands in rs1 <= rs2 register number order, and this runs in capability
  * mode where that reservation applies.
  */
@@ -235,9 +259,20 @@ console_tap:
     li   a5, 1
 1:  blt  a6, a5, 2f              /* while i <= total */
     bne  a7, a5, 3f              /* canonical order: a7 > a5 */
-    la   a0, .Ltap_notok
+5:  la   a0, .Ltap_notok
     j    4f
-3:  la   a0, .Ltap_ok
+3:  la   t0, tap_xfail_count
+    YADDRW t0, t6, t0
+    LOAD_X t1, 0(t0)
+    la   t2, tap_xfails
+    YADDRW t2, t6, t2
+10: beqz t1, 11f
+    LOAD_X t3, 0(t2)
+    beq  t3, a5, 5b              /* canonical order: t3 (x28) > a5 (x15) */
+    YADDI t2, t2, 2 * XBYTES
+    addi t1, t1, -1
+    j    10b
+11: la   a0, .Ltap_ok
 4:  jal  ra, console_puts
     mv   a0, a5
     jal  ra, console_put_dec
@@ -262,7 +297,7 @@ console_tap:
     LOAD_X t1, 0(t0)             /* t1 = slots left to look at */
     la   t2, tap_skips
     YADDRW t2, t6, t2            /* t2 = the slot being looked at */
-8:  beqz t1, 7f
+8:  beqz t1, 12f
     LOAD_X t3, 0(t2)
     blt  a5, t3, 9f              /* before this range */
     LOAD_X t3, XBYTES(t2)
@@ -276,6 +311,24 @@ console_tap:
 9:  YADDI t2, t2, 3 * XBYTES
     addi t1, t1, -1
     j    8b
+    /* Was this case marked as an expected failure? */
+12: la   t0, tap_xfail_count
+    YADDRW t0, t6, t0
+    LOAD_X t1, 0(t0)
+    la   t2, tap_xfails
+    YADDRW t2, t6, t2
+13: beqz t1, 7f
+    LOAD_X t3, 0(t2)
+    bne  t3, a5, 14f             /* canonical order: t3 (x28) > a5 (x15) */
+    LOAD_X a3, XBYTES(t2)
+    la   a0, .Ltap_todo
+    jal  ra, console_puts
+    mv   a0, a3
+    jal  ra, console_puts
+    j    7f
+14: YADDI t2, t2, 2 * XBYTES
+    addi t1, t1, -1
+    j    13b
 7:  la   a0, .Ltap_nl
     jal  ra, console_puts
     addi a5, a5, 1
@@ -297,6 +350,7 @@ console_tap:
 .Ltap_notok: .asciz "not ok "
 .Ltap_dash:  .asciz " - "
 .Ltap_skip:  .asciz " # SKIP "
+.Ltap_todo:  .asciz " # TODO "
 .Ltap_nl:    .asciz "\n"
 
 .section .text
@@ -343,6 +397,14 @@ tap_skip_overflow:
 .globl tap_skips
 tap_skips:
     .space 3 * XBYTES * TAP_MAX_SKIPS
+
+/* Set by console_xfail: one {case_id, reason} per expected failure. */
+.globl tap_xfail_count
+tap_xfail_count:
+    WORD_X 0
+.globl tap_xfails
+tap_xfails:
+    .space 2 * XBYTES * TAP_MAX_XFAILS
 
 /* Set by console_init: non-zero where this machine has the virt UART. */
 .globl console_uart
