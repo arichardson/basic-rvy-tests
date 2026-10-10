@@ -18,11 +18,12 @@
  *   console_put_dec(a0 = value)     print it in decimal
  *
  * The rest are called on the test's behalf, by SETUP_TRAPS,
- * SKIPPABLE_BLOCK_SKIPPED and TEST_PASS/TEST_FAIL, at points where nothing
- * the test was holding is still live, so they are freer with registers:
+ * SKIPPABLE_BLOCK_SKIPPED, MARK_XFAIL and TEST_PASS/TEST_FAIL, at points where
+ * nothing the test was holding is still live, so they are freer with registers:
  *
  *   console_init()                                    clobbers a0-a5, t0-t4
  *   console_skip(a0 = reason, a1 = first, a2 = last)  clobbers t0-t4
+ *   console_xfail(a0 = reason, a1 = case)             clobbers t0-t4
  *   console_tap(a0 = cases, a1 = the failing one)     clobbers a0-a7, t0-t6
  *   console_exit(a0 = exit code)                      does not return
  *
@@ -49,10 +50,12 @@
 #define UART_LSR_THRE 0x20
 
 /*
- * How many skipped blocks a test may have. Going over is reported rather than
- * dropped: a skip that went unrecorded would show up as a case that passed.
+ * How many skipped blocks or expected failures a test may have. Going over is
+ * reported rather than dropped: a skip that went unrecorded would show up as a
+ * case that passed.
  */
-#define TAP_MAX_SKIPS 8
+#define TAP_MAX_SKIPS  8
+#define TAP_MAX_XFAILS 8
 
 /* Room for a 64-bit value in decimal, and the NUL. */
 #define DEC_BUF_LEN 24
