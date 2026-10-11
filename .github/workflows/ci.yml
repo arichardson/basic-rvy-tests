@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: BSD-2-Clause
+
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # CHERI-Alliance/sail-riscv (CHERI 0.9.3)
+  SAIL_093_REPO: CHERI-Alliance/sail-riscv
+  SAIL_093_SHA: e664353e4e769236f7afa14c364ed393718b3a38
+  SAIL_COMPILER_VERSION: 0.20.3
+
+jobs:
+  build-sail-093:
+    name: Build Sail 0.9.3
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cache Sail 0.9.3 binary
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sail-093
+          key: sail-093-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
+
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            cmake curl g++ libgmp-dev ninja-build pkgconf
+          sudo mkdir -p /usr/local
+          curl --fail --location \
+            "https://github.com/rems-project/sail/releases/download/${SAIL_COMPILER_VERSION}-binary/sail-Linux-x86_64.tar.gz" \
+            | sudo tar xvz --directory=/usr/local --strip-components=1
+
+      - name: Checkout Sail 0.9.3
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SAIL_093_REPO }}
+          ref: ${{ env.SAIL_093_SHA }}
+          path: sail-src
+
+      - name: Build Sail 0.9.3
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
+          ninja -C sail-build sail_riscv_sim
+          strip sail-build/c_emulator/sail_riscv_sim
+          mkdir -p "${{ runner.temp }}/sail-093/bin"
+          cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-093/bin/"
+
+  test:
+    name: Run tests
+    runs-on: ubuntu-24.04
+    needs: [build-sail-093]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore Sail 0.9.3 binary
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/sail-093
+          key: sail-093-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
+          fail-on-cache-miss: true
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            clang libgmp10 lld ninja-build python3-pip
+          python3 -m pip install --break-system-packages 'meson>=1.10.0'
+
+      - name: Build test ELFs and run 0.9.3 suite
+        run: |
+          meson setup build \
+            -Dsail_093="${{ runner.temp }}/sail-093"
+          ninja -C build
+          meson test -C build --print-errorlogs
