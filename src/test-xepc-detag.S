@@ -202,9 +202,39 @@ ialign32_unsealed_recovered:
 ialign32_recovered:
     EXPECT_TRAP TRAP_CAP_FETCH(CAP_TAG)
     EXPECT_EPC_TAG 0
-
-    li   t0, MISA_C               /* leave misa.C as this test found it */
+    /*
+     * Bit 1 is legalized on read rather than on write: restoring misa.C makes
+     * the sentry written to sepc above (which read back detagged while misa.C
+     * was 0) read back with bit 1 and its tag intact; conversely, writing
+     * mepc/sepc while misa.C is 1 and then clearing misa.C masks bit 1 and
+     * detags on read without another write to mepc/sepc.
+     */
+    li   t0, MISA_C
     csrs CSR_MISA, t0
+
+    NEXT_TEST "setting misa.C restores bit 1 and the tag of the sentry already in sepc"
+    csrr a1, CSR_SEPC
+    EXPECT_TAG a1, 1
+    andi t1, a1, 2
+    EXPECT_NONZERO t1
+
+    csrw CSR_MEPC, a0             /* sentry with bit 1 set, written while misa.C=1 */
+    csrw CSR_SEPC, a3             /* unsealed at rep_base with bit 1 set, written while misa.C=1 */
+    csrc CSR_MISA, t0             /* switch to IALIGN=32 without rewriting mepc or sepc */
+
+    NEXT_TEST "clearing misa.C masks bit 1 and detags a sentry written to mepc under IALIGN=16"
+    csrr a1, CSR_MEPC
+    EXPECT_TAG a1, 0
+    andi t1, a1, 2
+    EXPECT_ZERO t1
+
+    NEXT_TEST "clearing misa.C masks bit 1 and detags sepc at rep_base written under IALIGN=16"
+    csrr a1, CSR_SEPC
+    EXPECT_TAG a1, 0
+    andi t1, a1, 2
+    EXPECT_ZERO t1
+
+    csrs CSR_MISA, t0             /* leave misa.C as this test found it */
     j    ialign32_done
 skip_ialign32:
     SKIPPABLE_BLOCK_SKIPPED "misa.C is hard-wired here so IALIGN=32 is unreachable"
