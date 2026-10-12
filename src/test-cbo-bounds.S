@@ -13,12 +13,19 @@
  *  - All four CBOs require W (store) permission on the authorizing capability
  *    (and R as well for CLEAN/FLUSH/INVAL), reporting a store capability
  *    permission fault when W is missing even if the whole block is in bounds.
+ *  - CBO.ZERO clears the capability tag and data of every capability granule
+ *    across the entire 64-byte cache block.
  */
 #define TEST_NAME "cbo-bounds"
 #include "testmacros.h"
 #include "exceptions.h"
 
 #define CBOM_LEN 64
+#if __riscv_xlen == 64
+#define CACHELINE_CAP_OFFSETS 0, 16, 32, 48
+#else
+#define CACHELINE_CAP_OFFSETS 0, 8, 16, 24, 32, 40, 48, 56
+#endif
 
 .option norvc
 .section .text
@@ -95,18 +102,28 @@ _start:
     CBO_FLUSH a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
-    /* A capability over the whole block passes every CBO (sanity/decode check). */
+    /*
+     * A capability over the whole 64-byte block passes every CBO, and CBO.ZERO
+     * clears the capability tag and data of every capability granule across
+     * the block.
+     */
     csrrs a0, CSR_DDC, x0
     lla   t0, buf
     YADDRW a0, a0, t0
     li   t1, CBOM_LEN
     YBNDSW a0, a0, t1
 
-    NEXT_TEST "cbo.zero passes when the whole block is in bounds"
+    NEXT_TEST "cbo.zero clears capability tags and data across the entire 64-byte block"
+    .irp off, CACHELINE_CAP_OFFSETS
+    SY   a0, \off(a0)
+    .endr
     CBO_ZERO a0
     EXPECT_NO_TRAP
-    lbu  t2, 0(a0)
-    EXPECT_ZERO t2
+    .irp off, CACHELINE_CAP_OFFSETS
+    LY   t1, \off(a0)
+    EXPECT_TAG t1, 0
+    EXPECT_CAP_EQ t1, x0
+    .endr
 
     NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0
