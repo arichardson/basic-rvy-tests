@@ -16,9 +16,10 @@
  *  2. A misaligned capability access also outranks the walk, and reports an
  *     access fault rather than a misaligned fault, since it cannot be
  *     emulated in software.
- *  3. A CHERI Load Capability Fault (35) is the *lowest* priority entry in
- *     the entire table, below even the page faults produced by the same walk
- *     that decided it.
+ *  3. A CHERI Store/AMO Page Fault (36) sits below the standard Store/AMO
+ *     Page Fault (15) from the same walk, and a CHERI Load Capability Fault
+ *     (35) is the *lowest* priority entry in the entire table, below even the
+ *     standard page faults (13/15) produced by the same leaf PTE.
  *
  * Each ordering is paired with a control that removes the higher-priority
  * condition and requires the lower-priority one to appear on its own.
@@ -33,7 +34,7 @@
  * before every such case, because a hardware update makes the next attempt
  * succeed and would otherwise mask a difference.
  *
- * A store cannot raise 35 (it loads no tag), so ordering 3 covers only the
+ * A store cannot raise 35 (it loads no tag), so the 35 cases cover only the
  * three instructions that read one. The remaining table row involving
  * translation, CHERI Store/AMO Page Fault (36) against 35 for an AMO, is
  * already covered by test-svyrg.
@@ -69,24 +70,29 @@
 #define SSTATUS_SUM  (1 << 18)
 #define SSTATUS_YRGE (1 << 59)
 #define SSTATUS_SYRG (1 << 60)
+#define SSTATUS_UYRG (1 << 61)
 
 /*
- * yrg=1 matches sstatus.SYRG below, so loads are normal; yw|yd allow
- * capability stores. Every page except the two CHERI ones carries this, so
- * that only the base ISA bits decide what happens.
+ * yrg=1 matches sstatus.SYRG and sstatus.UYRG below, so loads are normal;
+ * yw|yd allow capability stores. Every page except the CHERI-faulting ones
+ * carries this, so that only the base ISA bits decide what happens.
  */
 #define RVY_NORMAL (PTE_YRG_BIT | PTE_YW_BIT | PTE_YD_BIT)
 
 /* The pages, by root table index; all of them alias PA 0x80000000. */
-#define IDX_CODE      2          /* VA 0x0_80000000: code and data */
-#define IDX_OK        3          /* VA 0x0_C0000000: everything permitted */
-#define IDX_YRG       4          /* VA 0x1_00000000: yr=1/yrg=0, raises 35 */
-#define IDX_USER      5          /* VA 0x1_40000000: the same, but a U-page */
-#define IDX_INVALID   6          /* VA 0x1_80000000: V=0 */
-#define IDX_NOREAD    7          /* VA 0x1_C0000000: execute only */
-#define IDX_NOWRITE   8          /* VA 0x2_00000000: read only */
-#define IDX_NOACCESS  9          /* VA 0x2_40000000: A=0 */
-#define IDX_NODIRTY  10          /* VA 0x2_80000000: D=0 */
+#define IDX_CODE          2      /* VA 0x0_80000000: code and data */
+#define IDX_OK            3      /* VA 0x0_C0000000: everything permitted */
+#define IDX_YRG           4      /* VA 0x1_00000000: yr=1/yrg=0, raises 35 */
+#define IDX_USER          5      /* VA 0x1_40000000: the same, on a U-page */
+#define IDX_INVALID       6      /* VA 0x1_80000000: V=0 */
+#define IDX_NOREAD        7      /* VA 0x1_C0000000: execute only */
+#define IDX_NOWRITE       8      /* VA 0x2_00000000: read only */
+#define IDX_NOACCESS      9      /* VA 0x2_40000000: A=0 */
+#define IDX_NODIRTY      10      /* VA 0x2_80000000: D=0 */
+#define IDX_NOREAD_YRG   11      /* VA 0x2_C0000000: execute only + yr=1/yrg=0 */
+#define IDX_NOWRITE_YRG  12      /* VA 0x3_00000000: read only + yr=1/yrg=0 */
+#define IDX_NOYW         13      /* VA 0x3_40000000: yw=0, raises 36 */
+#define IDX_NOWRITE_NOYW 14      /* VA 0x3_80000000: read only + yw=0 */
 
 #define VA_OF(idx) ((idx) << 30)
 /* buf is linked into the code page, so an alias of it is this far along. */
@@ -160,10 +166,11 @@ _start:
     csrs CSR_MENVCFG, t0
 
     /*
-     * Svyrg on, and SYRG set so a page with yrg=0 is the mismatching one.
-     * SUM stays clear: ordering 3 needs a U-page S-mode may not reach.
+     * Svyrg on, and both SYRG and UYRG set so any S-page or U-page with yrg=0
+     * is a generation mismatch. SUM stays clear: ordering 3 needs a U-page
+     * S-mode may not reach unless SUM is temporarily set for the control.
      */
-    li   t0, SSTATUS_YRGE | SSTATUS_SYRG
+    li   t0, SSTATUS_YRGE | SSTATUS_SYRG | SSTATUS_UYRG
     csrs CSR_MSTATUS, t0
 
     /*
@@ -181,6 +188,12 @@ _start:
     SET_PTE IDX_NOWRITE, PTE_V | PTE_R | PTE_A | PTE_D | RVY_NORMAL
     SET_PTE IDX_NOACCESS, PTE_NOACCESS
     SET_PTE IDX_NODIRTY, PTE_NODIRTY
+    SET_PTE IDX_NOREAD_YRG, PTE_V | PTE_X | PTE_A | PTE_D | PTE_YR_BIT \
+                            | PTE_YW_BIT | PTE_YD_BIT
+    SET_PTE IDX_NOWRITE_YRG, PTE_V | PTE_R | PTE_A | PTE_D | PTE_YR_BIT \
+                             | PTE_YW_BIT | PTE_YD_BIT
+    SET_PTE IDX_NOYW, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YRG_BIT
+    SET_PTE IDX_NOWRITE_NOYW, PTE_V | PTE_R | PTE_A | PTE_D | PTE_YRG_BIT
 
     /* satp = Sv39 | PPN(pagetable) */
     lla   t0, pagetable
@@ -407,37 +420,97 @@ s_entry:
     SC_Y t1, s1, s2
     EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
 
-    /* ---- Ordering 3: a CHERI Load Capability Fault is the lowest ------ */
+    /* ---- Ordering 3: standard page faults outrank 36 and 35 ----------- */
 
-    CAP_TO_ALIAS a3, IDX_YRG     /* the mismatching page, which raises 35 */
-    CAP_TO_ALIAS a4, IDX_USER    /* the same, but S-mode may not reach it */
+    CAP_TO_ALIAS a3, IDX_YRG          /* yr=1/yrg=0: raises 35 on its own */
+    CAP_TO_ALIAS a4, IDX_USER         /* the same on a U-page */
+    CAP_TO_ALIAS a6, IDX_NOREAD_YRG   /* the same with R=0 */
+    CAP_TO_ALIAS a7, IDX_NOWRITE_YRG  /* the same with W=0 */
+    CAP_TO_ALIAS s0, IDX_NOYW         /* yw=0: raises 36 on its own */
+    CAP_TO_ALIAS s1, IDX_NOWRITE_NOYW /* the same with W=0 */
 
     /* 35 only fires for a set tag, so put one in the buffer first. */
     NEXT_TEST "put a tagged capability in the buffer for the loads below"
     SY   s2, 0(a5)
     EXPECT_NO_TRAP
 
-    /* The mismatching page really does raise 35 on its own ... */
+    /* The mismatching page raises 35 on its own. */
     NEXT_TEST "the mismatching page raises a load capability fault on its own"
     LY   t1, 0(a3)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    /* ... and the page fault from the same walk still outranks it. */
-    NEXT_TEST "but a page fault on the same walk outranks it"
+    /* The U-page also raises 35 when sstatus.SUM permits S-mode access. */
+    li   t0, SSTATUS_SUM
+    csrs sstatus, t0
+    NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault"
     LY   t1, 0(a4)
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    li   t0, SSTATUS_SUM
+    csrc sstatus, t0
+    /* With SUM=0 or R=0, the page fault from the same walk outranks 35. */
+    NEXT_TEST "but a user page fault on the same walk outranks it"
+    LY   t1, 0(a4)
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    NEXT_TEST "and missing read permission on the leaf PTE outranks it too"
+    LY   t1, 0(a6)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
     NEXT_TEST "the mismatching page raises it for lr.y too"
     LR_Y t1, a3
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    NEXT_TEST "and the page fault still outranks it"
+    NEXT_TEST "and the user page fault still outranks it"
     LR_Y t1, a4
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    NEXT_TEST "and missing read permission on the leaf PTE outranks it for lr.y too"
+    LR_Y t1, a6
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 
+    li   t0, 0xdeadbeef
+    YADDRW t2, s2, t0            /* distinct tagged capability t2 != s2 */
+    li   t1, 0x5555
     NEXT_TEST "the mismatching page raises it for amoswap.y too"
-    AMOSWAP_Y t1, a3, s2
+    AMOSWAP_Y t1, a3, t2
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    NEXT_TEST "and the store page fault still outranks it"
-    AMOSWAP_Y t1, a4, s2
+    NEXT_TEST "and the store page fault on a user page still outranks it"
+    AMOSWAP_Y t1, a4, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    NEXT_TEST "and missing read permission on the leaf PTE outranks it for amoswap.y"
+    AMOSWAP_Y t1, a6, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    NEXT_TEST "and missing write permission on the leaf PTE outranks it for amoswap.y"
+    AMOSWAP_Y t1, a7, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+
+    /* A page with yw=0 raises 36 on its own for tagged stores, and W=0 outranks it. */
+    NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for sy"
+    SY   s2, 0(s0)
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    NEXT_TEST "but missing write permission on the leaf PTE outranks it for sy"
+    SY   s2, 0(s1)
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+
+    NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for amoswap.y"
+    AMOSWAP_Y t1, s0, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    NEXT_TEST "but missing write permission on the leaf PTE outranks it for amoswap.y"
+    AMOSWAP_Y t1, s1, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    EXPECT_TAG t1, 0
+    li   t0, 0x5555
+    EXPECT_EQ t1, t0             /* cd was not modified by any faulting amoswap.y */
+    LY   t0, 0(a5)
+    EXPECT_CAP_EQ t0, s2         /* memory still holds s2, not t2 */
+
+    NEXT_TEST "a page with yw=0 permits the lr.y that reserves the address"
+    LR_Y t1, s0
+    EXPECT_NO_TRAP
+    NEXT_TEST "and raises a store capability page fault on the sc.y"
+    SC_Y t1, s0, s2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    NEXT_TEST "a read-only page with yw=0 also permits the lr.y that reserves the address"
+    LR_Y t1, s1
+    EXPECT_NO_TRAP
+    NEXT_TEST "and missing write permission on the leaf PTE outranks the store capability page fault on sc.y"
+    SC_Y t1, s1, s2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
     YMODESWI
