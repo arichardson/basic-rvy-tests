@@ -14,7 +14,7 @@ env:
   QEMU_SHA: 0b70242e889bfc853b966514a77ce4a8970f2e95
   # CHERI-Alliance/sail-riscv (CHERI 0.9.3)
   SAIL_093_REPO: CHERI-Alliance/sail-riscv
-  SAIL_093_SHA: e664353e4e769236f7afa14c364ed393718b3a38
+  SAIL_093_SHA: 7726ab7586de0ef4a4a23e2d37fd4310fd43bedd
   # CHERI-Alliance/sail-riscv (RVY 0.9.9)
   SAIL_099_REPO: CHERI-Alliance/sail-riscv
   SAIL_099_SHA: da337d4b0402bae0b84d952e2ce8da838c7a2cd1
