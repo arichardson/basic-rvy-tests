@@ -8,9 +8,10 @@
  * from the call returning: console_target holds the address the writes go to,
  * so pointing it at a buffer makes the bytes readable back. Each case then
  * requires the exact character and the HTIF command word that should have
- * accompanied it. The default value of console_target is checked too, since
- * that is the part a redirected run cannot exercise and the harness is what
- * otherwise depends on it.
+ * accompanied it. The default value of console_target and the console_init
+ * probes for the UART and the optional target_info payload at
+ * TARGET_INFO_ADDR are checked too, since a redirected run cannot exercise
+ * the first and the harness is what otherwise depends on them.
  *
  * The helpers run in capability pointer mode whatever the caller was in, and
  * recover the caller's mode from the return address: a call made in
@@ -101,7 +102,57 @@ _start:
 1:  EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
 2:
 
+    /*
+     * Whether the harness loaded the target_info ELF at TARGET_INFO_ADDR is
+     * also a property of the run: console_init must have copied it when the
+     * magic word was readable there, and left the local copy zeroed otherwise.
+     */
+    NEXT_TEST "console_init agreed with whether the target_info payload is there"
+    la   t0, target_info
+    lw   s1, TARGET_INFO_OFF_MAGIC(t0)
+    lw   s2, TARGET_INFO_OFF_IMPL_ID(t0)
+    li   t0, TARGET_INFO_ADDR
+    lw   t1, TARGET_INFO_OFF_MAGIC(t0)
+    bnez trap_count, 1f
+    li   t2, TARGET_INFO_MAGIC
+    bne  t2, t1, 1f
+    bne  t2, s1, fail
+    lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
+    bne  s2, t1, fail
+    j    2f
+1:  li   trap_count, 0
+    bnez s1, fail
+    bnez s2, fail
+2:
+
     REDIRECT_CONSOLE
+
+    /*
+     * If TARGET_INFO_ADDR traps (simulated by bounding ddc below it),
+     * console_init catches the trap and leaves the local target_info zeroed.
+     */
+    NEXT_TEST "console_init leaves target_info zeroed when TARGET_INFO_ADDR traps"
+    la   t0, target_info
+    li   t1, TARGET_INFO_MAGIC
+    sw   t1, TARGET_INFO_OFF_MAGIC(t0)
+    YMODESWY
+    csrrs s7, CSR_DDC, x0
+    li   t0, 0x80000000
+    YADDRW t1, s7, t0
+    li   t0, 0x100000
+    YBNDSW t1, t1, t0
+    csrw CSR_DDC, t1
+    call console_init
+    csrw CSR_DDC, s7
+    YMODESWI
+    EXPECT_NO_TRAP
+    la   t0, target_info
+    lw   t1, TARGET_INFO_OFF_MAGIC(t0)
+    bnez t1, fail
+    lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
+    bnez t1, fail
+    sw   s1, TARGET_INFO_OFF_MAGIC(t0)
+    sw   s2, TARGET_INFO_OFF_IMPL_ID(t0)
 
     /* One character: the byte and the command word both have to appear. */
     NEXT_TEST "console_putc emits the byte and the HTIF command word"
