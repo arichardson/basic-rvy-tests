@@ -375,31 +375,40 @@ if rvy_test_cc_found
     endif
   endif
 
+  rvy_target_info_elfs = {}
   foreach emulator : rvy_emulators_to_test
-    emu_slug = emulator['label'].underscorify()
     march = emulator['xlen'] == 32 ? 'rv32g' : 'rv64g'
-    target_info_c = configure_file(
-      input: 'target-info.c.in',
-      output: 'target_info_' + emu_slug + '.c',
-      configuration: {
-        'IMPL_ID': emulator['harness'] == 'sail' ? 'TARGET_IMPL_SAIL' : 'TARGET_IMPL_QEMU',
-        'SVYRG_TRAPS_CONSERVATIVELY': emulator.get('svyrg_traps_conservatively', false) ? 'true' : 'false',
-      },
-    )
-    target_info_elf = custom_target(
-      'target_info_' + emu_slug + '.elf',
-      input: target_info_c,
-      output: 'target_info_' + emu_slug + '.elf',
-      command: [rvy_test_cc, '--target=riscv' + emulator['xlen'].to_string(),
-                '-march=' + march, '-std=c11', '-I' + rvy_src_dir,
-                '-ffreestanding', '-nostdlib', '-static', '-fuse-ld=lld',
-                '-Wl,-T,' + (rvy_src_dir / 'target-info.ld'),
-                '@INPUT@', '-o', '@OUTPUT@'],
-      depend_files: files('target-info.h', 'target-info.ld'),
-      build_by_default: not used_as_qemu_submodule,
-    )
-    run_args = ['--extra-elf', target_info_elf]
-    emu_depends = emulator['depends'] + [target_info_elf]
+    machines = emulator['harness'] == 'sail' ? ['sail'] : rvy_machines
+    foreach machine : machines
+      info_slug = (emulator['harness'] == 'sail' ? emulator['label'] :
+                   'qemu_@0@_@1@'.format(machine, emulator['xlen'])).underscorify()
+      if info_slug not in rvy_target_info_elfs
+        target_info_c = configure_file(
+          input: 'target-info.c.in',
+          output: 'target_info_' + info_slug + '.c',
+          configuration: {
+            'IMPL_ID': emulator['harness'] == 'sail' ? 'TARGET_IMPL_SAIL' : 'TARGET_IMPL_QEMU',
+            'UART_ADDR': machine == 'virt' ? '0x10000000' : '0',
+            'HAS_HTIF': machine == 'virt' ? 'false' : 'true',
+            'SVYRG_TRAPS_CONSERVATIVELY': emulator.get('svyrg_traps_conservatively', false) ? 'true' : 'false',
+          },
+        )
+        rvy_target_info_elfs += {
+          info_slug: custom_target(
+            'target_info_' + info_slug + '.elf',
+            input: target_info_c,
+            output: 'target_info_' + info_slug + '.elf',
+            command: [rvy_test_cc, '--target=riscv' + emulator['xlen'].to_string(),
+                      '-march=' + march, '-std=c11', '-I' + rvy_src_dir,
+                      '-ffreestanding', '-nostdlib', '-static', '-fuse-ld=lld',
+                      '-Wl,-T,' + (rvy_src_dir / 'target-info.ld'),
+                      '@INPUT@', '-o', '@OUTPUT@'],
+            depend_files: files('target-info.h', 'target-info.ld'),
+            build_by_default: not used_as_qemu_submodule,
+          ),
+        }
+      endif
+    endforeach
     foreach t : rvy_tests
       profile = ('@0@_@1@_@2@'.format(t['name'], emulator['xlen'], emulator['cheri_version'])).underscorify()
       if profile not in rvy_elf_targets
@@ -408,25 +417,32 @@ if rvy_test_cc_found
       elf = rvy_elf_targets[profile]
 
       test_id = 'rvy-' + emulator['label'] + '-' + t['name']
-      variants = [{'suffix': '', 'run_args': run_args, 'depends': emu_depends}]
+      variants = [false]
       if t.get('test_without_target_info', false)
-        variants += [{'suffix': '-no-target-info', 'run_args': [], 'depends': emulator['depends']}]
+        variants += [true]
       endif
-      foreach v : variants
+      foreach no_info : variants
+        suffix = no_info ? '-no-target-info' : ''
         if emulator['harness'] == 'sail'
-          test(test_id + v['suffix'], rvy_run_test,
-               args: v['run_args'] + ['sail', emulator['path'], elf,
-                                      get_option('rvy_sail_insn_limit').to_string()],
-               depends: v['depends'],
+          info_elf = rvy_target_info_elfs[emulator['label'].underscorify()]
+          run_args = no_info ? [] : ['--extra-elf', info_elf]
+          deps = no_info ? emulator['depends'] : emulator['depends'] + [info_elf]
+          test(test_id + suffix, rvy_run_test,
+               args: run_args + ['sail', emulator['path'], elf,
+                                 get_option('rvy_sail_insn_limit').to_string()],
+               depends: deps,
                timeout: get_option('rvy_test_timeout'),
                protocol: 'tap',
                suite: ['rvy'])
         else
           qemu_args = emulator.get('qemu_args', []) + t.get('qemu_args', [])
           foreach machine : rvy_machines
-            test(test_id + v['suffix'] + '-' + machine, rvy_run_test,
-                 args: v['run_args'] + ['qemu', emulator['path'], elf, machine] + qemu_args,
-                 depends: v['depends'],
+            info_elf = rvy_target_info_elfs['qemu_@0@_@1@'.format(machine, emulator['xlen']).underscorify()]
+            run_args = no_info ? [] : ['--extra-elf', info_elf]
+            deps = no_info ? emulator['depends'] : emulator['depends'] + [info_elf]
+            test(test_id + suffix + '-' + machine, rvy_run_test,
+                 args: run_args + ['qemu', emulator['path'], elf, machine] + qemu_args,
+                 depends: deps,
                  timeout: get_option('rvy_test_timeout'),
                  protocol: 'tap',
                  suite: ['rvy'])

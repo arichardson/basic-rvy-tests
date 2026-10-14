@@ -27,9 +27,10 @@
  *   console_tap(a0 = cases, a1 = the failing one)     clobbers a0-a7, t0-t6
  *   console_exit(a0 = exit code)                      does not return
  *
- * console_init runs before the test has installed a handler and probes for
- * the UART, which means trapping where there is none, so it saves and
- * restores everything that disturbs.
+ * console_init runs before the test has installed a handler and probes
+ * TARGET_INFO_ADDR (and, when no target_info ELF was loaded, UART_ADDR),
+ * which means trapping where unmapped, so it saves and restores everything
+ * that disturbs.
  */
 #pragma once
 
@@ -41,8 +42,9 @@
 
 /*
  * The 16550 UART the virt machine puts at 0x10000000. Nothing is mapped there
- * on the spike machine or under the Sail model, where a bare access faults,
- * so console_init probes for it rather than assuming either way.
+ * on the spike machine or under the Sail model, where a bare access faults;
+ * target_info supplies uart_addr and has_htif per machine, and console_init
+ * falls back to probing UART_ADDR when no target_info ELF was loaded.
  */
 #define UART_ADDR     0x10000000
 #define UART_THR      0          /* transmit holding register */
