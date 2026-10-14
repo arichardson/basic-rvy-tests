@@ -108,6 +108,24 @@ console_init:
 
 .balign 4
 .Ltarget_info_done:
+    csrrs t0, CSR_DDC, x0
+    la    t1, target_info
+    YADDRW t1, t0, t1
+    LOAD_X a0, TARGET_INFO_OFF_UART_ADDR(t1)
+    lbu   t2, TARGET_INFO_OFF_HAS_HTIF(t1)
+    la    a3, console_putc_htif
+    bnez  a0, 1f
+    bnez  t2, .Lprobe_done
+    j     .Lprobe_uart
+1:  la    a3, console_putc_uart
+    beqz  t2, .Lprobe_done
+    la    a3, console_putc_both
+    j     .Lprobe_done
+
+.Lprobe_uart:
+    li    t2, 1
+    sb    t2, TARGET_INFO_OFF_HAS_HTIF(t1)
+
     auipc t0, 0
     la    t1, .Lprobe_failed
     YADDRW t0, t0, t1
@@ -118,6 +136,8 @@ console_init:
     li    t1, UART_ADDR
     YADDRW t0, t0, t1
     lbu   t2, UART_LSR(t0)       /* ... and find out here */
+    DDC_AT t0, target_info, t2
+    STORE_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
     j    .Lprobe_done
 
 .balign 4
@@ -174,7 +194,9 @@ console_putc_both:
 .globl console_putc_uart
 console_putc_uart:
     csrrs t0, CSR_DDC, x0
-    li    t1, UART_ADDR
+    la    t1, target_info
+    YADDRW t2, t0, t1
+    LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t2)
     YADDRW t2, t0, t1
     sb    a0, UART_THR(t2)
     ret

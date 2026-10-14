@@ -95,14 +95,41 @@ _start:
     NEXT_TEST "console_init agreed with whether the UART is really there"
     la   t0, console_putc_fn
     LOAD_X s1, 0(t0)
-    li   t0, UART_ADDR
-    lbu  t1, UART_LSR(t0)
     la   t0, console_putc_htif
     beq  s1, t0, 1f
+    li   t0, UART_ADDR
+    lbu  t1, UART_LSR(t0)
     EXPECT_NO_TRAP
     j    2f
-1:  EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
+1:  la   t0, target_info
+    lw   t1, TARGET_INFO_OFF_MAGIC(t0)
+    bnez t1, 2f                  /* target_info disabled the UART without probing */
+    li   t0, UART_ADDR
+    lbu  t1, UART_LSR(t0)
+    EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT
 2:
+
+    /*
+     * console_init sets console_putc_fn from target_info.uart_addr and
+     * target_info.has_htif (populated either from TARGET_INFO_ADDR or by the
+     * fallback UART probe).
+     */
+    NEXT_TEST "console_init selected console_putc_fn to match target_info"
+    la   t0, target_info
+    LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
+    lbu  t2, TARGET_INFO_OFF_HAS_HTIF(t0)
+    bnez t1, 1f
+    beqz t2, fail
+    la   t0, console_putc_htif
+    bne  s1, t0, fail
+    j    3f
+1:  bnez t2, 2f
+    la   t0, console_putc_uart
+    bne  s1, t0, fail
+    j    3f
+2:  la   t0, console_putc_both
+    bne  s1, t0, fail
+3:
 
     /*
      * Whether the harness loaded the target_info ELF at TARGET_INFO_ADDR is
@@ -135,6 +162,8 @@ _start:
      */
     NEXT_TEST "console_init leaves target_info zeroed when TARGET_INFO_ADDR traps"
     la   t0, target_info
+    LOAD_X a6, TARGET_INFO_OFF_UART_ADDR(t0)
+    lbu  a7, TARGET_INFO_OFF_HAS_HTIF(t0)
     li   t1, TARGET_INFO_MAGIC
     sw   t1, TARGET_INFO_OFF_MAGIC(t0)
     YMODESWY
@@ -153,8 +182,41 @@ _start:
     bnez t1, fail
     lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
     bnez t1, fail
+    LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
+    bnez t1, fail
+    lbu  t1, TARGET_INFO_OFF_HAS_HTIF(t0)
+    beqz t1, fail
     sw   s1, TARGET_INFO_OFF_MAGIC(t0)
     sw   s2, TARGET_INFO_OFF_IMPL_ID(t0)
+    STORE_X a6, TARGET_INFO_OFF_UART_ADDR(t0)
+    sb   a7, TARGET_INFO_OFF_HAS_HTIF(t0)
+
+    /*
+     * Pointing target_info.uart_addr at sink and selecting console_putc_uart
+     * exercises the UART sink directly on machines that have no hardware UART.
+     */
+    NEXT_TEST "console_putc_uart writes the byte to target_info.uart_addr"
+    CLEAR_SINK
+    la   t0, target_info
+    LOAD_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
+    la   t1, sink
+    STORE_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
+    la   t0, console_putc_fn
+    la   t1, console_putc_uart
+    STORE_X t1, 0(t0)
+    la   a0, msg_abc
+    call console_puts
+    la   t0, target_info
+    STORE_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
+    la   t0, console_putc_fn
+    la   t1, console_putc_htif
+    STORE_X t1, 0(t0)
+    la   t0, sink
+    lbu  t1, 0(t0)
+    li   t2, 'c'
+    bne  t1, t2, fail
+    lw   t1, 4(t0)
+    bnez t1, fail
 
     /* One character: the byte and the command word both have to appear. */
     NEXT_TEST "console_putc emits the byte and the HTIF command word"

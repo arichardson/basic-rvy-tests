@@ -51,18 +51,18 @@ whole file because a few cases do not apply loses the coverage that did.
 
 ## Implementation options
 
-Where the specification explicitly permits more than one behaviour and models
-cannot be probed for their choice from the guest, `src/meson.build`
-instantiates `src/target-info.c.in` (using `src/target-info.h` and
-`src/target-info.ld`) into a small per-emulator ELF loaded at
-`TARGET_INFO_ADDR` (`0x80100000`) alongside the test binary. `console_init`
-probes `TARGET_INFO_ADDR` behind a trap handler and copies the payload into a
-local `target_info` struct if it is accessible and carries `TARGET_INFO_MAGIC`;
-if the second ELF is omitted or the address faults, `target_info` stays
-all-zeroes, so zero in every flag field must select the default spec-compliant
-behaviour. Read flags once with `LOAD_TARGET_FLAG` into a named, poisoned saved
-register (as `test-svyrg` does with `svyrg_conservative`) rather than building
-separate test binaries.
+Where the specification explicitly permits more than one behaviour or machines
+differ in console setup, `src/meson.build` instantiates `src/target-info.c.in`
+(using `src/target-info.h` and `src/target-info.ld`) into a small per-machine
+ELF loaded at `TARGET_INFO_ADDR` (`0x80100000`) alongside the test binary.
+`console_init` probes `TARGET_INFO_ADDR` behind a trap handler and copies the
+payload into a local `target_info` struct if it is accessible and carries
+`TARGET_INFO_MAGIC`; if the second ELF is omitted or the address faults,
+`target_info` starts all-zeroes (`console_init` then probes `UART_ADDR` and
+enables both HTIF and UART if present), so zero in every flag field must select
+the default spec-compliant behaviour. Read flags once with `LOAD_TARGET_FLAG`
+into a named, poisoned saved register (as `test-svyrg` does with
+`svyrg_conservative`) rather than building separate test binaries.
 
 ## Registers
 
