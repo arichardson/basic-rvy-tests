@@ -24,6 +24,7 @@
  */
 #include "rvy-insns.h"
 #include "console.h"
+#include "target-info.h"
 
 /*
  * Enter capability mode and make ra returnable from it. Clobbers t0-t2.
@@ -70,10 +71,47 @@ console_init:
     csrr  a4, CSR_MSTATUS
     csrrs a5, CSR_MEPC, x0       /* the whole capability, not just the address */
 
-    auipc t0, 0                  /* a handler capability, since mtvecc is one */
+    /*
+     * Copy the per-emulator target_info payload from TARGET_INFO_ADDR if it
+     * is mapped and starts with TARGET_INFO_MAGIC; otherwise leave the local
+     * target_info all-zeroes for the default spec-compliant behaviour.
+     */
+    csrrs t0, CSR_DDC, x0
+    la    t2, target_info
+    YADDRW t2, t0, t2
+    li    t3, TARGET_INFO_SIZE
+1:  sb    x0, 0(t2)
+    YADDI t2, t2, 1
+    addi  t3, t3, -1
+    bnez  t3, 1b
+
+    auipc t1, 0                  /* a handler capability, since mtvecc is one */
+    la    t2, .Ltarget_info_done
+    YADDRW t1, t1, t2
+    csrrw a2, CSR_MTVEC, t1      /* a2 = whatever was there before */
+
+    li    t1, TARGET_INFO_ADDR
+    YADDRW t1, t0, t1
+    lw    t2, TARGET_INFO_OFF_MAGIC(t1)
+    li    t3, TARGET_INFO_MAGIC
+    bne   t3, t2, .Ltarget_info_done /* canonical order: t3 (x28) > t2 (x7) */
+
+    la    t2, target_info
+    YADDRW t2, t0, t2
+    li    t3, TARGET_INFO_SIZE
+1:  lbu   t4, 0(t1)
+    sb    t4, 0(t2)
+    YADDI t1, t1, 1
+    YADDI t2, t2, 1
+    addi  t3, t3, -1
+    bnez  t3, 1b
+
+.balign 4
+.Ltarget_info_done:
+    auipc t0, 0
     la    t1, .Lprobe_failed
     YADDRW t0, t0, t1
-    csrrw a2, CSR_MTVEC, t0      /* a2 = whatever was there before */
+    csrw  CSR_MTVEC, t0
 
     li   a3, 1                   /* assume it is there ... */
     csrrs t0, CSR_DDC, x0
@@ -86,13 +124,14 @@ console_init:
 .Lprobe_failed:                  /* entered as a trap handler, and stays there */
     li   a3, 0
 .Lprobe_done:
-    csrw CSR_MTVEC, a2           /* put the previous handler back ... */
-    csrw CSR_MEPC, a5            /* ... and everything the trap disturbed */
-    csrw CSR_MSTATUS, a4
     csrrs t0, CSR_DDC, x0
     la    t1, console_uart
     YADDRW t1, t0, t1
     sw    a3, 0(t1)
+
+    csrw CSR_MTVEC, a2           /* put the previous handler back ... */
+    csrw CSR_MEPC, a5            /* ... and everything the trap disturbed */
+    csrw CSR_MSTATUS, a4
 
     /* The version line has to come first, so announce it before any test runs. */
     la   a0, .Ltap_version
@@ -410,6 +449,16 @@ tap_xfails:
 .globl console_uart
 console_uart:
     .word 0
+
+/*
+ * Populated by console_init from the per-emulator ELF at TARGET_INFO_ADDR;
+ * stays all-zeroes (the default spec-compliant configuration) when no second
+ * ELF was loaded.
+ */
+.balign 8
+.globl target_info
+target_info:
+    .space TARGET_INFO_SIZE
 
 .section .bss
 .balign 8

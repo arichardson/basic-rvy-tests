@@ -104,9 +104,11 @@
 #define resume_at     s8         /* recovery point, see RESUME_AFTER_FAULT */
 #define m_continue    s9         /* where an ecall from S-mode returns to */
 
+#include "target-info.h"
+
 .macro SETUP_TRAPS
     ENABLE_CHERI
-    call console_init            /* probes for a UART; needs its own handler */
+    call console_init            /* probes UART and target_info; needs its own handler */
     la   t0, trap_handler
     csrw CSR_MTVEC, t0
     li   trap_cause, 0

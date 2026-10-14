@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
+#include "target-info.h"
+
+const struct target_info target_info = {
+    .magic = TARGET_INFO_MAGIC,
+    .impl_id = @IMPL_ID@,
+    .svyrg_traps_conservatively = @SVYRG_TRAPS_CONSERVATIVELY@,
+};
