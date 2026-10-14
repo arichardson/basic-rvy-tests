@@ -40,17 +40,18 @@
     la   t0, console_target
     la   t1, sink
     STORE_X t1, 0(t0)
-    la   t0, console_uart
-    lw   s0, 0(t0)               /* remembered for RESTORE_CONSOLE */
-    sw   x0, 0(t0)
+    la   t0, console_putc_fn
+    LOAD_X s0, 0(t0)             /* remembered for RESTORE_CONSOLE */
+    la   t1, console_putc_htif
+    STORE_X t1, 0(t0)
 .endm
 
 .macro RESTORE_CONSOLE
     la   t0, console_target
     la   t1, tohost
     STORE_X t1, 0(t0)
-    la   t0, console_uart
-    sw   s0, 0(t0)
+    la   t0, console_putc_fn
+    STORE_X s0, 0(t0)
 .endm
 
 .macro CLEAR_SINK
@@ -92,11 +93,12 @@ _start:
      * agreed with reality: the register is readable exactly when it said so.
      */
     NEXT_TEST "console_init agreed with whether the UART is really there"
-    la   t0, console_uart
-    lw   s1, 0(t0)
+    la   t0, console_putc_fn
+    LOAD_X s1, 0(t0)
     li   t0, UART_ADDR
     lbu  t1, UART_LSR(t0)
-    beqz s1, 1f
+    la   t0, console_putc_htif
+    beq  s1, t0, 1f
     EXPECT_NO_TRAP
     j    2f
 1:  EXPECT_TRAP CAUSE_LOAD_ACCESS_FAULT

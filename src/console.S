@@ -113,7 +113,7 @@ console_init:
     YADDRW t0, t0, t1
     csrw  CSR_MTVEC, t0
 
-    li   a3, 1                   /* assume it is there ... */
+    la   a3, console_putc_both   /* assume the UART is there ... */
     csrrs t0, CSR_DDC, x0
     li    t1, UART_ADDR
     YADDRW t0, t0, t1
@@ -122,12 +122,12 @@ console_init:
 
 .balign 4
 .Lprobe_failed:                  /* entered as a trap handler, and stays there */
-    li   a3, 0
+    la   a3, console_putc_htif
 .Lprobe_done:
     csrrs t0, CSR_DDC, x0
-    la    t1, console_uart
+    la    t1, console_putc_fn
     YADDRW t1, t0, t1
-    sw    a3, 0(t1)
+    STORE_X a3, 0(t1)
 
     csrw CSR_MTVEC, a2           /* put the previous handler back ... */
     csrw CSR_MEPC, a5            /* ... and everything the trap disturbed */
@@ -139,15 +139,18 @@ console_init:
     j    console_puts
 
 /*
- * Write the byte in a0 to every console this machine has. The HTIF write is
- * two stores because QEMU only acts on the write to the upper word, while
- * Sail takes either.
+ * Capability-mode character sinks selected by console_init and stored in
+ * console_putc_fn, so console_putc and console_puts jump straight to the
+ * active implementation without re-checking which sinks exist.
+ *
+ * The HTIF write is two stores because QEMU only acts on the write to the
+ * upper word, while Sail takes either. The emulated UART never refuses a
+ * byte, so console_putc_uart does not poll: spinning on the status register
+ * would hang outright if the probe ever said yes where there is nothing.
  */
-.globl console_putc
-console_putc:
-    CONSOLE_ENTER
-    csrrs t0, CSR_DDC, x0        /* kept for both sinks below */
-
+.globl console_putc_htif
+console_putc_htif:
+    csrrs t0, CSR_DDC, x0
     la    t1, console_target
     YADDRW t2, t0, t1
     LOAD_X t1, 0(t2)             /* where the writes go; &tohost in a real run */
@@ -155,32 +158,55 @@ console_putc:
     sw    a0, 0(t2)
     li    t1, HTIF_PUTCHAR
     sw    t1, 4(t2)
+    ret
 
-    la    t1, console_uart
+.globl console_putc_both
+console_putc_both:
+    csrrs t0, CSR_DDC, x0
+    la    t1, console_target
     YADDRW t2, t0, t1
-    lw    t1, 0(t2)
-    beqz  t1, 1f                 /* no UART on this machine */
+    LOAD_X t1, 0(t2)
+    YADDRW t2, t0, t1
+    sw    a0, 0(t2)
+    li    t1, HTIF_PUTCHAR
+    sw    t1, 4(t2)
+    /* fall through */
+.globl console_putc_uart
+console_putc_uart:
+    csrrs t0, CSR_DDC, x0
     li    t1, UART_ADDR
     YADDRW t2, t0, t1
-    sb    a0, UART_THR(t2)       /* the emulated UART never refuses a byte, so
-                                  * this does not poll: spinning on the status
-                                  * register would hang outright if the probe
-                                  * ever said yes where there is nothing. */
-1:  ret
+    sb    a0, UART_THR(t2)
+    ret
+
+/* Write the byte in a0 through the sink console_init selected. */
+.globl console_putc
+console_putc:
+    CONSOLE_ENTER
+    DDC_AT t0, console_putc_fn, t1
+    LOAD_X t1, 0(t0)
+    auipc t0, 0
+    YADDRW t0, t0, t1
+    jr    t0
 
 /* Write the NUL-terminated string a0 points at. */
 .globl console_puts
 console_puts:
     CONSOLE_ENTER
-    YMV  t3, ra                  /* console_putc leaves t3/t4 alone */
+    YMV   t3, ra                 /* putc helpers leave t3/t4 and a1 alone */
     csrrs t4, CSR_DDC, x0
+    la    t0, console_putc_fn
+    YADDRW t0, t4, t0
+    LOAD_X t0, 0(t0)
+    auipc a1, 0
+    YADDRW a1, a1, t0
     YADDRW t4, t4, a0
-1:  lbu  a0, 0(t4)
-    beqz a0, 2f
-    jal  ra, console_putc
+1:  lbu   a0, 0(t4)
+    beqz  a0, 2f
+    jalr  ra, a1, 0
     YADDI t4, t4, 1
-    j    1b
-2:  YMV  ra, t3
+    j     1b
+2:  YMV   ra, t3
     ret
 
 /* Write the value in a0 in decimal. */
@@ -445,10 +471,14 @@ tap_xfail_count:
 tap_xfails:
     .space 2 * XBYTES * TAP_MAX_XFAILS
 
-/* Set by console_init: non-zero where this machine has the virt UART. */
-.globl console_uart
-console_uart:
-    .word 0
+/*
+ * Resolved by console_init to console_putc_htif, console_putc_uart, or
+ * console_putc_both.
+ */
+.balign 8
+.globl console_putc_fn
+console_putc_fn:
+    WORD_X console_putc_htif
 
 /*
  * Populated by console_init from the per-emulator ELF at TARGET_INFO_ADDR;
