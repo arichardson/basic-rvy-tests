@@ -22,7 +22,8 @@
  *     raises CHERI Load Capability Fault (cause 35) while sstatus.SYRG=0
  *     (generation mismatch) without modifying cd or memory even when yw=1/yd=1
  *     permits stores, whereas loading or swapping an untagged value in memory
- *     does not trap, and tagged loads work normally once SYRG is set.
+ *     only traps if svyrg_traps_conservatively is set, and tagged loads work
+ *     normally once SYRG is set.
  *   - yr=0/yrg=0 S-page with SYRG=1: generation mismatch with yr=0 strips
  *     the loaded tag on ly and amoswap.y without faulting.
  *   - non-zero rvy on a non-leaf PTE is reserved and raises cause 13/15.
@@ -39,7 +40,8 @@
  *   - M-mode with mstatus.MPRV=1 and MPP=S enforces Svyrg load and store
  *     checks.
  *
- * Register use: s2 = tagged root capability, a0-a7 = VA aliases of the test
+ * Register use: s2 = tagged root capability, s7 (svyrg_conservative) =
+ * target_info.svyrg_traps_conservatively, a0-a7 = VA aliases of the test
  * buffer.
  */
 #define TEST_NAME "svyrg"
@@ -48,6 +50,9 @@
 #endif
 #include "testmacros.h"
 #include "exceptions.h"
+
+#define svyrg_conservative s7
+#pragma GCC poison s7
 
 /* Leaf PTE bits: V|R|A|D = 0xC3, +W = 0xC7, +X = 0xCF, U = 0x10 */
 #define PTE_LEAF_RWAD  0xC7
@@ -68,6 +73,7 @@
 .globl _start
 _start:
     SETUP_TRAPS
+    LOAD_TARGET_FLAG svyrg_conservative, TARGET_INFO_OFF_SVYRG_TRAPS_CONSERVATIVELY
 
     /* Keep a tagged root capability for the store tests. */
     csrrs s2, CSR_DDC, x0
@@ -232,7 +238,8 @@ s_entry:
     /*
      * yr=1/yrg=1 S-page: a tagged capability in memory faults with cause 35
      * while SYRG=0, whereas an untagged value in memory loads and swaps
-     * without raising cause 35; once SYRG=1 is set, tagged loads succeed too.
+     * without raising cause 35 unless svyrg_traps_conservatively is set; once
+     * SYRG=1 is set, tagged loads succeed too.
      */
     NEXT_TEST "yr=1/yrg=1 faults a tagged load while SYRG=0"
     LY   t1, 0(a2)               /* tagged in memory -> cause 35 (mismatch) */
@@ -241,22 +248,35 @@ s_entry:
     NEXT_TEST "yr=1/yrg=1 allows an untagged ly while SYRG=0"
     li   t0, 0x12345678
     sd   t0, 0(a0)               /* overwrite buffer with untagged data */
-    LY   t1, 0(a2)               /* untagged in memory -> no cause 35 */
-    EXPECT_NO_TRAP
+    LY   t1, 0(a2)               /* untagged in memory -> no cause 35 unless conservative */
+    beqz svyrg_conservative, 1f
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    j    2f
+1:  EXPECT_NO_TRAP
     EXPECT_TAG t1, 0
     bne  t1, t0, fail
+2:
 
     NEXT_TEST "yr=1/yrg=1 allows an untagged lr.y while SYRG=0"
     LR_Y t1, a2
-    EXPECT_NO_TRAP
+    beqz svyrg_conservative, 1f
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    j    2f
+1:  EXPECT_NO_TRAP
     EXPECT_TAG t1, 0
     bne  t1, t0, fail
+2:
 
     NEXT_TEST "yr=1/yrg=1 allows amoswap.y when old memory is untagged while SYRG=0"
     AMOSWAP_Y t1, a2, s2         /* old memory is untagged -> no cause 35, stores tagged s2 */
-    EXPECT_NO_TRAP
+    beqz svyrg_conservative, 1f
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    SY   s2, 0(a6)
+    j    2f
+1:  EXPECT_NO_TRAP
     EXPECT_TAG t1, 0
     bne  t1, t0, fail
+2:
 
     NEXT_TEST "yr=1/yrg=1 faults a tagged load again after amoswap.y wrote a tag"
     LY   t1, 0(a2)               /* memory is now tagged again -> cause 35 */
