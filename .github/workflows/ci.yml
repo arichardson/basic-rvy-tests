@@ -9,12 +9,66 @@ on:
   workflow_dispatch:
 
 env:
+  # CHERI-Alliance/qemu (CHERI 0.9.3)
+  QEMU_093_REPO: CHERI-Alliance/qemu
+  QEMU_093_SHA: 32bf55e2965dcdcfb0139d209e7a7b9dd1314583
   # CHERI-Alliance/sail-riscv (CHERI 0.9.3)
   SAIL_093_REPO: CHERI-Alliance/sail-riscv
   SAIL_093_SHA: e664353e4e769236f7afa14c364ed393718b3a38
   SAIL_COMPILER_VERSION: 0.20.3
+  ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1
+  UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1
 
 jobs:
+  build-qemu-093:
+    name: Build QEMU 0.9.3
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cache QEMU 0.9.3 binaries
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/qemu-093
+          key: qemu-093-sanitizers-ubuntu-24.04-${{ env.QEMU_093_SHA }}
+
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            clang libclang-rt-dev libfdt-dev libglib2.0-dev libpixman-1-dev ninja-build pkgconf python-is-python3 python3-venv
+
+      - name: Checkout QEMU 0.9.3
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.QEMU_093_REPO }}
+          ref: ${{ env.QEMU_093_SHA }}
+          path: qemu-src
+
+      - name: Build QEMU 0.9.3
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p qemu-build "${{ runner.temp }}/qemu-093/bin"
+          cd qemu-build
+          ../qemu-src/configure \
+            --cc=clang \
+            --cxx=clang++ \
+            --enable-debug \
+            --enable-sanitizers \
+            --enable-werror \
+            --without-default-features \
+            --enable-system \
+            --enable-tcg \
+            --enable-fdt=system \
+            --disable-docs \
+            --disable-linux-user \
+            --disable-tools \
+            --target-list=riscv64cheristd-softmmu,riscv32cheristd-softmmu
+          ninja qemu-system-riscv64cheristd qemu-system-riscv32cheristd
+          cp qemu-system-riscv64cheristd qemu-system-riscv32cheristd \
+            "${{ runner.temp }}/qemu-093/bin/"
+
   build-sail-093:
     name: Build Sail 0.9.3
     runs-on: ubuntu-24.04
@@ -57,13 +111,20 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-24.04
-    needs: [build-sail-093]
+    needs: [build-qemu-093, build-sail-093]
     permissions:
       contents: read
       pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Restore QEMU 0.9.3 binaries
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/qemu-093
+          key: qemu-093-sanitizers-ubuntu-24.04-${{ env.QEMU_093_SHA }}
+          fail-on-cache-miss: true
 
       - name: Restore Sail 0.9.3 binary
         uses: actions/cache/restore@v4
@@ -76,12 +137,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            clang libgmp10 lld ninja-build python3-pip
+            clang libfdt1 libglib2.0-0t64 libgmp10 libpixman-1-0 lld ninja-build python3-pip
           python3 -m pip install --break-system-packages 'meson>=1.10.0'
 
       - name: Build test ELFs and run 0.9.3 suite
         run: |
           meson setup build \
+            -Dqemu="${{ runner.temp }}/qemu-093" \
             -Dsail_093="${{ runner.temp }}/sail-093"
           ninja -C build
           meson test -C build --print-errorlogs
