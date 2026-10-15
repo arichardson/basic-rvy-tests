@@ -47,25 +47,62 @@ def parse_entry(raw: dict) -> dict:
             failed += 1
             bad_lines.append(line)
 
-    ok = raw.get("result") in ("OK", "SKIP", "EXPECTEDFAIL") and failed == 0
+    result = raw.get("result", "UNKNOWN")
+    ok = result in ("OK", "SKIP", "EXPECTEDFAIL") and failed == 0
+    total = passed + xfail + skipped + failed
+    if not ok and failed == 0:
+        failed = 1
+    stderr_lines = [
+        line
+        for line in raw.get("stderr", "").splitlines()
+        if "ASan doesn't fully support makecontext/swapcontext" not in line
+    ]
     return {
         "target": target,
         "test": test,
-        "result": raw.get("result", "UNKNOWN"),
+        "result": result,
         "ok": ok,
         "passed": passed,
         "xfail": xfail,
         "skipped": skipped,
         "failed": failed,
-        "total": passed + xfail + skipped + failed,
+        "total": total,
         "duration": raw.get("duration", 0.0),
         "bad_lines": bad_lines,
+        "norm_bad": {re.sub(r"^(not ok|ok)\s+\d+\s*", r"\1 ", l) for l in bad_lines},
         "stdout": raw.get("stdout", "").strip(),
-        "stderr": raw.get("stderr", "").strip(),
+        "stderr": "\n".join(stderr_lines).strip(),
     }
 
 
-def format_cell(r: dict | None) -> str:
+def load_log(path: Path) -> list[dict]:
+    return [
+        parse_entry(json.loads(line))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def is_new_failure(e: dict, b: dict | None) -> bool:
+    if e["ok"]:
+        return False
+    if b is None or b["ok"]:
+        return True
+    if e["total"] == 0 and b["total"] == 0:
+        return False
+    return e["failed"] > b["failed"] or not (e["norm_bad"] <= b["norm_bad"])
+
+
+def fmt_delta(curr: int, base: int | None, show_zero: bool = False) -> str:
+    if base is None:
+        return str(curr)
+    diff = curr - base
+    if diff != 0:
+        return f"{curr} ({diff:+d})"
+    return f"{curr} (+0)" if show_zero and curr > 0 else str(curr)
+
+
+def format_cell(r: dict | None, b: dict | None) -> str:
     if r is None:
         return "-"
     notes = []
@@ -74,25 +111,52 @@ def format_cell(r: dict | None) -> str:
     if r["skipped"]:
         notes.append(f"{r['skipped']} skip")
     if r["failed"]:
-        notes.append(f"{r['failed']} fail")
+        notes.append(f"{r['failed']} fail" if r["total"] else r["result"])
+    if r["ok"] and b is not None and not b["ok"]:
+        notes.append("fixed")
     suffix = f" ({', '.join(notes)})" if notes else ""
-    icon = "✅" if r["ok"] else "❌"
+    if r["ok"]:
+        icon = "✅"
+    elif is_new_failure(r, b):
+        icon = "❌"
+    else:
+        icon = "⚠️"
     return f"{icon} {r['passed']}/{r['total']}{suffix}"
 
 
+def print_failure(f: dict, icon: str) -> None:
+    print(f"<details><summary>{icon} <code>{f['target']}</code>: <code>{f['test']}</code> ({f['result']})</summary>\n")
+    if f["bad_lines"]:
+        print("```tap")
+        print("\n".join(f["bad_lines"]))
+        print("```")
+    if f["stderr"]:
+        print("```")
+        print(f["stderr"][-2000:])
+        print("```")
+    elif not f["bad_lines"] and f["stdout"]:
+        print("```")
+        print(f["stdout"][-2000:])
+        print("```")
+    print("</details>")
+
+
 def main() -> None:
-    log_path = Path(sys.argv[1])
-    entries = [
-        parse_entry(json.loads(line))
-        for line in log_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    entries = load_log(Path(sys.argv[1]))
+    base_entries = load_log(Path(sys.argv[2])) if len(sys.argv) > 2 else []
 
     by_target: dict[str, list[dict]] = collections.defaultdict(list)
     by_test: dict[str, dict[str, dict]] = collections.defaultdict(dict)
     for e in entries:
         by_target[e["target"]].append(e)
         by_test[e["test"]][e["target"]] = e
+
+    base_by_target: dict[str, list[dict]] = collections.defaultdict(list)
+    base_by_test: dict[str, dict[str, dict]] = collections.defaultdict(dict)
+    for b in base_entries:
+        base_by_target[b["target"]].append(b)
+        base_by_test[b["test"]][b["target"]] = b
+
     targets = list(by_target.keys())
 
     print("<!-- rvy-test-results -->")
@@ -101,36 +165,46 @@ def main() -> None:
     print("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for t in targets:
         items = by_target[t]
+        b_items = base_by_target.get(t) if base_entries else None
         suites_ok = sum(1 for i in items if i["ok"])
-        icon = "✅" if suites_ok == len(items) else "❌"
+        b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
+        b_len = len(b_items) if b_items is not None else None
+        new_fails = sum(1 for i in items if is_new_failure(i, base_by_test.get(i["test"], {}).get(t)))
+        if suites_ok == len(items):
+            icon = "✅"
+        elif new_fails == 0:
+            icon = "⚠️"
+        else:
+            icon = "❌"
         print(
-            f"| {icon} `{t}` | {suites_ok}/{len(items)} "
-            f"| {sum(i['total'] for i in items)} "
-            f"| {sum(i['passed'] for i in items)} "
-            f"| {sum(i['xfail'] for i in items)} "
-            f"| {sum(i['skipped'] for i in items)} "
-            f"| {sum(i['failed'] for i in items)} "
+            f"| {icon} `{t}` "
+            f"| {fmt_delta(suites_ok, b_suites_ok)}/{fmt_delta(len(items), b_len)} "
+            f"| {fmt_delta(sum(i['total'] for i in items), sum(i['total'] for i in b_items) if b_items is not None else None)} "
+            f"| {fmt_delta(sum(i['passed'] for i in items), sum(i['passed'] for i in b_items) if b_items is not None else None)} "
+            f"| {fmt_delta(sum(i['xfail'] for i in items), sum(i['xfail'] for i in b_items) if b_items is not None else None)} "
+            f"| {fmt_delta(sum(i['skipped'] for i in items), sum(i['skipped'] for i in b_items) if b_items is not None else None)} "
+            f"| {fmt_delta(sum(i['failed'] for i in items), sum(i['failed'] for i in b_items) if b_items is not None else None, show_zero=True)} "
             f"| {sum(i['duration'] for i in items):.1f}s |"
         )
 
-    failures = [e for e in entries if not e["ok"]]
-    if failures:
-        print("\n#### Failures\n")
-        for f in failures:
-            print(f"<details><summary>❌ <code>{f['target']}</code>: <code>{f['test']}</code> ({f['result']})</summary>\n")
-            if f["bad_lines"]:
-                print("```tap")
-                print("\n".join(f["bad_lines"]))
-                print("```")
-            if f["stderr"]:
-                print("```")
-                print(f["stderr"][-2000:])
-                print("```")
-            elif not f["bad_lines"] and f["stdout"]:
-                print("```")
-                print(f["stdout"][-2000:])
-                print("```")
-            print("</details>")
+    new_failures = [
+        e for e in entries if is_new_failure(e, base_by_test.get(e["test"], {}).get(e["target"]))
+    ]
+    known_failures = [
+        e
+        for e in entries
+        if not e["ok"] and not is_new_failure(e, base_by_test.get(e["test"], {}).get(e["target"]))
+    ]
+    if new_failures:
+        heading = "New Failures (relative to `main`)" if base_entries else "Failures"
+        print(f"\n#### {heading}\n")
+        for f in new_failures:
+            print_failure(f, "❌")
+    if known_failures:
+        print(f"\n<details><summary>⚠️ Pre-existing failures on <code>main</code> ({len(known_failures)})</summary>\n")
+        for f in known_failures:
+            print_failure(f, "⚠️")
+        print("</details>")
 
     cols = " | ".join(f"`{t}`" for t in targets)
     sep = " | ".join("---:" for _ in targets)
@@ -138,9 +212,14 @@ def main() -> None:
     print(f"| Test | {cols} |")
     print(f"| :--- | {sep} |")
     for test_name in sorted(by_test):
-        row = " | ".join(format_cell(by_test[test_name].get(t)) for t in targets)
+        row = " | ".join(
+            format_cell(by_test[test_name].get(t), base_by_test.get(test_name, {}).get(t))
+            for t in targets
+        )
         print(f"| `{test_name}` | {row} |")
     print("\n</details>")
+
+    sys.exit(1 if new_failures else 0)
 
 
 if __name__ == "__main__":
