@@ -37,21 +37,22 @@
  * middle of the run's real output.
  */
 .macro REDIRECT_CONSOLE
-    lla   t0, console_target
-    lla   t1, sink
+    lla    t0, console_target
+    lla    t1, sink
     STORE_X t1, 0(t0)
-    lla   t0, console_putc_fn
-    LOAD_X s0, 0(t0)             /* remembered for RESTORE_CONSOLE */
-    lla   t1, console_putc_htif
-    STORE_X t1, 0(t0)
+    lla    t0, console_putc_fn
+    LY     s0, 0(t0)             /* remembered for RESTORE_CONSOLE */
+    lla    t1, console_putc_htif
+    YADDRW t1, s0, t1
+    SY     t1, 0(t0)
 .endm
 
 .macro RESTORE_CONSOLE
-    lla   t0, console_target
-    lla   t1, tohost
+    lla    t0, console_target
+    lla    t1, tohost
     STORE_X t1, 0(t0)
-    lla   t0, console_putc_fn
-    STORE_X s0, 0(t0)
+    lla    t0, console_putc_fn
+    SY     s0, 0(t0)
 .endm
 
 .macro CLEAR_SINK
@@ -94,9 +95,11 @@ _start:
      */
     NEXT_TEST "console_init agreed with whether the UART is really there"
     lla   t0, console_putc_fn
-    LOAD_X s1, 0(t0)
+    LY    s1, 0(t0)
+    YTAGR t0, s1
+    beqz  t0, fail
     lla   t0, console_putc_htif
-    beq  s1, t0, 1f
+    beq   s1, t0, 1f
     li   t0, UART_ADDR
     lbu  t1, UART_LSR(t0)
     EXPECT_NO_TRAP
@@ -157,7 +160,7 @@ _start:
     REDIRECT_CONSOLE
 
     /*
-     * If TARGET_INFO_ADDR traps (simulated by bounding ddc below it),
+     * If TARGET_INFO_ADDR traps (simulated by bounding pcc below it),
      * console_init catches the trap and leaves the local target_info zeroed.
      */
     NEXT_TEST "console_init leaves target_info zeroed when TARGET_INFO_ADDR traps"
@@ -167,15 +170,19 @@ _start:
     li   t1, TARGET_INFO_MAGIC
     sw   t1, TARGET_INFO_OFF_MAGIC(t0)
     YMODESWY
-    csrrs s7, CSR_DDC, x0
-    li   t0, 0x80000000
+    auipc s7, 0
+    li    t0, 0x80000000
     YADDRW t1, s7, t0
-    li   t0, 0x100000
+    li    t0, 0x100000
     YBNDSW t1, t1, t0
-    csrw CSR_DDC, t1
-    call console_init
-    csrw CSR_DDC, s7
-    YMODESWI
+    lla   t0, 1f
+    YADDRW t1, t1, t0
+    jr    t1
+1:  call  console_init
+    lla   t0, 2f
+    YADDRW s7, s7, t0
+    jr    s7
+2:  YMODESWI
     EXPECT_NO_TRAP
     lla   t0, target_info
     lw   t1, TARGET_INFO_OFF_MAGIC(t0)
@@ -203,14 +210,16 @@ _start:
     STORE_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
     lla   t0, console_putc_fn
     lla   t1, console_putc_uart
-    STORE_X t1, 0(t0)
+    YADDRW t1, s0, t1
+    SY    t1, 0(t0)
     lla   a0, msg_abc
     call console_puts
     lla   t0, target_info
     STORE_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
     lla   t0, console_putc_fn
     lla   t1, console_putc_htif
-    STORE_X t1, 0(t0)
+    YADDRW t1, s0, t1
+    SY    t1, 0(t0)
     lla   t0, sink
     lbu  t1, 0(t0)
     li   t2, 'c'
@@ -246,6 +255,31 @@ _start:
     lla   a0, msg_abc
     call console_puts
     YMODESWI
+    EXPECT_EMITTED 'c'
+
+    /* The console helpers do not rely on ddc or a writable caller pcc. */
+    NEXT_TEST "console_puts works when ddc is cleared and pcc is read-only"
+    CLEAR_SINK
+    YMODESWY
+    csrrw s7, CSR_DDC, x0
+    auipc s1, 0
+    li    t0, DROP_MASK(PERM_W)
+    DROP_PERMS t1, s1, t0
+    lla   t0, 1f
+    YADDRW t1, t1, t0
+    jr    t1
+1:  lla   a0, msg_abc
+    call  console_puts
+    auipc t0, 0
+    YPERMR t0, t0
+    andi  t0, t0, PERM_W
+    bnez  t0, fail               /* caller's read-only PCC was restored */
+    lla   t0, 2f
+    YADDRW s1, s1, t0
+    jr    s1
+2:  csrrw x0, CSR_DDC, s7
+    YMODESWI
+    EXPECT_NO_TRAP
     EXPECT_EMITTED 'c'
 
     RESTORE_CONSOLE

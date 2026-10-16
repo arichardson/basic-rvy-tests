@@ -6,9 +6,9 @@
  * them and none of them are performance sensitive, so there is no reason for
  * each one to carry its own copy.
  *
- * Either pointer mode will do for any of them: they switch to capability mode
- * themselves and put the caller's mode back on return, working it out from
- * whether the return address carries a tag. None of them touch the registers
+ * Either pointer mode will do for any of them: they enter capability mode
+ * through a per-function sentry (installing the initial RWX PCC) and put the
+ * caller's PCC and mode back on return. None of them touch the registers
  * exceptions.h reserves.
  *
  * These two are meant to be called from a test, and keep to a0-a3 and t0-t4
