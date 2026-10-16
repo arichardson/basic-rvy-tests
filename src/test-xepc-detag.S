@@ -71,7 +71,7 @@ _start:
      * decides the outcome below -- only the seal state can.
      */
     csrrs a0, CSR_DDC, x0
-    la   t0, victim
+    lla   t0, victim
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1
@@ -82,7 +82,7 @@ _start:
 
     /* Misaligned but unsealed: the address rounds down, the tag survives. */
     csrrs a1, CSR_DDC, x0
-    la   t0, victim
+    lla   t0, victim
     addi t0, t0, 1
     YADDRW a1, a1, t0
     li   t1, 8
@@ -128,7 +128,7 @@ _start:
     TRY_CLEAR_MISA_C skip_ialign32
 
     csrrs a0, CSR_DDC, x0
-    la   t0, victim
+    lla   t0, victim
     ori  t0, t0, 2                /* bit 1 set, bit 0 clear: "aligned" for IALIGN=16 */
     YADDRW a0, a0, t0
     li   t1, 8
@@ -160,7 +160,7 @@ _start:
 
     NEXT_TEST "mret detags an unsealed capability when masking bit 1 crosses rep_base"
     auipc a4, 0
-    la   t0, victim
+    lla   t0, victim
     ori  t0, t0, 2
     YADDRW a4, a4, t0
     li   t1, 8
@@ -195,7 +195,7 @@ ialign32_unsealed_recovered:
      */
     NEXT_TEST "mret detags a sentry whose stored address had bit 1 set"
     auipc a0, 0
-    la   t0, victim
+    lla   t0, victim
     ori  t0, t0, 2
     YADDRW a0, a0, t0
     YSEALE a0, a0

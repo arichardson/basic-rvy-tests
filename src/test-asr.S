@@ -34,7 +34,7 @@ _start:
     /* Build a PCC-derived capability with ASR removed and call into it. */
     NEXT_TEST "a pcc without ASR still runs, and consumes its own traps"
     auipc a0, 0
-    la   t0, asr_stub
+    lla   t0, asr_stub
     YADDRW a0, a0, t0
     li   t1, DROP_MASK(PERM_ASR)
     DROP_PERMS a0, a0, t1

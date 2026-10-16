@@ -26,6 +26,9 @@ renumber the rest, and give each one a description: it is what the TAP stream
 calls the case, and is the first thing anyone reads when it fails. Say what
 the case establishes rather than what it does, and keep it to one line.
 
+Use `lla` rather than `la` for symbol addresses so they always expand to
+PC-relative `auipc` + `addi`.
+
 ## Cases a machine cannot run
 
 Where a whole block of cases depends on something implementation-defined, do

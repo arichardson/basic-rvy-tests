@@ -50,7 +50,7 @@ _start:
      */
     NEXT_TEST "mret unseals a sentry epcc and resumes there"
     auipc a0, 0
-    la   t0, good_target
+    lla   t0, good_target
     YADDRW a0, a0, t0
     YSEALE a0, a0
     csrw CSR_MEPC, a0
@@ -75,7 +75,7 @@ good_target:
      */
     YMODESWY
     auipc a0, 0
-    la   t0, victim
+    lla   t0, victim
     YADDRW a0, a0, t0
     li   t1, PERM_X
     YPERMC a0, a0, t1

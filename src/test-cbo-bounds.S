@@ -30,7 +30,7 @@ _start:
 
     /* A capability over the front third of the block, via DDC. */
     csrrs a0, CSR_DDC, x0
-    la   t0, buf
+    lla   t0, buf
     YADDRW a0, a0, t0
     li   t1, 0x5a
     sb   t1, 0(a0)               /* sentinel byte to check CBO.ZERO atomicity */
@@ -79,12 +79,12 @@ _start:
      * an unrepresentable-address tag clear.
      */
     csrrs a0, CSR_DDC, x0
-    la   t0, buf
+    lla   t0, buf
     addi t0, t0, 3 * CBOM_LEN
     YADDRW a0, a0, t0
     li   t1, 16
     YBNDSW a0, a0, t1            /* [buf + 3*CBOM_LEN, buf + 3*CBOM_LEN + 16) */
-    la   t0, buf
+    lla   t0, buf
     YADDRW a0, a0, t0            /* move back to block 0; bounds stay put */
 
     NEXT_TEST "cbo.clean faults when every byte is out of bounds"
@@ -97,7 +97,7 @@ _start:
 
     /* A capability over the whole block passes every CBO (sanity/decode check). */
     csrrs a0, CSR_DDC, x0
-    la   t0, buf
+    lla   t0, buf
     YADDRW a0, a0, t0
     li   t1, CBOM_LEN
     YBNDSW a0, a0, t1

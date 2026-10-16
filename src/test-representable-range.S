@@ -69,7 +69,7 @@ _start:
     SETUP_TRAPS
 
     csrrs s0, CSR_DDC, x0
-    la    s1, buf_mid            /* s1 = base address with headroom on both sides */
+    lla    s1, buf_mid            /* s1 = base address with headroom on both sides */
     YADDRW a0, s0, s1
     li    t0, REP_E0_LEN
     YBNDSW a0, a0, t0            /* a0: E = 0 capability [s1, s1 + 64) */
@@ -271,7 +271,7 @@ _start:
      */
     NEXT_TEST "capability-mode auipc from bounded pcc detags outside representable range"
     auipc a2, 0
-    la    t0, bounded_auipc_fn
+    lla    t0, bounded_auipc_fn
     YADDRW a2, a2, t0
     li    t1, 64
     YBNDSW a2, a2, t1

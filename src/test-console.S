@@ -37,32 +37,32 @@
  * middle of the run's real output.
  */
 .macro REDIRECT_CONSOLE
-    la   t0, console_target
-    la   t1, sink
+    lla   t0, console_target
+    lla   t1, sink
     STORE_X t1, 0(t0)
-    la   t0, console_putc_fn
+    lla   t0, console_putc_fn
     LOAD_X s0, 0(t0)             /* remembered for RESTORE_CONSOLE */
-    la   t1, console_putc_htif
+    lla   t1, console_putc_htif
     STORE_X t1, 0(t0)
 .endm
 
 .macro RESTORE_CONSOLE
-    la   t0, console_target
-    la   t1, tohost
+    lla   t0, console_target
+    lla   t1, tohost
     STORE_X t1, 0(t0)
-    la   t0, console_putc_fn
+    lla   t0, console_putc_fn
     STORE_X s0, 0(t0)
 .endm
 
 .macro CLEAR_SINK
-    la   t0, sink
+    lla   t0, sink
     sw   x0, 0(t0)
     sw   x0, 4(t0)
 .endm
 
 /* The last byte written, and the HTIF command that should have gone with it. */
 .macro EXPECT_EMITTED ch
-    la   t0, sink
+    lla   t0, sink
     lbu  t1, 0(t0)
     li   t2, \ch
     bne  t1, t2, fail
@@ -82,9 +82,9 @@ _start:
      * cannot check it, so check it before redirecting anything.
      */
     NEXT_TEST "console_target defaults to the address the harness reads"
-    la   t0, console_target
+    lla   t0, console_target
     LOAD_X t1, 0(t0)
-    la   t2, tohost
+    lla   t2, tohost
     bne  t1, t2, fail
 
     /*
@@ -93,15 +93,15 @@ _start:
      * agreed with reality: the register is readable exactly when it said so.
      */
     NEXT_TEST "console_init agreed with whether the UART is really there"
-    la   t0, console_putc_fn
+    lla   t0, console_putc_fn
     LOAD_X s1, 0(t0)
-    la   t0, console_putc_htif
+    lla   t0, console_putc_htif
     beq  s1, t0, 1f
     li   t0, UART_ADDR
     lbu  t1, UART_LSR(t0)
     EXPECT_NO_TRAP
     j    2f
-1:  la   t0, target_info
+1:  lla   t0, target_info
     lw   t1, TARGET_INFO_OFF_MAGIC(t0)
     bnez t1, 2f                  /* target_info disabled the UART without probing */
     li   t0, UART_ADDR
@@ -115,19 +115,19 @@ _start:
      * fallback UART probe).
      */
     NEXT_TEST "console_init selected console_putc_fn to match target_info"
-    la   t0, target_info
+    lla   t0, target_info
     LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
     lbu  t2, TARGET_INFO_OFF_HAS_HTIF(t0)
     bnez t1, 1f
     beqz t2, fail
-    la   t0, console_putc_htif
+    lla   t0, console_putc_htif
     bne  s1, t0, fail
     j    3f
 1:  bnez t2, 2f
-    la   t0, console_putc_uart
+    lla   t0, console_putc_uart
     bne  s1, t0, fail
     j    3f
-2:  la   t0, console_putc_both
+2:  lla   t0, console_putc_both
     bne  s1, t0, fail
 3:
 
@@ -137,7 +137,7 @@ _start:
      * magic word was readable there, and left the local copy zeroed otherwise.
      */
     NEXT_TEST "console_init agreed with whether the target_info payload is there"
-    la   t0, target_info
+    lla   t0, target_info
     lw   s1, TARGET_INFO_OFF_MAGIC(t0)
     lw   s2, TARGET_INFO_OFF_IMPL_ID(t0)
     li   t0, TARGET_INFO_ADDR
@@ -161,7 +161,7 @@ _start:
      * console_init catches the trap and leaves the local target_info zeroed.
      */
     NEXT_TEST "console_init leaves target_info zeroed when TARGET_INFO_ADDR traps"
-    la   t0, target_info
+    lla   t0, target_info
     LOAD_X a6, TARGET_INFO_OFF_UART_ADDR(t0)
     lbu  a7, TARGET_INFO_OFF_HAS_HTIF(t0)
     li   t1, TARGET_INFO_MAGIC
@@ -177,7 +177,7 @@ _start:
     csrw CSR_DDC, s7
     YMODESWI
     EXPECT_NO_TRAP
-    la   t0, target_info
+    lla   t0, target_info
     lw   t1, TARGET_INFO_OFF_MAGIC(t0)
     bnez t1, fail
     lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
@@ -197,21 +197,21 @@ _start:
      */
     NEXT_TEST "console_putc_uart writes the byte to target_info.uart_addr"
     CLEAR_SINK
-    la   t0, target_info
+    lla   t0, target_info
     LOAD_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
-    la   t1, sink
+    lla   t1, sink
     STORE_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
-    la   t0, console_putc_fn
-    la   t1, console_putc_uart
+    lla   t0, console_putc_fn
+    lla   t1, console_putc_uart
     STORE_X t1, 0(t0)
-    la   a0, msg_abc
+    lla   a0, msg_abc
     call console_puts
-    la   t0, target_info
+    lla   t0, target_info
     STORE_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
-    la   t0, console_putc_fn
-    la   t1, console_putc_htif
+    lla   t0, console_putc_fn
+    lla   t1, console_putc_htif
     STORE_X t1, 0(t0)
-    la   t0, sink
+    lla   t0, sink
     lbu  t1, 0(t0)
     li   t2, 'c'
     bne  t1, t2, fail
@@ -228,7 +228,7 @@ _start:
     /* A string: reaching its last character means the loop ran to the end. */
     NEXT_TEST "console_puts runs the string to its last character"
     CLEAR_SINK
-    la   a0, msg_abc
+    lla   a0, msg_abc
     call console_puts
     EXPECT_EMITTED 'c'
 
@@ -243,7 +243,7 @@ _start:
     NEXT_TEST "console_puts from capability mode emits the same bytes"
     CLEAR_SINK
     YMODESWY
-    la   a0, msg_abc
+    lla   a0, msg_abc
     call console_puts
     YMODESWI
     EXPECT_EMITTED 'c'
@@ -252,9 +252,9 @@ _start:
 
     /* From integer pointer mode: the call comes back in integer mode. */
     NEXT_TEST "a call made in integer mode returns in integer mode"
-    la   a0, msg_int
+    lla   a0, msg_int
     call console_puts
-    la   t0, scratch
+    lla   t0, scratch
     lw   t1, 0(t0)
     EXPECT_NO_TRAP
 
@@ -266,16 +266,16 @@ _start:
      */
     NEXT_TEST "a call made in capability mode returns in capability mode"
     YMODESWY
-    la   a0, msg_cap
+    lla   a0, msg_cap
     call console_puts
-    la   t0, scratch
+    lla   t0, scratch
     lw   t1, 0(t0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
     /* Still capability mode, so a real capability still works there. */
     NEXT_TEST "a real capability still authorizes a load afterwards"
     csrrs t0, CSR_DDC, x0
-    la   t1, scratch
+    lla   t1, scratch
     YADDRW t0, t0, t1
     lw   t2, 0(t0)
     EXPECT_NO_TRAP
@@ -287,18 +287,18 @@ _start:
     NEXT_TEST "console_put_dec keeps its return address across its nested call"
     li   a0, 1234567890
     call console_put_dec
-    la   a0, msg_nl
+    lla   a0, msg_nl
     call console_puts
-    la   t0, scratch
+    lla   t0, scratch
     lw   t1, 0(t0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
 
     /* And back from integer pointer mode again, still in it afterwards. */
     NEXT_TEST "and integer mode is still restored after that"
     YMODESWI
-    la   a0, msg_int
+    lla   a0, msg_int
     call console_puts
-    la   t0, scratch
+    lla   t0, scratch
     lw   t1, 0(t0)
     EXPECT_NO_TRAP
 

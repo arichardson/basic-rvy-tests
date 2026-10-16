@@ -208,9 +208,9 @@ _start:
     csrc CSR_MSTATUS, t0
     li   t0, 0x0800
     csrs CSR_MSTATUS, t0
-    la   t0, s_code_disabled
+    lla   t0, s_code_disabled
     csrw CSR_MEPC, t0
-    la   m_continue, m_cont_a
+    lla   m_continue, m_cont_a
     mv   s0, trap_count
     addi s0, s0, 1
     mret
@@ -226,9 +226,9 @@ m_cont_a:
     csrc CSR_MSTATUS, t0
     li   t0, 0x0800
     csrs CSR_MSTATUS, t0
-    la   t0, s_code_enabled
+    lla   t0, s_code_enabled
     csrw CSR_MEPC, t0
-    la   m_continue, m_cont_b
+    lla   m_continue, m_cont_b
     mv   s0, trap_count
     mret
 s_code_enabled:

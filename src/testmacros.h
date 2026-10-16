@@ -76,7 +76,7 @@
     .ascii TEST_NAME
     .asciz "\n"
     .popsection
-    la   a0, 94b
+    lla   a0, 94b
     call console_puts
     li   a0, __tap_cases         /* every case in the file, skips included */
     li   a1, 0
@@ -93,14 +93,14 @@
     .ascii TEST_NAME
     .asciz " test "
     .popsection
-    la   a0, 95b
+    lla   a0, 95b
     call console_puts
     mv   a0, test_id
     call console_put_dec
     .pushsection .rodata
 96: .asciz "\n"
     .popsection
-    la   a0, 96b
+    lla   a0, 96b
     call console_puts
     mv   a0, test_id             /* the last case reached is the one that failed */
     mv   a1, test_id

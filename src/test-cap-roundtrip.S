@@ -138,8 +138,8 @@
 _start:
     SETUP_TRAPS
 
-    la   a0, src
-    la   a2, dst
+    lla   a0, src
+    lla   a2, dst
 
     /* Integer-mode round-trips across all bit positions and EBT corners. */
     EXPECT_BITS_ROUNDTRIP "all-zero bits round-trip", 0, 0
@@ -158,11 +158,11 @@ _start:
 
     /* Derive capability pointers to src and dst for capability-mode tests. */
     csrrs t0, CSR_DDC, x0
-    la    t1, src
+    lla    t1, src
     YADDRW a0, t0, t1
     li    t2, 32
     YBNDSW a0, a0, t2
-    la    t1, dst
+    lla    t1, dst
     YADDRW a2, t0, t1
     YBNDSW a2, a2, t2
 
