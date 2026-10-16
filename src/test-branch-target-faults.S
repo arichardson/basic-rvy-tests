@@ -42,7 +42,7 @@
  */
 .macro JALR_EXPECT_FAULT_AT cap, imm, target
     mv   expected_epc, \target
-    la   expected_ra, 77f
+    lla   expected_ra, 77f
     mv   ra, x0
     RESUME_AFTER_FAULT 88f
     jalr ra, \cap, \imm
@@ -76,7 +76,7 @@ _start:
 
     /* Untagged target (YHIW builds a capability with tag = 0) */
     NEXT_TEST "an untagged target faults at the target and still writes the link sentry"
-    la   t0, victim
+    lla   t0, victim
     YHIW a0, t0, x0
     JALR_EXPECT_FAULT_AT a0, 0, t0
     EXPECT_TARGET_FAULT 0
@@ -84,7 +84,7 @@ _start:
     /* Target without execute permission */
     NEXT_TEST "a target without execute permission faults at the target"
     auipc a0, 0                  /* the only executable capability available */
-    la   t0, victim
+    lla   t0, victim
     YADDRW a0, a0, t0
     li   t1, PERM_X
     YPERMC a0, a0, t1
@@ -99,7 +99,7 @@ _start:
      */
     NEXT_TEST "a sentry with a non-zero immediate stays sealed and detags"
     auipc a0, 0
-    la   t0, victim
+    lla   t0, victim
     YADDRW a0, a0, t0
     YSEALE a0, a0
     addi t1, t0, 8
@@ -109,7 +109,7 @@ _start:
     /* Target outside the bounds of the authorizing capability */
     NEXT_TEST "a target outside the bounds faults at the target"
     auipc a0, 0
-    la   t0, victim
+    lla   t0, victim
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1            /* [victim, victim + 8) */
@@ -124,12 +124,12 @@ _start:
      */
     NEXT_TEST "a jal to an out-of-bounds target writes ra and faults at the target"
     auipc a0, 0
-    la   t0, jal_trampoline
+    lla   t0, jal_trampoline
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1            /* covers jal_trampoline, excludes victim */
-    la   expected_epc, victim
-    la   expected_ra, jal_trampoline_link
+    lla   expected_epc, victim
+    lla   expected_ra, jal_trampoline_link
     mv   ra, x0
     RESUME_AFTER_FAULT 1f
     jalr x0, a0, 0
@@ -138,11 +138,11 @@ _start:
 
     NEXT_TEST "a taken beq to an out-of-bounds target faults at the target"
     auipc a0, 0
-    la   t0, beq_trampoline
+    lla   t0, beq_trampoline
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1            /* covers beq_trampoline, excludes victim */
-    la   expected_epc, victim
+    lla   expected_epc, victim
     mv   t0, x0
     RESUME_AFTER_FAULT 2f
     jalr x0, a0, 0
@@ -157,7 +157,7 @@ _start:
      */
     NEXT_TEST "the same sentry with a zero immediate is unsealed and runs"
     auipc a0, 0
-    la   t0, good_target
+    lla   t0, good_target
     YADDRW a0, a0, t0
     YSEALE a0, a0
     jalr ra, a0, 0

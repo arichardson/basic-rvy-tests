@@ -34,7 +34,7 @@
  */
 .macro BOUNDED_CODE_CAP stub, len
     auipc a0, 0                  /* the only executable capability available */
-    la   t0, \stub
+    lla   t0, \stub
     YADDRW a0, a0, t0
     li   t1, \len
     YBNDSW a0, a0, t1

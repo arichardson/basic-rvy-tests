@@ -109,7 +109,7 @@
 .macro SETUP_TRAPS
     ENABLE_CHERI
     call console_init            /* probes UART and target_info; needs its own handler */
-    la   t0, trap_handler
+    lla   t0, trap_handler
     csrw CSR_MTVEC, t0
     li   trap_cause, 0
     li   trap_epc, 0
@@ -171,7 +171,7 @@
     .pushsection .rodata
 78: .asciz "\reason"
     .popsection
-    la   a0, 78b
+    lla   a0, 78b
     li   a1, __tap_skip_from
     li   a2, __tap_cases
     call console_skip
@@ -186,7 +186,7 @@
     .pushsection .rodata
 77: .asciz "\reason"
     .popsection
-    la   a0, 77b
+    lla   a0, 77b
     mv   a1, test_id
     call console_xfail
 .endm
@@ -202,7 +202,7 @@
  * Requires TRAP_HANDLER_PCC.
  */
 .macro RESUME_AFTER_FAULT label
-    la   resume_at, \label
+    lla   resume_at, \label
 __rvy_used_resume_after_fault = 1
 .endm
 

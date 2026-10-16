@@ -37,7 +37,7 @@ _start:
     SETUP_TRAPS
 
     csrrs s0, CSR_DDC, x0        /* save root DDC */
-    la    s1, buf
+    lla    s1, buf
     YADDRW a0, s0, s1
     li    t0, 64
     YBNDSW a0, a0, t0            /* a0: tagged capability [buf, buf + 64) */
@@ -288,7 +288,7 @@ _start:
     csrrw x0, CSR_STIDC, a0
     csrrw x0, CSR_MTIDC, a0
     auipc a2, 0
-    la    t0, tidc_no_asr_stub
+    lla    t0, tidc_no_asr_stub
     YADDRW a2, a2, t0
     li    t1, DROP_MASK(PERM_ASR)
     DROP_PERMS a2, a2, t1
@@ -316,10 +316,10 @@ _start:
     li    t0, 0x0800
     csrs  CSR_MSTATUS, t0
     auipc t1, 0
-    la    t0, s_mode_csr_tests
+    lla    t0, s_mode_csr_tests
     YADDRW t1, t1, t0
     csrrw x0, CSR_MEPC, t1
-    la    m_continue, s_mode_done
+    lla    m_continue, s_mode_done
     li    s2, 0
     mret
 

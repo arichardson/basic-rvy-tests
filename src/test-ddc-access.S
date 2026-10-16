@@ -35,7 +35,7 @@ _start:
      * always has a valid authorizing capability for UART and HTIF stores.
      */
     csrrs s0, CSR_DDC, x0
-    la    s1, buf
+    lla    s1, buf
     addi  s2, s1, 64             /* top of the 64-byte bounded region */
     YADDRW s7, s0, s1            /* full-permission capability at buf */
 

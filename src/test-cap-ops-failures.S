@@ -39,7 +39,7 @@ _start:
     SETUP_TRAPS
 
     csrrs s0, CSR_DDC, x0
-    la    t1, buf
+    lla    t1, buf
     YADDRW a0, s0, t1
     li    t2, 4096
     YBNDSW a0, a0, t2            /* a0 = [buf, buf + 4096) */
@@ -66,7 +66,7 @@ _start:
      * encoded, so the result is untagged rather than rounded out.
      */
     NEXT_TEST "ybndsw is exact so bounds it cannot encode detag instead of rounding"
-    la   t1, buf
+    lla   t1, buf
     addi t1, t1, 1
     YADDRW a2, s0, t1
     li   t2, 0x100000

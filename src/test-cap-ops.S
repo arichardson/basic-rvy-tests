@@ -58,7 +58,7 @@ _start:
      * length below is a valid subset.
      */
     csrrs s0, CSR_DDC, x0
-    la    t1, buf
+    lla    t1, buf
     YADDRW a0, s0, t1
     li    t2, 4096
     YBNDSW a0, a0, t2            /* a0 = [buf, buf + 4096) */
@@ -99,12 +99,12 @@ _start:
     EXPECT_TAG a2, 1
     EXPECT_LEN a2, 64
     YBASER t3, a2
-    la   t4, buf
+    lla   t4, buf
     bne  t4, t3, fail
     EXPECT_NO_TRAP
 
     NEXT_TEST "ybndsrw rounds inexact bounds outward and keeps the tag"
-    la   t1, buf
+    lla   t1, buf
     addi t1, t1, 1
     YADDRW a2, s0, t1
     li   t2, 0xfff9
@@ -131,7 +131,7 @@ _start:
     YTOPR t1, x0
     bne  t2, t1, fail
     YTOPR t1, a0
-    la   t2, buf + 4096
+    lla   t2, buf + 4096
     bne  t2, t1, fail
 #endif
     EXPECT_NO_TRAP
@@ -141,7 +141,7 @@ _start:
     li   t1, 24
     YADD a2, a0, t1
     EXPECT_TAG a2, 1
-    la   t2, buf
+    lla   t2, buf
     addi t2, t2, 24
     bne  a2, t2, fail
     li   t1, -8
@@ -160,15 +160,15 @@ _start:
     li   t1, 5
     YSH1ADD a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 10
+    lla   t2, buf + 10
     bne  a2, t2, fail
     YSH2ADD a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 20
+    lla   t2, buf + 20
     bne  a2, t2, fail
     YSH3ADD a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 40
+    lla   t2, buf + 40
     bne  a2, t2, fail
     YSH1ADD x0, t1, a0           /* cd = x0 discards the result */
     EXPECT_NO_TRAP
@@ -178,25 +178,25 @@ _start:
     li   t1, 5
     YSH4ADD a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 80
+    lla   t2, buf + 80
     bne  a2, t2, fail
     /* Set bits [63:32] all-ones and low 32 bits = 6 so .uw strips the upper half. */
     li   t1, -0x100000000 + 6
     YSH1ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 12
+    lla   t2, buf + 12
     bne  a2, t2, fail
     YSH2ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 24
+    lla   t2, buf + 24
     bne  a2, t2, fail
     YSH3ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 48
+    lla   t2, buf + 48
     bne  a2, t2, fail
     YSH4ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
-    la   t2, buf + 96
+    lla   t2, buf + 96
     bne  a2, t2, fail
     EXPECT_NO_TRAP
 #endif
@@ -223,7 +223,7 @@ _start:
     YSEALE a2, a0
     YEQ  t1, a0, a2              /* different otype */
     bnez t1, fail
-    la   t2, buf
+    lla   t2, buf
     YADDRW a2, x0, t2            /* untagged with same address */
     YEQ  t1, a0, a2              /* different tag */
     bnez t1, fail

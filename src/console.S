@@ -43,7 +43,7 @@
 /* \cd = a capability derived from ddc addressing \sym. Clobbers \tmp. */
 .macro DDC_AT cd, sym, tmp
     csrrs \cd, CSR_DDC, x0
-    la    \tmp, \sym
+    lla    \tmp, \sym
     YADDRW \cd, \cd, \tmp
 .endm
 
@@ -77,7 +77,7 @@ console_init:
      * target_info all-zeroes for the default spec-compliant behaviour.
      */
     csrrs t0, CSR_DDC, x0
-    la    t2, target_info
+    lla    t2, target_info
     YADDRW t2, t0, t2
     li    t3, TARGET_INFO_SIZE
 1:  sb    x0, 0(t2)
@@ -86,7 +86,7 @@ console_init:
     bnez  t3, 1b
 
     auipc t1, 0                  /* a handler capability, since mtvecc is one */
-    la    t2, .Ltarget_info_done
+    lla    t2, .Ltarget_info_done
     YADDRW t1, t1, t2
     csrrw a2, CSR_MTVEC, t1      /* a2 = whatever was there before */
 
@@ -96,7 +96,7 @@ console_init:
     li    t3, TARGET_INFO_MAGIC
     bne   t3, t2, .Ltarget_info_done /* canonical order: t3 (x28) > t2 (x7) */
 
-    la    t2, target_info
+    lla    t2, target_info
     YADDRW t2, t0, t2
     li    t3, TARGET_INFO_SIZE
 1:  lbu   t4, 0(t1)
@@ -109,17 +109,17 @@ console_init:
 .balign 4
 .Ltarget_info_done:
     csrrs t0, CSR_DDC, x0
-    la    t1, target_info
+    lla    t1, target_info
     YADDRW t1, t0, t1
     LOAD_X a0, TARGET_INFO_OFF_UART_ADDR(t1)
     lbu   t2, TARGET_INFO_OFF_HAS_HTIF(t1)
-    la    a3, console_putc_htif
+    lla    a3, console_putc_htif
     bnez  a0, 1f
     bnez  t2, .Lprobe_done
     j     .Lprobe_uart
-1:  la    a3, console_putc_uart
+1:  lla    a3, console_putc_uart
     beqz  t2, .Lprobe_done
-    la    a3, console_putc_both
+    lla    a3, console_putc_both
     j     .Lprobe_done
 
 .Lprobe_uart:
@@ -127,11 +127,11 @@ console_init:
     sb    t2, TARGET_INFO_OFF_HAS_HTIF(t1)
 
     auipc t0, 0
-    la    t1, .Lprobe_failed
+    lla    t1, .Lprobe_failed
     YADDRW t0, t0, t1
     csrw  CSR_MTVEC, t0
 
-    la   a3, console_putc_both   /* assume the UART is there ... */
+    lla   a3, console_putc_both   /* assume the UART is there ... */
     csrrs t0, CSR_DDC, x0
     li    t1, UART_ADDR
     YADDRW t0, t0, t1
@@ -142,10 +142,10 @@ console_init:
 
 .balign 4
 .Lprobe_failed:                  /* entered as a trap handler, and stays there */
-    la   a3, console_putc_htif
+    lla   a3, console_putc_htif
 .Lprobe_done:
     csrrs t0, CSR_DDC, x0
-    la    t1, console_putc_fn
+    lla    t1, console_putc_fn
     YADDRW t1, t0, t1
     STORE_X a3, 0(t1)
 
@@ -154,7 +154,7 @@ console_init:
     csrw CSR_MSTATUS, a4
 
     /* The version line has to come first, so announce it before any test runs. */
-    la   a0, .Ltap_version
+    lla   a0, .Ltap_version
     YMV  ra, a1                  /* console_puts returns straight to our caller */
     j    console_puts
 
@@ -171,7 +171,7 @@ console_init:
 .globl console_putc_htif
 console_putc_htif:
     csrrs t0, CSR_DDC, x0
-    la    t1, console_target
+    lla    t1, console_target
     YADDRW t2, t0, t1
     LOAD_X t1, 0(t2)             /* where the writes go; &tohost in a real run */
     YADDRW t2, t0, t1
@@ -183,7 +183,7 @@ console_putc_htif:
 .globl console_putc_both
 console_putc_both:
     csrrs t0, CSR_DDC, x0
-    la    t1, console_target
+    lla    t1, console_target
     YADDRW t2, t0, t1
     LOAD_X t1, 0(t2)
     YADDRW t2, t0, t1
@@ -194,7 +194,7 @@ console_putc_both:
 .globl console_putc_uart
 console_putc_uart:
     csrrs t0, CSR_DDC, x0
-    la    t1, target_info
+    lla    t1, target_info
     YADDRW t2, t0, t1
     LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t2)
     YADDRW t2, t0, t1
@@ -217,7 +217,7 @@ console_puts:
     CONSOLE_ENTER
     YMV   t3, ra                 /* putc helpers leave t3/t4 and a1 alone */
     csrrs t4, CSR_DDC, x0
-    la    t0, console_putc_fn
+    lla    t0, console_putc_fn
     YADDRW t0, t4, t0
     LOAD_X t0, 0(t0)
     auipc a1, 0
@@ -238,7 +238,7 @@ console_put_dec:
     YMV  a1, ra
     mv   a2, a0                  /* the value, which is never a capability */
     csrrs a3, CSR_DDC, x0
-    la   t0, dec_buf
+    lla   t0, dec_buf
     addi t0, t0, DEC_BUF_LEN - 1
     YADDRW a3, a3, t0
     sb   x0, 0(a3)               /* terminator; digits are filled backwards */
@@ -263,7 +263,7 @@ console_put_dec:
 console_skip:
     CONSOLE_ENTER
     csrrs t0, CSR_DDC, x0
-    la   t1, tap_skip_count
+    lla   t1, tap_skip_count
     YADDRW t1, t0, t1
     LOAD_X t2, 0(t1)
     li   t3, TAP_MAX_SKIPS
@@ -272,7 +272,7 @@ console_skip:
     slli t3, t2, PTR_SHIFT       /* slot = count * 3 pointers */
     slli t4, t2, PTR_SHIFT + 1
     add  t3, t3, t4
-    la   t4, tap_skips
+    lla   t4, tap_skips
     add  t3, t3, t4
     YADDRW t3, t0, t3
     STORE_X a1, 0(t3)
@@ -282,7 +282,7 @@ console_skip:
     STORE_X t2, 0(t1)
     ret
 
-1:  la   t1, tap_skip_overflow
+1:  lla   t1, tap_skip_overflow
     YADDRW t1, t0, t1
     li   t2, 1
     STORE_X t2, 0(t1)
@@ -296,14 +296,14 @@ console_skip:
 console_xfail:
     CONSOLE_ENTER
     csrrs t0, CSR_DDC, x0
-    la   t1, tap_xfail_count
+    lla   t1, tap_xfail_count
     YADDRW t1, t0, t1
     LOAD_X t2, 0(t1)
     li   t3, TAP_MAX_XFAILS
     bge  t2, t3, 1b              /* no room: say so rather than lose it */
 
     slli t3, t2, PTR_SHIFT + 1   /* slot = count * 2 pointers */
-    la   t4, tap_xfails
+    lla   t4, tap_xfails
     add  t3, t3, t4
     YADDRW t3, t0, t3
     STORE_X a1, 0(t3)
@@ -338,20 +338,20 @@ console_tap:
      * how many entries there are, which only bounds the loop below.
      */
     csrrs t6, CSR_DDC, x0        /* kept for the table loads below */
-    la   t0, __tapnames_start
-    la   t1, __tapnames_end
+    lla   t0, __tapnames_start
+    lla   t1, __tapnames_end
     sub  t5, t1, t0
     srli t5, t5, PTR_SHIFT
 
     li   a5, 1
 1:  blt  a6, a5, 2f              /* while i <= total */
     bne  a7, a5, 3f              /* canonical order: a7 > a5 */
-5:  la   a0, .Ltap_notok
+5:  lla   a0, .Ltap_notok
     j    4f
-3:  la   t0, tap_xfail_count
+3:  lla   t0, tap_xfail_count
     YADDRW t0, t6, t0
     LOAD_X t1, 0(t0)
-    la   t2, tap_xfails
+    lla   t2, tap_xfails
     YADDRW t2, t6, t2
 10: beqz t1, 11f
     LOAD_X t3, 0(t2)
@@ -359,13 +359,13 @@ console_tap:
     YADDI t2, t2, 2 * XBYTES
     addi t1, t1, -1
     j    10b
-11: la   a0, .Ltap_ok
+11: lla   a0, .Ltap_ok
 4:  jal  ra, console_puts
     mv   a0, a5
     jal  ra, console_put_dec
 
     bltu t5, a5, 6f              /* past the end of the table */
-    la   t0, __tapnames_start
+    lla   t0, __tapnames_start
     addi t1, a5, -1
     slli t1, t1, PTR_SHIFT
     add  t0, t0, t1
@@ -374,15 +374,15 @@ console_tap:
     YADDRW t0, t6, a3
     lbu  t1, 0(t0)
     beqz t1, 6f                  /* this case was not given one */
-    la   a0, .Ltap_dash
+    lla   a0, .Ltap_dash
     jal  ra, console_puts
     mv   a0, a3
     jal  ra, console_puts
     /* Was this case inside any of the blocks that could not run? */
-6:  la   t0, tap_skip_count
+6:  lla   t0, tap_skip_count
     YADDRW t0, t6, t0
     LOAD_X t1, 0(t0)             /* t1 = slots left to look at */
-    la   t2, tap_skips
+    lla   t2, tap_skips
     YADDRW t2, t6, t2            /* t2 = the slot being looked at */
 8:  beqz t1, 12f
     LOAD_X t3, 0(t2)
@@ -390,7 +390,7 @@ console_tap:
     LOAD_X t3, XBYTES(t2)
     blt  t3, a5, 9f              /* after it */
     LOAD_X a3, 2 * XBYTES(t2)    /* the reason; survives console_puts */
-    la   a0, .Ltap_skip
+    lla   a0, .Ltap_skip
     jal  ra, console_puts
     mv   a0, a3
     jal  ra, console_puts
@@ -399,16 +399,16 @@ console_tap:
     addi t1, t1, -1
     j    8b
     /* Was this case marked as an expected failure? */
-12: la   t0, tap_xfail_count
+12: lla   t0, tap_xfail_count
     YADDRW t0, t6, t0
     LOAD_X t1, 0(t0)
-    la   t2, tap_xfails
+    lla   t2, tap_xfails
     YADDRW t2, t6, t2
 13: beqz t1, 7f
     LOAD_X t3, 0(t2)
     bne  t3, a5, 14f             /* canonical order: t3 (x28) > a5 (x15) */
     LOAD_X a3, XBYTES(t2)
-    la   a0, .Ltap_todo
+    lla   a0, .Ltap_todo
     jal  ra, console_puts
     mv   a0, a3
     jal  ra, console_puts
@@ -416,16 +416,16 @@ console_tap:
 14: YADDI t2, t2, 2 * XBYTES
     addi t1, t1, -1
     j    13b
-7:  la   a0, .Ltap_nl
+7:  lla   a0, .Ltap_nl
     jal  ra, console_puts
     addi a5, a5, 1
     j    1b
-2:  la   a0, .Ltap_plan          /* the plan trails the results, so a test does
+2:  lla   a0, .Ltap_plan          /* the plan trails the results, so a test does
                                   * not have to declare its count up front */
     jal  ra, console_puts
     mv   a0, a6
     jal  ra, console_put_dec
-    la   a0, .Ltap_nl
+    lla   a0, .Ltap_nl
     jal  ra, console_puts
     YMV  ra, a4
     ret

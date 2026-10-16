@@ -25,12 +25,12 @@
 #ifdef __ASSEMBLER__
 
 .macro LOAD_TARGET_IMPL_ID reg
-    la   \reg, target_info
+    lla   \reg, target_info
     lw   \reg, TARGET_INFO_OFF_IMPL_ID(\reg)
 .endm
 
 .macro LOAD_TARGET_FLAG reg, offset
-    la   \reg, target_info
+    lla   \reg, target_info
     lbu  \reg, \offset(\reg)
 .endm
 

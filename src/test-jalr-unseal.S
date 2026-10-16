@@ -25,7 +25,7 @@
 88:
     EXPECT_TRAP TRAP_CAP_BRANCH(\check)
 #ifdef CHERI_093
-    la      t3, \branch_label
+    lla      t3, \branch_label
     EXPECT_EPC t3
     EXPECT_EPC_TAG 1
 #else
@@ -47,7 +47,7 @@ _start:
     auipc   t2, 0
 
     NEXT_TEST "a sentry with an even address and zero offset is unsealed and runs"
-    la      t1, good_target
+    lla      t1, good_target
     YADDRW  a0, t2, t1
     YSEALE  a0, a0
     jalr    ra, a0, 0
@@ -73,7 +73,7 @@ _start:
     EXPECT_JALR_SENTRY_FAULT 1b, t1
 89:
     auipc   t2, 0
-    la      t1, target
+    lla      t1, target
     YADDRW  t2, t2, t1
 
     NEXT_TEST "a sentry with a non-zero aligned offset is not unsealed on jalr"
@@ -113,7 +113,7 @@ _start:
      */
     NEXT_TEST "mepc from jalr to an odd-LSB sentry is not a valid sentry for mret"
     auipc   a0, 0
-    la      t1, target
+    lla      t1, target
     YADDRW  a0, a0, t1
     YADDI   a0, a0, 1
     YSEALE  a0, a0
@@ -135,7 +135,7 @@ _start:
 
     NEXT_TEST "mepc from jalr with a non-zero offset is not a valid sentry for mret"
     auipc   a0, 0
-    la      t1, target
+    lla      t1, target
     YADDRW  a0, a0, t1
     YSEALE  a0, a0
     addi    t0, t1, 4

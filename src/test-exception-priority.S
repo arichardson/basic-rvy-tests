@@ -49,7 +49,7 @@ _start:
     NEXT_TEST "a pcc bounds fault outranks the illegal instruction at the target"
     YMODESWY
     auipc a0, 0
-    la   t0, illegal_target
+    lla   t0, illegal_target
     YADDRW a0, a0, t0
     li   t1, 0
     YBNDSW a0, a0, t1            /* empty bounds: nothing is fetchable */
@@ -62,7 +62,7 @@ _start:
      * A capability check against a misaligned capability access. Both apply
      * to the same load, and the capability check is reported.
      */
-    la   a0, buf
+    lla   a0, buf
     addi a1, a0, 4               /* never aligned enough for a capability */
 
     NEXT_TEST "control: an authorized misaligned capability load is misaligned"
@@ -96,11 +96,11 @@ _start:
     YMODESWY
     NEXT_TEST "control: an aligned jal out of PCC bounds faults at the target"
     auipc a0, 0
-    la   t0, ialign_ctrl_tramp
+    lla   t0, ialign_ctrl_tramp
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1
-    la   expected_epc, illegal_target
+    lla   expected_epc, illegal_target
     RESUME_AFTER_FAULT 1f
     jalr x0, a0, 0
 1:
@@ -109,12 +109,12 @@ _start:
 
     NEXT_TEST "misaligned jalr under IALIGN=32 faults at the branch before target PCC bounds"
     auipc a0, 0
-    la   t0, illegal_target
+    lla   t0, illegal_target
     addi t0, t0, 2
     YADDRW a0, a0, t0
     li   t1, 0
     YBNDSW a0, a0, t1
-    la   expected_epc, 2f
+    lla   expected_epc, 2f
     RESUME_AFTER_FAULT 3f
 2:  jalr ra, a0, 0
 3:
@@ -123,11 +123,11 @@ _start:
 
     NEXT_TEST "misaligned jal under IALIGN=32 faults at the branch before target PCC bounds"
     auipc a0, 0
-    la   t0, ialign_jal_tramp
+    lla   t0, ialign_jal_tramp
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1
-    la   expected_epc, ialign_jal_tramp
+    lla   expected_epc, ialign_jal_tramp
     RESUME_AFTER_FAULT 4f
     jalr x0, a0, 0
 4:
@@ -136,11 +136,11 @@ _start:
 
     NEXT_TEST "misaligned taken beq under IALIGN=32 faults at the branch before target PCC bounds"
     auipc a0, 0
-    la   t0, ialign_beq_tramp
+    lla   t0, ialign_beq_tramp
     YADDRW a0, a0, t0
     li   t1, 8
     YBNDSW a0, a0, t1
-    la   expected_epc, ialign_beq_tramp
+    lla   expected_epc, ialign_beq_tramp
     mv   t0, x0
     RESUME_AFTER_FAULT 5f
     jalr x0, a0, 0

@@ -42,7 +42,7 @@
 _start:
     SETUP_TRAPS
 
-    la   a0, buf                 /* aligned to 64 bytes */
+    lla   a0, buf                 /* aligned to 64 bytes */
     addi a1, a0, 4               /* misaligned for YLEN/8 on RV32 and RV64 */
 
     /* Aligned LR.Y via root DDC succeeds (sanity/decode check) */

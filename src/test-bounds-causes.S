@@ -26,7 +26,7 @@ _start:
      * so derive the bounded capabilities under test from it.
      */
     csrrs t0, CSR_DDC, x0
-    la   t1, buf
+    lla   t1, buf
     YADDRW a0, t0, t1
     li   t2, 8
     YBNDSW a0, a0, t2            /* a0 = [buf, buf + 8) */
@@ -64,7 +64,7 @@ _start:
      */
     NEXT_TEST "running off the end of a bounded pcc"
     auipc a2, 0
-    la   t1, off_end_stub
+    lla   t1, off_end_stub
     YADDRW a2, a2, t1
     li   t2, 8
     YBNDSW a2, a2, t2

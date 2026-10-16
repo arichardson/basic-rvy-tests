@@ -43,7 +43,7 @@ _start:
     csrrs s2, CSR_MTVEC, x0
 
     /* Construct an unsealed capability at victim (4-byte aligned, length 1024). */
-    la   s1, victim
+    lla   s1, victim
     YADDRW a0, s0, s1
     li   t0, 256
     YBNDSW a0, a0, t0            /* a0: [victim, victim+1024), E=0 */
@@ -167,7 +167,7 @@ _start:
      * ========================================================================= */
 
     NEXT_TEST "mtvec write immediately before ecall dispatches to the new handler"
-    la   t0, alt_handler
+    lla   t0, alt_handler
     YADDRW a2, s0, t0
     li   a3, 0
     /* Write mtvec and trap in the same basic block. */
@@ -180,7 +180,7 @@ _start:
     NEXT_TEST "mepc write immediately before mret returns to the new target"
     li   t0, (3 << 11)           /* mstatus.MPP = M */
     csrs mstatus, t0
-    la   t0, mepc_target
+    lla   t0, mepc_target
     YADDRW a2, s0, t0
     /* Write mepc and return in the same basic block. */
     csrw CSR_MEPC, a2

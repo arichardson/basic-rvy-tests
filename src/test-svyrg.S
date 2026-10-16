@@ -94,7 +94,7 @@ _start:
      * Build the Sv39 root table: gigapage leaves, all mapping
      * PA 0x80000000 (PPN 0x80000 -> PTE PPN field 0x80000 << 10).
      */
-    la   t0, pagetable
+    lla   t0, pagetable
     li   t1, 0x80000 << 10
     /*
      * index 2, VA 0x0_80000000 (code + data): X, rvy = yd (pte.y). This is
@@ -136,7 +136,7 @@ _start:
     sd   t2, 72(t0)
 
     /* satp = Sv39 | PPN(pagetable) */
-    la   t0, pagetable
+    lla   t0, pagetable
     srli t0, t0, 12
     li   t1, 8 << 60
     or   t0, t0, t1
@@ -148,13 +148,13 @@ _start:
     csrc CSR_MSTATUS, t0
     li   t0, 0x0800
     csrs CSR_MSTATUS, t0
-    la   t0, s_entry
+    lla   t0, s_entry
     csrw CSR_MEPC, t0
     mret
 
 s_entry:
     /* VA aliases of the test buffer for each mapping */
-    la   a0, buf                 /* index 2: normal */
+    lla   a0, buf                 /* index 2: normal */
     li   t0, 0x40000000
     add  a1, a0, t0              /* index 3: rvy = 0 */
     li   t0, 0x80000000
@@ -428,7 +428,7 @@ s_entry:
     YEQ  t0, t3, s2
     beqz t0, fail
 
-    la   m_continue, m_done
+    lla   m_continue, m_done
     ecall
 m_done:
     /*
@@ -463,7 +463,7 @@ fail:
      * device is not mapped, so get back to M-mode before reporting.
      */
     li   t0, (1 << 17)
-    la   m_continue, m_fail
+    lla   m_continue, m_fail
     ecall
 m_fail:
     csrc CSR_MSTATUS, t0

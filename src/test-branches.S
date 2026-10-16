@@ -64,32 +64,32 @@ _start:
     EXPECT_NO_TRAP
 
     NEXT_TEST "taken branch to a 2-byte-aligned target faults at the branch under IALIGN=32"
-    la   s2, 1f
+    lla   s2, 1f
 1:  beq  x0, x0, ialign_target + 2
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
 
     NEXT_TEST "integer-mode jal to a 2-byte-aligned target faults without writing ra"
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jal  ra, ialign_target + 2
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
     bnez ra, fail
 
     NEXT_TEST "integer-mode jalr to a 2-byte-aligned target faults without writing ra"
-    la   a0, ialign_target + 2
+    lla   a0, ialign_target + 2
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jalr ra, a0, 0
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
     bnez ra, fail
 
     NEXT_TEST "integer-mode jalr masks bit 0 before checking bit 1 under IALIGN=32"
-    la   a0, ialign_target + 3
+    lla   a0, ialign_target + 3
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jalr ra, a0, 0
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
@@ -104,14 +104,14 @@ _start:
     EXPECT_NO_TRAP
 
     NEXT_TEST "capability-mode taken branch to a 2-byte-aligned target faults at the branch"
-    la   s2, 1f
+    lla   s2, 1f
 1:  beq  t1, t0, ialign_target + 2
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
 
     NEXT_TEST "capability-mode jal to a 2-byte-aligned target faults without writing ra"
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jal  ra, ialign_target + 2
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
@@ -119,10 +119,10 @@ _start:
 
     NEXT_TEST "capability-mode jalr to a 2-byte-aligned target faults without writing ra"
     auipc a0, 0
-    la   t0, ialign_target + 2
+    lla   t0, ialign_target + 2
     YADDRW a0, a0, t0
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jalr ra, a0, 0
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
@@ -130,10 +130,10 @@ _start:
 
     NEXT_TEST "capability-mode jalr masks bit 0 before checking bit 1 under IALIGN=32"
     auipc a0, 0
-    la   t0, ialign_target + 3
+    lla   t0, ialign_target + 3
     YADDRW a0, a0, t0
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jalr ra, a0, 0
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
@@ -141,11 +141,11 @@ _start:
 
     NEXT_TEST "capability-mode jalr to a 2-byte-aligned sentry faults under IALIGN=32"
     auipc a0, 0
-    la   t0, ialign_target + 2
+    lla   t0, ialign_target + 2
     YADDRW a0, a0, t0
     YSEALE a0, a0
     mv   ra, x0
-    la   s2, 1f
+    lla   s2, 1f
 1:  jalr ra, a0, 0
     EXPECT_TRAP CAUSE_MISALIGNED_FETCH
     EXPECT_EPC s2
@@ -154,7 +154,7 @@ _start:
     NEXT_TEST "4-byte-aligned jal and jalr succeed under IALIGN=32"
     jal  ra, ialign_good_target
     auipc a0, 0
-    la   t0, ialign_good_target
+    lla   t0, ialign_good_target
     YADDRW a0, a0, t0
     jalr ra, a0, 0
     EXPECT_NO_TRAP

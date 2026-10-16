@@ -100,7 +100,7 @@
 
 /* Write the leaf pte for \idx and flush. Integer pointer mode only. */
 .macro SET_PTE idx, bits
-    la   t0, pagetable
+    lla   t0, pagetable
     li   t1, 0x80000 << 10
     li   t2, \bits
     or   t2, t2, t1
@@ -123,7 +123,7 @@
 /* Derive \cd from the root ddc, naming buf through the \idx alias. */
 .macro CAP_TO_ALIAS cd, idx
     csrrs \cd, CSR_DDC, x0
-    la   t0, buf
+    lla   t0, buf
     li   t1, ALIAS_OFF(\idx)
     add  t0, t0, t1
     YADDRW \cd, \cd, t0
@@ -183,7 +183,7 @@ _start:
     SET_PTE IDX_NODIRTY, PTE_NODIRTY
 
     /* satp = Sv39 | PPN(pagetable) */
-    la   t0, pagetable
+    lla   t0, pagetable
     srli t0, t0, 12
     li   t1, 8 << 60
     or   t0, t0, t1
@@ -195,7 +195,7 @@ _start:
     csrc CSR_MSTATUS, t0
     li   t0, 0x0800
     csrs CSR_MSTATUS, t0
-    la   t0, s_entry
+    lla   t0, s_entry
     csrw CSR_MEPC, t0
     mret
 
@@ -441,7 +441,7 @@ s_entry:
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 
     YMODESWI
-    la   m_continue, m_done
+    lla   m_continue, m_done
     ecall
 m_done:
     TEST_PASS
@@ -451,7 +451,7 @@ fail:
      * M-mode.
      */
     YMODESWI
-    la   m_continue, m_fail
+    lla   m_continue, m_fail
     ecall
 m_fail:
     TEST_FAIL

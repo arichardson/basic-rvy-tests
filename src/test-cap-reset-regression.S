@@ -17,8 +17,8 @@
 /* Store \reg, load it back, store that, and compare the two memory images. */
 .macro EXPECT_RESET_ROUNDTRIP reg
     NEXT_TEST "\reg holds bits it can store back untouched since reset"
-    la   a0, src
-    la   a1, dst
+    lla   a0, src
+    lla   a1, dst
     SY   \reg, 0(a0)
     LY   a2, 0(a0)
     SY   a2, 0(a1)
