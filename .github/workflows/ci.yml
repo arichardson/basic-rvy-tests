@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
 
 env:
-  # CHERI-Alliance/qemu (CHERI 0.9.3)
-  QEMU_093_REPO: CHERI-Alliance/qemu
-  QEMU_093_SHA: 32bf55e2965dcdcfb0139d209e7a7b9dd1314583
+  # arichardson/qemu (wip-qemu-rvy99: CHERI 0.9.3, RVY 0.9.9, and RVY 0.9.10)
+  QEMU_REPO: arichardson/qemu
+  QEMU_SHA: 0b70242e889bfc853b966514a77ce4a8970f2e95
   # CHERI-Alliance/sail-riscv (CHERI 0.9.3)
   SAIL_093_REPO: CHERI-Alliance/sail-riscv
   SAIL_093_SHA: e664353e4e769236f7afa14c364ed393718b3a38
@@ -20,16 +20,16 @@ env:
   UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1
 
 jobs:
-  build-qemu-093:
-    name: Build QEMU 0.9.3
+  build-qemu:
+    name: Build QEMU
     runs-on: ubuntu-24.04
     steps:
-      - name: Cache QEMU 0.9.3 binaries
+      - name: Cache QEMU binaries
         id: cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/qemu-093
-          key: qemu-093-sanitizers-ubuntu-24.04-${{ env.QEMU_093_SHA }}
+          path: ${{ runner.temp }}/qemu
+          key: qemu-sanitizers-ubuntu-24.04-${{ env.QEMU_SHA }}
 
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
@@ -38,18 +38,19 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             clang libclang-rt-dev libfdt-dev libglib2.0-dev libpixman-1-dev ninja-build pkgconf python-is-python3 python3-venv
 
-      - name: Checkout QEMU 0.9.3
+      - name: Checkout QEMU
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.QEMU_093_REPO }}
-          ref: ${{ env.QEMU_093_SHA }}
+          repository: ${{ env.QEMU_REPO }}
+          ref: ${{ env.QEMU_SHA }}
           path: qemu-src
 
-      - name: Build QEMU 0.9.3
+      - name: Build QEMU
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p qemu-build "${{ runner.temp }}/qemu-093/bin"
+          mkdir -p qemu-build "${{ runner.temp }}/qemu/bin" qemu-src/tests/rvy/src
+          touch qemu-src/tests/rvy/src/meson.build
           cd qemu-build
           ../qemu-src/configure \
             --cc=clang \
@@ -64,10 +65,12 @@ jobs:
             --disable-docs \
             --disable-linux-user \
             --disable-tools \
-            --target-list=riscv64cheristd-softmmu,riscv32cheristd-softmmu
-          ninja qemu-system-riscv64cheristd qemu-system-riscv32cheristd
-          cp qemu-system-riscv64cheristd qemu-system-riscv32cheristd \
-            "${{ runner.temp }}/qemu-093/bin/"
+            --target-list=riscv64y-softmmu,riscv32y-softmmu,riscv64cheristd-softmmu,riscv32cheristd-softmmu
+          ninja qemu-system-riscv64y qemu-system-riscv32y \
+            qemu-system-riscv64cheristd qemu-system-riscv32cheristd
+          cp qemu-system-riscv64y qemu-system-riscv32y \
+            qemu-system-riscv64cheristd qemu-system-riscv32cheristd \
+            "${{ runner.temp }}/qemu/bin/"
 
   build-sail-093:
     name: Build Sail 0.9.3
@@ -111,7 +114,7 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-24.04
-    needs: [build-qemu-093, build-sail-093]
+    needs: [build-qemu, build-sail-093]
     permissions:
       contents: read
       pull-requests: write
@@ -119,11 +122,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore QEMU 0.9.3 binaries
+      - name: Restore QEMU binaries
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/qemu-093
-          key: qemu-093-sanitizers-ubuntu-24.04-${{ env.QEMU_093_SHA }}
+          path: ${{ runner.temp }}/qemu
+          key: qemu-sanitizers-ubuntu-24.04-${{ env.QEMU_SHA }}
           fail-on-cache-miss: true
 
       - name: Restore Sail 0.9.3 binary
@@ -141,21 +144,21 @@ jobs:
             clang libfdt1 libglib2.0-0t64 libgmp10 libpixman-1-0 lld ninja-build python3-pip
           python3 -m pip install --break-system-packages 'meson>=1.10.0'
 
-      - name: Run baseline 0.9.3 suite on main
+      - name: Run baseline suite on main
         run: |
           BASE_REF="${{ github.event.pull_request.base.sha || github.event.before || 'main' }}"
           git fetch origin "$BASE_REF" --depth=1 || git fetch origin main --depth=1
           git worktree add ../base FETCH_HEAD
           meson setup build-base ../base \
-            -Dqemu="${{ runner.temp }}/qemu-093" \
+            -Dqemu="${{ runner.temp }}/qemu" \
             -Dsail_093="${{ runner.temp }}/sail-093"
           ninja -C build-base
           meson test -C build-base || true
 
-      - name: Build test ELFs and run 0.9.3 suite
+      - name: Build test ELFs and run suite
         run: |
           meson setup build \
-            -Dqemu="${{ runner.temp }}/qemu-093" \
+            -Dqemu="${{ runner.temp }}/qemu" \
             -Dsail_093="${{ runner.temp }}/sail-093"
           ninja -C build
           meson test -C build --print-errorlogs || true
