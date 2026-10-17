@@ -3,7 +3,9 @@
  * Faults raised by the page table walk for an explicit memory access, and
  * where they sit relative to the capability checks, per the synchronous
  * exception priority table. Every case is run for each instruction that can
- * reach the walk: ly, sy, lr.y, sc.y and amoswap.y.
+ * reach the walk (ly, sy, lr.y, sc.y and amoswap.y) and verifies that a
+ * faulting operation neither overwrites cd (poisoned beforehand) nor modifies
+ * the tagged capabilities stored in buf.
  *
  * The walk can fail for the ordinary reasons the base ISA already has (an
  * invalid PTE, missing read or write permission, an unset accessed or dirty
@@ -107,10 +109,10 @@
 /* Write the leaf pte for \idx and flush. Integer pointer mode only. */
 .macro SET_PTE idx, bits
     lla   t0, pagetable
-    li   t1, 0x80000 << 10
-    li   t2, \bits
-    or   t2, t2, t1
-    sd   t2, (\idx * 8)(t0)
+    li   t3, 0x80000 << 10
+    li   t4, \bits
+    or   t4, t4, t3
+    sd   t4, (\idx * 8)(t0)
     sfence.vma
 .endm
 
@@ -135,15 +137,46 @@
     YADDRW \cd, \cd, t0
 .endm
 
+.macro CHECK_BUF
+    LY   t0, 0(a5)
+    EXPECT_CAP_EQ t0, s2
+    LY   t0, YLEN_BYTES(a5)
+    EXPECT_CAP_EQ t0, s2
+    SY   s2, 0(a5)
+    SY   s2, YLEN_BYTES(a5)
+.endm
+
 /*
  * \cause where the implementation faults so software can set the A/D bit,
  * nothing at all where it sets the bit in hardware.
  */
-.macro EXPECT_AD_FAULT cause
+.macro EXPECT_AD_LOAD_FAULT cause
     beqz ad_in_hardware, 70f
     EXPECT_NO_TRAP
     j    71f
 70: EXPECT_TRAP \cause
+    CHECK_POISON_REG t1
+71:
+.endm
+
+.macro EXPECT_AD_STORE_FAULT cause
+    beqz ad_in_hardware, 70f
+    EXPECT_NO_TRAP
+    SY   s2, 0(a5)
+    j    71f
+70: EXPECT_TRAP \cause
+    CHECK_BUF
+71:
+.endm
+
+.macro EXPECT_AD_AMO_FAULT cause
+    beqz ad_in_hardware, 70f
+    EXPECT_NO_TRAP
+    SY   s2, 0(a5)
+    j    71f
+70: EXPECT_TRAP \cause
+    CHECK_POISON_REG t1
+    CHECK_BUF
 71:
 .endm
 
@@ -215,23 +248,25 @@ _start:
 s_entry:
     YMODESWY                     /* capability mode: these all take a capability */
 
-    /* a0 = a valid root-derived capability naming the invalid page. */
-    csrrs a0, CSR_DDC, x0
-    li   t0, VA_OF(IDX_INVALID)
-    YADDRW a0, a0, t0
+    /* a0 = a valid root-derived capability naming buf on the invalid page. */
+    CAP_TO_ALIAS a0, IDX_INVALID
 
     /* a1 = the same address, untagged: the capability check fails first. */
     YUNSEALS a1, x0, a0
 
     /* a2 = the same page, misaligned for a capability access. */
-    li   t0, VA_OF(IDX_INVALID) + 4
-    YADDRW a2, a0, t0
+    YADDI a2, a0, 4
 
     CAP_TO_ALIAS a5, IDX_OK      /* everything permitted: the well-formed control */
     CAP_TO_ALIAS a6, IDX_NOREAD
     CAP_TO_ALIAS a7, IDX_NOWRITE
     CAP_TO_ALIAS s0, IDX_NOACCESS
     CAP_TO_ALIAS s1, IDX_NODIRTY
+
+    li   t0, 0xdeadbeef
+    YADDRW t2, s2, t0            /* distinct tagged store source for faulting stores/AMOs */
+    SY   s2, 0(a5)
+    SY   s2, YLEN_BYTES(a5)
 
     /*
      * Probe how the implementation handles an unset accessed bit: Svade
@@ -250,109 +285,169 @@ s_entry:
     /* ---- Ordering 1: a capability check outranks the walk ------------- */
 
     NEXT_TEST "an untagged capability outranks the page fault for ly"
+    POISON_REG t1
     LY   t1, 0(a1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
+    CHECK_POISON_REG t1
     NEXT_TEST "control: the same address tagged takes the page fault"
+    POISON_REG t1
     LY   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
     NEXT_TEST "an untagged capability outranks the page fault for sy"
-    SY   s2, 0(a1)
+    SY   t2, 0(a1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_BUF
     NEXT_TEST "control: the same address tagged takes the store page fault"
-    SY   s2, 0(a0)
+    SY   t2, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
 
     NEXT_TEST "an untagged capability outranks the page fault for lr.y"
+    POISON_REG t1
     LR_Y t1, a1
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
+    CHECK_POISON_REG t1
     NEXT_TEST "control: the same address tagged takes the page fault"
+    POISON_REG t1
     LR_Y t1, a0
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
     NEXT_TEST "an untagged capability outranks the page fault for amoswap.y"
-    AMOSWAP_Y t1, a1, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "control: the same address tagged takes the store page fault"
-    AMOSWAP_Y t1, a0, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a0, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "an untagged capability outranks the reservation check for sc.y"
-    SC_Y t1, a1, s2
+    POISON_REG t1
+    SC_Y t1, a1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "control: a well formed sc.y raises no capability fault"
-    SC_Y t1, a5, s2
+    POISON_REG t1
+    SC_Y t1, a5, t2
     EXPECT_NO_TRAP
+    EXPECT_NONZERO t1
+    CHECK_BUF
 
     /* ---- Ordering 2: a misaligned capability access outranks it too --- */
 
     NEXT_TEST "a misaligned ly outranks the page fault"
+    POISON_REG t1
     LY   t1, 0(a2)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    CHECK_POISON_REG t1
     NEXT_TEST "control: the aligned ly takes the page fault"
+    POISON_REG t1
     LY   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
     NEXT_TEST "a misaligned sy outranks the store page fault"
-    SY   s2, 0(a2)
+    SY   t2, 0(a2)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    CHECK_BUF
     NEXT_TEST "control: the aligned sy takes the store page fault"
-    SY   s2, 0(a0)
+    SY   t2, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
 
     NEXT_TEST "a misaligned lr.y outranks the page fault"
+    POISON_REG t1
     LR_Y t1, a2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    CHECK_POISON_REG t1
     NEXT_TEST "control: the aligned lr.y takes the page fault"
+    POISON_REG t1
     LR_Y t1, a0
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
     NEXT_TEST "a misaligned amoswap.y outranks the store page fault"
-    AMOSWAP_Y t1, a2, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a2, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "control: the aligned amoswap.y takes the store page fault"
-    AMOSWAP_Y t1, a0, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a0, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "a misaligned sc.y outranks the reservation check"
-    SC_Y t1, a2, s2
+    POISON_REG t1
+    SC_Y t1, a2, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "control: an aligned sc.y raises no misaligned fault"
-    SC_Y t1, a5, s2
+    POISON_REG t1
+    SC_Y t1, a5, t2
     EXPECT_NO_TRAP
+    EXPECT_NONZERO t1
+    CHECK_BUF
 
     /* ---- The walk's own faults, per reason and per instruction -------- */
 
     /* An invalid PTE: nothing may go through it. */
     NEXT_TEST "an invalid pte faults an ly"
+    POISON_REG t1
     LY   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
     NEXT_TEST "an invalid pte faults an sy"
-    SY   s2, 0(a0)
+    SY   t2, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
     NEXT_TEST "an invalid pte faults an lr.y"
+    POISON_REG t1
     LR_Y t1, a0
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
     NEXT_TEST "an invalid pte faults an amoswap.y"
-    AMOSWAP_Y t1, a0, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a0, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     /*
      * No read permission (an execute-only page). An AMO needs to read as
      * well as write, so it is refused here too, as a store/AMO fault.
      */
     NEXT_TEST "an execute-only page refuses an ly"
+    POISON_REG t1
     LY   t1, 0(a6)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
     NEXT_TEST "an execute-only page refuses an lr.y"
+    POISON_REG t1
     LR_Y t1, a6
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
     NEXT_TEST "an execute-only page refuses an sy"
-    SY   s2, 0(a6)
+    SY   t2, 0(a6)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
     NEXT_TEST "an execute-only page refuses an amoswap.y"
-    AMOSWAP_Y t1, a6, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a6, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     /*
      * No write permission (a read-only page). Loads go through, so the lr.y
@@ -362,17 +457,24 @@ s_entry:
     LY   t1, 0(a7)
     EXPECT_NO_TRAP
     NEXT_TEST "a read-only page refuses an sy"
-    SY   s2, 0(a7)
+    SY   t2, 0(a7)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
     NEXT_TEST "a read-only page refuses an amoswap.y"
-    AMOSWAP_Y t1, a7, s2
+    POISON_REG t1
+    AMOSWAP_Y t1, a7, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "a read-only page permits the lr.y that reserves the address"
     LR_Y t1, a7                  /* permitted, and reserves the address */
     EXPECT_NO_TRAP
     NEXT_TEST "and refuses the sc.y that reservation lets reach the walk"
-    SC_Y t1, a7, s2              /* ... so this reaches the walk and is refused */
+    POISON_REG t1
+    SC_Y t1, a7, t2              /* ... so this reaches the walk and is refused */
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     /*
      * An unset accessed bit, which affects reads and writes alike. The pte
@@ -381,20 +483,23 @@ s_entry:
      */
     NEXT_TEST "an unset accessed bit and an ly"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
+    POISON_REG t1
     LY   t1, 0(s0)
-    EXPECT_AD_FAULT CAUSE_LOAD_PAGE_FAULT
+    EXPECT_AD_LOAD_FAULT CAUSE_LOAD_PAGE_FAULT
     NEXT_TEST "an unset accessed bit and an sy"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
-    SY   s2, 0(s0)
-    EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
+    SY   t2, 0(s0)
+    EXPECT_AD_STORE_FAULT CAUSE_STORE_PAGE_FAULT
     NEXT_TEST "an unset accessed bit and an lr.y"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
+    POISON_REG t1
     LR_Y t1, s0
-    EXPECT_AD_FAULT CAUSE_LOAD_PAGE_FAULT
+    EXPECT_AD_LOAD_FAULT CAUSE_LOAD_PAGE_FAULT
     NEXT_TEST "an unset accessed bit and an amoswap.y"
     RESET_PTE IDX_NOACCESS, PTE_NOACCESS
-    AMOSWAP_Y t1, s0, s2
-    EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
+    POISON_REG t1
+    AMOSWAP_Y t1, s0, t2
+    EXPECT_AD_AMO_FAULT CAUSE_STORE_PAGE_FAULT
 
     /*
      * An unset dirty bit, which only writes care about: the load is
@@ -406,19 +511,21 @@ s_entry:
     EXPECT_NO_TRAP
     NEXT_TEST "an unset dirty bit and an sy"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
-    SY   s2, 0(s1)
-    EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
+    SY   t2, 0(s1)
+    EXPECT_AD_STORE_FAULT CAUSE_STORE_PAGE_FAULT
     NEXT_TEST "an unset dirty bit and an amoswap.y"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
-    AMOSWAP_Y t1, s1, s2
-    EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
+    POISON_REG t1
+    AMOSWAP_Y t1, s1, t2
+    EXPECT_AD_AMO_FAULT CAUSE_STORE_PAGE_FAULT
     NEXT_TEST "an unset dirty bit permits the lr.y that reserves the address"
     RESET_PTE IDX_NODIRTY, PTE_NODIRTY
     LR_Y t1, s1
     EXPECT_NO_TRAP
     NEXT_TEST "and the sc.y that reservation lets reach the walk"
-    SC_Y t1, s1, s2
-    EXPECT_AD_FAULT CAUSE_STORE_PAGE_FAULT
+    POISON_REG t1
+    SC_Y t1, s1, t2
+    EXPECT_AD_AMO_FAULT CAUSE_STORE_PAGE_FAULT
 
     /* ---- Ordering 3: standard page faults outrank 36 and 35 ----------- */
 
@@ -436,82 +543,114 @@ s_entry:
 
     /* The mismatching page raises 35 on its own. */
     NEXT_TEST "the mismatching page raises a load capability fault on its own"
+    POISON_REG t1
     LY   t1, 0(a3)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
     /* The U-page also raises 35 when sstatus.SUM permits S-mode access. */
     li   t0, SSTATUS_SUM
     csrs sstatus, t0
     NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault"
+    POISON_REG t1
     LY   t1, 0(a4)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
     li   t0, SSTATUS_SUM
     csrc sstatus, t0
     /* With SUM=0 or R=0, the page fault from the same walk outranks 35. */
     NEXT_TEST "but a user page fault on the same walk outranks it"
+    POISON_REG t1
     LY   t1, 0(a4)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
     NEXT_TEST "and missing read permission on the leaf PTE outranks it too"
+    POISON_REG t1
     LY   t1, 0(a6)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
     NEXT_TEST "the mismatching page raises it for lr.y too"
+    POISON_REG t1
     LR_Y t1, a3
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
     NEXT_TEST "and the user page fault still outranks it"
+    POISON_REG t1
     LR_Y t1, a4
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
     NEXT_TEST "and missing read permission on the leaf PTE outranks it for lr.y too"
+    POISON_REG t1
     LR_Y t1, a6
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
-    li   t0, 0xdeadbeef
-    YADDRW t2, s2, t0            /* distinct tagged capability t2 != s2 */
-    li   t1, 0x5555
     NEXT_TEST "the mismatching page raises it for amoswap.y too"
+    POISON_REG t1
     AMOSWAP_Y t1, a3, t2
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "and the store page fault on a user page still outranks it"
+    POISON_REG t1
     AMOSWAP_Y t1, a4, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "and missing read permission on the leaf PTE outranks it for amoswap.y"
+    POISON_REG t1
     AMOSWAP_Y t1, a6, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "and missing write permission on the leaf PTE outranks it for amoswap.y"
+    POISON_REG t1
     AMOSWAP_Y t1, a7, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     /* A page with yw=0 raises 36 on its own for tagged stores, and W=0 outranks it. */
     NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for sy"
-    SY   s2, 0(s0)
+    SY   t2, 0(s0)
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF
     NEXT_TEST "but missing write permission on the leaf PTE outranks it for sy"
-    SY   s2, 0(s1)
+    SY   t2, 0(s1)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
 
     NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for amoswap.y"
+    POISON_REG t1
     AMOSWAP_Y t1, s0, t2
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "but missing write permission on the leaf PTE outranks it for amoswap.y"
+    POISON_REG t1
     AMOSWAP_Y t1, s1, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    EXPECT_TAG t1, 0
-    li   t0, 0x5555
-    EXPECT_EQ t1, t0             /* cd was not modified by any faulting amoswap.y */
-    LY   t0, 0(a5)
-    EXPECT_CAP_EQ t0, s2         /* memory still holds s2, not t2 */
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "a page with yw=0 permits the lr.y that reserves the address"
     LR_Y t1, s0
     EXPECT_NO_TRAP
     NEXT_TEST "and raises a store capability page fault on the sc.y"
-    SC_Y t1, s0, s2
+    POISON_REG t1
+    SC_Y t1, s0, t2
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
     NEXT_TEST "a read-only page with yw=0 also permits the lr.y that reserves the address"
     LR_Y t1, s1
     EXPECT_NO_TRAP
     NEXT_TEST "and missing write permission on the leaf PTE outranks the store capability page fault on sc.y"
-    SC_Y t1, s1, s2
+    POISON_REG t1
+    SC_Y t1, s1, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     YMODESWI
     lla   m_continue, m_done

@@ -2,7 +2,8 @@
  *
  * Verify that Integer-Mode memory accesses (integer loads/stores, capability
  * loads/stores, integer AMOs, capability AMOs, and cache-block operations) are
- * authorized through DDC:
+ * authorized through DDC, and that faulting accesses leave cd/rd holding its
+ * prior poison capability and memory unmodified:
  *
  *  - A bounded DDC permits in-bounds accesses and faults with CAP_BOUNDS on
  *    accesses below DDC.base, straddling DDC.top, or at DDC.top, reporting the
@@ -23,6 +24,45 @@
 #define TEST_NAME "ddc-access"
 #include "testmacros.h"
 #include "exceptions.h"
+
+/*
+ * Seed the capability slots around buf with s7 and set store source t2 to a
+ * tagged capability at cursor 0xdeadbeef, then verify after a fault that the
+ * capabilities stored in memory were not modified.
+ */
+.macro INIT_BUF
+    csrrw t4, CSR_DDC, s0
+    SY    s7, -YLEN_BYTES(s1)
+    SY    s7, 0(s1)
+    SY    s7, (64 - YLEN_BYTES)(s1)
+    SY    s7, 64(s1)
+    csrrw x0, CSR_DDC, t4
+    li    t0, 0xdeadbeef
+    YADDRW t2, s0, t0
+.endm
+
+.macro CHECK_BUF
+    csrrw t4, CSR_DDC, s0
+    LY    t0, -YLEN_BYTES(s1)
+    csrrw x0, CSR_DDC, t4
+    EXPECT_CAP_EQ t0, s7
+    csrrw t4, CSR_DDC, s0
+    LY    t0, 0(s1)
+    csrrw x0, CSR_DDC, t4
+    EXPECT_CAP_EQ t0, s7
+    csrrw t4, CSR_DDC, s0
+    LY    t0, (64 - YLEN_BYTES)(s1)
+    csrrw x0, CSR_DDC, t4
+    EXPECT_CAP_EQ t0, s7
+    csrrw t4, CSR_DDC, s0
+    LY    t0, 64(s1)
+    SY    s7, -YLEN_BYTES(s1)
+    SY    s7, 0(s1)
+    SY    s7, (64 - YLEN_BYTES)(s1)
+    SY    s7, 64(s1)
+    csrrw x0, CSR_DDC, t4
+    EXPECT_CAP_EQ t0, s7
+.endm
 
 .option norvc
 .section .text
@@ -114,42 +154,56 @@ _start:
     lw    t1, 0(s1)
     EXPECT_ZERO t1
 
+    INIT_BUF
+
     /* Out-of-bounds integer loads via bounded DDC */
     NEXT_TEST "integer lb one byte below DDC.base faults with CAP_BOUNDS"
+    POISON_REG t1
     addi  t0, s1, -1
     lb    t1, -1(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_POISON_REG t1
 
     NEXT_TEST "integer lb at DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     lb    t1, 0(s2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
 
     NEXT_TEST "integer lh straddling DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     addi  t0, s2, -1
     lh    t1, -1(s2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_POISON_REG t1
 
     NEXT_TEST "integer lw straddling DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     addi  t0, s2, -2
     lw    t1, -2(s2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_POISON_REG t1
 
 #if __riscv_xlen == 64
     NEXT_TEST "integer ld straddling DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     addi  t0, s2, -4
     ld    t1, -4(s2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_POISON_REG t1
 #endif
 
     NEXT_TEST "integer lr.w at DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     lr.w  t1, (s2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
 
     /* Out-of-bounds integer stores and atomics via bounded DDC */
     NEXT_TEST "integer sb one byte below DDC.base faults with CAP_BOUNDS"
@@ -157,23 +211,27 @@ _start:
     sb    x0, -1(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_BUF
 
     NEXT_TEST "integer sb at DDC.top faults with CAP_BOUNDS"
     sb    x0, 0(s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_BUF
 
     NEXT_TEST "integer sh straddling DDC.top faults with CAP_BOUNDS"
     addi  t0, s2, -1
     sh    x0, -1(s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_BUF
 
     NEXT_TEST "integer sw straddling DDC.top faults with CAP_BOUNDS"
     addi  t0, s2, -2
     sw    x0, -2(s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_BUF
 
 #if __riscv_xlen == 64
     NEXT_TEST "integer sd straddling DDC.top faults with CAP_BOUNDS"
@@ -181,61 +239,83 @@ _start:
     sd    x0, -4(s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_BUF
 #endif
 
     NEXT_TEST "integer sc.w at DDC.top faults with CAP_BOUNDS"
-    sc.w  t1, x0, (s2)
+    POISON_REG t1
+    sc.w  t1, t2, (s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "integer amoswap.w at DDC.top faults with CAP_BOUNDS"
-    amoswap.w t1, x0, (s2)
+    POISON_REG t1
+    amoswap.w t1, t2, (s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     /* Out-of-bounds capability loads, stores, and atomics via bounded DDC */
     NEXT_TEST "ly below DDC.base faults with CAP_BOUNDS"
+    POISON_REG t1
     addi  t0, s1, -YLEN_BYTES
     LY    t1, 0(t0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_POISON_REG t1
 
     NEXT_TEST "ly at DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     LY    t1, 0(s2)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sy below DDC.base faults with CAP_BOUNDS"
     addi  t0, s1, -YLEN_BYTES
-    SY    s7, 0(t0)
+    SY    t2, 0(t0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL t0
+    CHECK_BUF
 
     NEXT_TEST "sy at DDC.top faults with CAP_BOUNDS"
-    SY    s7, 0(s2)
+    SY    t2, 0(s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_BUF
 
     NEXT_TEST "lr.y at DDC.top faults with CAP_BOUNDS"
+    POISON_REG t1
     LR_Y  t1, s2
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.y at DDC.top faults with CAP_BOUNDS"
-    SC_Y  t1, s2, s7
+    POISON_REG t1
+    SC_Y  t1, s2, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.y at DDC.top faults with CAP_BOUNDS"
-    AMOSWAP_Y t1, s2, s7
+    POISON_REG t1
+    AMOSWAP_Y t1, s2, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     /* Out-of-bounds CBOs via bounded DDC */
     NEXT_TEST "cbo.zero at DDC.top faults with CAP_BOUNDS"
     CBO_ZERO s2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s2
+    CHECK_BUF
 
     NEXT_TEST "cbo.clean at DDC.top faults when no byte of the block is in DDC bounds"
     CBO_CLEAN s2
@@ -252,59 +332,82 @@ _start:
     csrrw x0, CSR_DDC, a1
 
     NEXT_TEST "integer lw with an untagged DDC faults with CAP_TAG"
+    POISON_REG t1
     lw    t1, 0(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "integer sw with an untagged DDC faults with CAP_TAG"
     sw    x0, 0(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     NEXT_TEST "ly with an untagged DDC faults with CAP_TAG"
+    POISON_REG t1
     LY    t1, 0(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sy with an untagged DDC faults with CAP_TAG"
-    SY    s7, 0(s1)
+    SY    t2, 0(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     NEXT_TEST "lr.w with an untagged DDC faults with CAP_TAG"
+    POISON_REG t1
     lr.w  t1, (s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.w with an untagged DDC faults with CAP_TAG"
-    sc.w  t1, x0, (s1)
+    POISON_REG t1
+    sc.w  t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.w with an untagged DDC faults with CAP_TAG"
-    amoswap.w t1, x0, (s1)
+    POISON_REG t1
+    amoswap.w t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "lr.y with an untagged DDC faults with CAP_TAG"
+    POISON_REG t1
     LR_Y  t1, s1
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.y with an untagged DDC faults with CAP_TAG"
-    SC_Y  t1, s1, s7
+    POISON_REG t1
+    SC_Y  t1, s1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.y with an untagged DDC faults with CAP_TAG"
-    AMOSWAP_Y t1, s1, s7
+    POISON_REG t1
+    AMOSWAP_Y t1, s1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "cbo.zero with an untagged DDC faults with CAP_TAG"
     CBO_ZERO s1
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     /* =====================================================================
      * Sealed sentry DDC in Integer Mode
@@ -313,59 +416,82 @@ _start:
     csrrw x0, CSR_DDC, a2
 
     NEXT_TEST "integer lw with a sealed DDC faults with CAP_SEAL"
+    POISON_REG t1
     lw    t1, 0(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "integer sw with a sealed DDC faults with CAP_SEAL"
     sw    x0, 0(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     NEXT_TEST "ly with a sealed DDC faults with CAP_SEAL"
+    POISON_REG t1
     LY    t1, 0(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sy with a sealed DDC faults with CAP_SEAL"
-    SY    s7, 0(s1)
+    SY    t2, 0(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     NEXT_TEST "lr.w with a sealed DDC faults with CAP_SEAL"
+    POISON_REG t1
     lr.w  t1, (s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.w with a sealed DDC faults with CAP_SEAL"
-    sc.w  t1, x0, (s1)
+    POISON_REG t1
+    sc.w  t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.w with a sealed DDC faults with CAP_SEAL"
-    amoswap.w t1, x0, (s1)
+    POISON_REG t1
+    amoswap.w t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "lr.y with a sealed DDC faults with CAP_SEAL"
+    POISON_REG t1
     LR_Y  t1, s1
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.y with a sealed DDC faults with CAP_SEAL"
-    SC_Y  t1, s1, s7
+    POISON_REG t1
+    SC_Y  t1, s1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.y with a sealed DDC faults with CAP_SEAL"
-    AMOSWAP_Y t1, s1, s7
+    POISON_REG t1
+    AMOSWAP_Y t1, s1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "cbo.zero with a sealed DDC faults with CAP_SEAL"
     CBO_ZERO s1
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     /* =====================================================================
      * Read-only DDC (PERM_W cleared) in Integer Mode
@@ -380,42 +506,60 @@ _start:
     lr.w  t3, (s1)
     LR_Y  t4, s1
     EXPECT_NO_TRAP
+    li    t0, 0xdeadbeef
+    YADDRW t2, s0, t0
 
     NEXT_TEST "integer sw with a read-only DDC faults with CAP_PERM"
     sw    x0, 0(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     NEXT_TEST "sy with a read-only DDC faults with CAP_PERM"
-    SY    s7, 0(s1)
+    SY    t2, 0(s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     NEXT_TEST "sc.w with a read-only DDC faults with CAP_PERM"
     lr.w  t1, (s1)
-    sc.w  t2, x0, (s1)
+    POISON_REG t1
+    sc.w  t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.w with a read-only DDC faults with CAP_PERM"
-    amoswap.w t1, x0, (s1)
+    POISON_REG t1
+    amoswap.w t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "sc.y with a read-only DDC faults with CAP_PERM"
+    LR_Y  t1, s1
+    POISON_REG t1
     SC_Y  t1, s1, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.y with a read-only DDC faults with CAP_PERM"
+    POISON_REG t1
     AMOSWAP_Y t1, s1, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "cbo.zero with a read-only DDC faults with CAP_PERM"
     CBO_ZERO s1
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_BUF
 
     /* =====================================================================
      * Write-only DDC (PERM_R cleared, PERM_W retained) in Integer Mode
@@ -439,35 +583,51 @@ _start:
     EXPECT_NO_TRAP
     EXPECT_ZERO t2
 
+    INIT_BUF
+
     NEXT_TEST "integer lw with a write-only DDC faults with load CAP_PERM"
+    POISON_REG t1
     lw    t1, 0(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "ly with a write-only DDC faults with load CAP_PERM"
+    POISON_REG t1
     LY    t1, 0(s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "lr.w with a write-only DDC faults with load CAP_PERM"
+    POISON_REG t1
     lr.w  t1, (s1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "lr.y with a write-only DDC faults with load CAP_PERM"
+    POISON_REG t1
     LR_Y  t1, s1
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "amoswap.w with a write-only DDC faults with store/AMO CAP_PERM"
-    amoswap.w t1, x0, (s1)
+    POISON_REG t1
+    amoswap.w t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "amoswap.y with a write-only DDC faults with store/AMO CAP_PERM"
+    POISON_REG t1
     AMOSWAP_Y t1, s1, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
 
     NEXT_TEST "cbo.clean with a write-only DDC faults with store/AMO CAP_PERM"
     CBO_CLEAN s1
@@ -579,5 +739,6 @@ TRAP_HANDLER
 
 .section .bss
 .balign 64
+    .space 64
 buf:
     .space 128
