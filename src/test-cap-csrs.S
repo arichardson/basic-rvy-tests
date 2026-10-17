@@ -25,6 +25,8 @@
  *    capability CSRs (sscratch, sepc, stvec, stidc, utidc, ddc) are accessible
  *    while M-mode capability CSRs (mscratch, mepc, mtvec, mtidc) fault with an
  *    illegal-instruction exception.
+ *  - Setting the CHERI exception bits in medeleg (or medelegh on RV32 RVY)
+ *    delegates S-mode CHERI capability faults to stvec.
  */
 #define TEST_NAME "cap-csrs"
 #include "testmacros.h"
@@ -360,6 +362,78 @@ s_mode_done:
     YEQ   t0, t2, a0
     EXPECT_NONZERO t0
 
+    /*
+     * Delegating CHERI exceptions via medeleg (or medelegh on RV32 RVY, where
+     * CHERI causes are >= 32) delivers S-mode capability faults to stvec
+     * rather than mtvec.
+     */
+    NEXT_TEST "medeleg/medelegh delegates CHERI exceptions to S-mode stvec"
+#ifdef CHERI_093
+    li    t0, (1 << CAUSE_CHERI_ANY)
+    csrs  CSR_MEDELEG, t0
+    csrr  t1, CSR_MEDELEG
+#elif __riscv_xlen == 64
+    li    t0, (1 << CAUSE_CHERI_LOAD)
+    csrs  CSR_MEDELEG, t0
+    csrr  t1, CSR_MEDELEG
+#else
+    li    t0, (1 << (CAUSE_CHERI_LOAD - 32))
+    csrs  CSR_MEDELEGH, t0
+    csrr  t1, CSR_MEDELEGH
+#endif
+    and   t1, t1, t0
+    EXPECT_EQ t1, t0             /* medeleg/medelegh CHERI bits must be writable */
+
+    auipc t1, 0
+    lla   t0, s_trap_handler
+    YADDRW t1, t1, t0
+    csrw  CSR_STVEC, t1
+
+    li    t0, 0x1800
+    csrc  CSR_MSTATUS, t0
+    li    t0, 0x0800
+    csrs  CSR_MSTATUS, t0
+    auipc t1, 0
+    lla   t0, s_deleg_entry
+    YADDRW t1, t1, t0
+    csrw  CSR_MEPC, t1
+    lla   m_continue, s_deleg_done
+    li    a3, 0
+    li    a4, 0
+    li    a5, 0
+    YMV   a6, x0
+    YMV   a7, x0
+    mret
+
+s_deleg_entry:
+    LY    t1, 0(a1)              /* sealed capability load fault delegated to S-mode */
+    auipc a7, 0                  /* capture post-sret S-mode PCC */
+    ecall
+
+s_deleg_done:
+    EXPECT_NO_TRAP               /* trap was handled by stvec, not mtvec */
+#ifdef CHERI_093
+    li    t0, CAUSE_CHERI_ANY
+#else
+    li    t0, CAUSE_CHERI_LOAD
+#endif
+    EXPECT_EQ a3, t0
+    li    t0, 1
+    EXPECT_EQ a4, t0
+#ifndef CHERI_093
+    EXPECT_EQ a5, s1             /* stval holds the faulting address (buf) */
+#endif
+    EXPECT_TAG a6, 1             /* sepc held a tagged capability */
+    lla   t0, s_deleg_entry
+    EXPECT_EQ a6, t0
+    EXPECT_TAG a7, 1             /* sret resumed with a tagged PCC */
+    EXPECT_TAG a0, 1
+#if defined(CHERI_093) || __riscv_xlen == 64
+    csrw  CSR_MEDELEG, x0
+#else
+    csrw  CSR_MEDELEGH, x0
+#endif
+
     YMODESWI
     csrrw x0, CSR_DDC, s0
     TEST_PASS
@@ -410,6 +484,17 @@ tidc_no_asr_stub:
     EXPECT_TRAP TRAP_ASR_DENIED
 
     ret
+
+.balign 8
+s_trap_handler:
+    csrr  a3, CSR_SCAUSE
+    addi  a4, a4, 1
+    csrr  a5, CSR_STVAL
+    csrr  a6, CSR_SEPC
+    addi  t1, a6, 4
+    YADDRW t0, a6, t1
+    csrw  CSR_SEPC, t0
+    sret
 
 TRAP_HANDLER
 
