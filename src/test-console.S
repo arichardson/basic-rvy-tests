@@ -282,6 +282,46 @@ _start:
     EXPECT_NO_TRAP
     EXPECT_EMITTED 'c'
 
+    /*
+     * console_fail records the failing case in tap_failed and records the
+     * first failing id in tap_fail_first; EXPECT_FAIL preserves ra, a0, and
+     * t0-t4.
+     */
+    NEXT_TEST "console_fail records non-fatal failures and preserves caller state"
+    mv    s1, test_id
+    li    a0, 5
+    call  console_fail
+    YMODESWY
+    li    ra, 0x1111
+    li    a0, 0x2222
+    li    t0, 0x3333
+    li    t1, 0x4444
+    li    test_id, 9
+    EXPECT_FAIL
+    YMODESWI
+    mv    test_id, s1
+    lla   a1, tap_fail_first
+    LOAD_X a2, 0(a1)
+    STORE_X x0, 0(a1)
+    lla   a1, tap_failed
+    lbu   a3, 5(a1)
+    lbu   a4, 9(a1)
+    sb    x0, 5(a1)
+    sb    x0, 9(a1)
+    li    a5, 5
+    EXPECT_EQ a2, a5
+    li    a5, 1
+    EXPECT_EQ a3, a5
+    EXPECT_EQ a4, a5
+    li    a5, 0x1111
+    EXPECT_EQ ra, a5
+    li    a5, 0x2222
+    EXPECT_EQ a0, a5
+    li    a5, 0x3333
+    EXPECT_EQ t0, a5
+    li    a5, 0x4444
+    EXPECT_EQ t1, a5
+
     RESTORE_CONSOLE
 
     /* From integer pointer mode: the call comes back in integer mode. */
