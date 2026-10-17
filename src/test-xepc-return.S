@@ -64,7 +64,7 @@ good_target:
     /* Landed here running, so prove PCC itself came out unsealed. */
     auipc a0, 0
     YTYPER t0, a0
-    bnez t0, fail
+    EXPECT_ZERO t0
     YMODESWI
     NEXT_TEST "a target without execute permission faults at the fetch not at mret"
 

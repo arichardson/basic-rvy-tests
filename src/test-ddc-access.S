@@ -52,21 +52,21 @@ _start:
     sb    t0, 0(s1)
     lbu   t1, 0(s1)
     EXPECT_NO_TRAP
-    bne   t0, t1, fail
+    EXPECT_EQ t0, t1
 
     NEXT_TEST "in-bounds integer halfword store and load through bounded DDC succeed"
     li    t0, 0x1234
     sh    t0, 62(s1)
     lhu   t1, 62(s1)
     EXPECT_NO_TRAP
-    bne   t0, t1, fail
+    EXPECT_EQ t0, t1
 
     NEXT_TEST "in-bounds integer word store and load at the upper boundary succeed"
     li    t0, 0x13572468
     sw    t0, 60(s1)
     lw    t1, 60(s1)
     EXPECT_NO_TRAP
-    bne   t0, t1, fail
+    EXPECT_EQ t0, t1
 
 #if __riscv_xlen == 64
     NEXT_TEST "in-bounds integer doubleword store and load at the upper boundary succeed"
@@ -74,7 +74,7 @@ _start:
     sd    t0, 56(s1)
     ld    t1, 56(s1)
     EXPECT_NO_TRAP
-    bne   t0, t1, fail
+    EXPECT_EQ t0, t1
 #endif
 
     /* In-bounds capability store and load */
@@ -82,29 +82,27 @@ _start:
     SY    s7, (64 - YLEN_BYTES)(s1)
     LY    t1, (64 - YLEN_BYTES)(s1)
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    beqz  t2, fail
+    EXPECT_TAG t1, 1
 
     /* In-bounds integer atomics */
     NEXT_TEST "in-bounds lr.w, sc.w, and amoswap.w through bounded DDC succeed"
     li    t0, 0x12345678
     lr.w  t1, (s1)
     sc.w  t2, t0, (s1)
-    bnez  t2, fail
+    EXPECT_ZERO t2
     li    t3, 0x23456789
     amoswap.w t4, t3, (s1)
     EXPECT_NO_TRAP
-    bne   t4, t0, fail
+    EXPECT_EQ t4, t0
 
     /* In-bounds capability atomics */
     NEXT_TEST "in-bounds lr.y, sc.y, and amoswap.y through bounded DDC succeed"
     LR_Y  t1, s1
     SC_Y  t2, s1, s7
-    bnez  t2, fail
+    EXPECT_ZERO t2
     AMOSWAP_Y t3, s1, x0
     EXPECT_NO_TRAP
-    YTAGR t4, t3
-    beqz  t4, fail
+    EXPECT_TAG t3, 1
 
     /* In-bounds cache-block operations over the 64-byte block */
     NEXT_TEST "in-bounds cbo.clean, cbo.flush, cbo.inval, and cbo.zero through bounded DDC succeed"
@@ -114,7 +112,7 @@ _start:
     CBO_ZERO  s1
     EXPECT_NO_TRAP
     lw    t1, 0(s1)
-    bnez  t1, fail
+    EXPECT_ZERO t1
 
     /* Out-of-bounds integer loads via bounded DDC */
     NEXT_TEST "integer lb one byte below DDC.base faults with CAP_BOUNDS"
@@ -439,7 +437,7 @@ _start:
     li    t0, 0x55aa55aa
     sc.w  t2, t0, (s1)
     EXPECT_NO_TRAP
-    bnez  t2, fail
+    EXPECT_ZERO t2
 
     NEXT_TEST "integer lw with a write-only DDC faults with load CAP_PERM"
     lw    t1, 0(s1)
@@ -493,46 +491,40 @@ _start:
     EXPECT_NO_TRAP
     csrrw x0, CSR_DDC, a0
     LY    t1, 0(s1)
-    YTAGR t2, t1
-    bnez  t2, fail
-    bne   t1, s1, fail
+    EXPECT_TAG t1, 0
+    EXPECT_EQ t1, s1
 
     NEXT_TEST "sc.y through a DDC without PERM_C strips the stored tag without trapping"
     SY    s7, 0(s1)              /* start with a tagged capability in memory */
     csrrw x0, CSR_DDC, a5
     LR_Y  t1, s1
-    YTAGR t2, t1
-    bnez  t2, fail               /* LR_Y also stripped the loaded tag */
+    EXPECT_TAG t1, 0             /* LR_Y also stripped the loaded tag */
     SC_Y  t3, s1, s7
     EXPECT_NO_TRAP
-    bnez  t3, fail
+    EXPECT_ZERO t3
     csrrw x0, CSR_DDC, a0
     LY    t1, 0(s1)
-    YTAGR t2, t1
-    bnez  t2, fail
+    EXPECT_TAG t1, 0
 
     NEXT_TEST "amoswap.y through a DDC without PERM_C strips both loaded and stored tags"
     SY    s7, 0(s1)              /* place a tagged capability in memory */
     csrrw x0, CSR_DDC, a5
     AMOSWAP_Y t1, s1, s7
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    bnez  t2, fail               /* loaded capability has its tag stripped */
-    bne   t1, s1, fail
+    EXPECT_TAG t1, 0             /* loaded capability has its tag stripped */
+    EXPECT_EQ t1, s1
     csrrw x0, CSR_DDC, a0
     LY    t3, 0(s1)
-    YTAGR t4, t3
-    bnez  t4, fail               /* stored capability also had its tag stripped */
-    bne   t3, s1, fail
+    EXPECT_TAG t3, 0             /* stored capability also had its tag stripped */
+    EXPECT_EQ t3, s1
 
     NEXT_TEST "ly through a DDC without PERM_C strips the loaded tag without trapping"
     SY    s7, 0(s1)
     csrrw x0, CSR_DDC, a5
     LY    t1, 0(s1)
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    bnez  t2, fail
-    bne   t1, s1, fail
+    EXPECT_TAG t1, 0
+    EXPECT_EQ t1, s1
 
     /* =====================================================================
      * DDC without PERM_LM (Read + Capability Read-Only) in Integer Mode
@@ -541,9 +533,9 @@ _start:
     DROP_PERMS a6, a0, t0
     YPERMR t1, a6
     andi  t2, t1, PERM_C
-    beqz  t2, fail               /* PERM_C must still be granted */
+    EXPECT_NONZERO t2            /* PERM_C must still be granted */
     andi  t2, t1, (PERM_W | PERM_LM)
-    bnez  t2, fail               /* PERM_W and PERM_LM must be cleared */
+    EXPECT_ZERO t2               /* PERM_W and PERM_LM must be cleared */
 
     NEXT_TEST "ly and lr.y through a DDC without PERM_LM strip W and LM from an unsealed capability"
     csrrw x0, CSR_DDC, a0
@@ -552,16 +544,14 @@ _start:
     LY    t1, 0(s1)
     LR_Y  t2, s1
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz  t3, fail               /* tag is preserved because PERM_C is set */
+    EXPECT_TAG t1, 1             /* tag is preserved because PERM_C is set */
     YPERMR t3, t1
     andi  t4, t3, (PERM_W | PERM_LM)
-    bnez  t4, fail               /* W and LM were stripped on load */
-    YTAGR t3, t2
-    beqz  t3, fail
+    EXPECT_ZERO t4               /* W and LM were stripped on load */
+    EXPECT_TAG t2, 1
     YPERMR t3, t2
     andi  t4, t3, (PERM_W | PERM_LM)
-    bnez  t4, fail
+    EXPECT_ZERO t4
 
     NEXT_TEST "ly through a DDC without PERM_LM preserves W and LM on a sealed sentry"
     csrrw x0, CSR_DDC, a0
@@ -570,12 +560,11 @@ _start:
     csrrw x0, CSR_DDC, a6
     LY    t1, 0(s1)
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    beqz  t2, fail
+    EXPECT_TAG t1, 1
     YPERMR t2, t1
     andi  t3, t2, (PERM_W | PERM_LM)
     li    t4, (PERM_W | PERM_LM)
-    bne   t3, t4, fail           /* sealed sentry permissions are not stripped */
+    EXPECT_EQ t3, t4             /* sealed sentry permissions are not stripped */
 
     csrrw x0, CSR_DDC, s0
     TEST_PASS

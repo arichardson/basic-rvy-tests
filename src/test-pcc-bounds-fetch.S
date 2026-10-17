@@ -59,7 +59,7 @@
     EXPECT_TRAP TRAP_CAP_FETCH(CAP_BOUNDS)
     EXPECT_EPC expected_epc      /* against the unfetchable instruction */
     li   t3, \marker
-    bne  t3, ran_marker, fail
+    EXPECT_EQ t3, ran_marker
 .endm
 
 /*
@@ -73,7 +73,7 @@
     jalr ra, a0, 0
     EXPECT_NO_TRAP
     li   t3, 1
-    bne  t3, ran_marker, fail
+    EXPECT_EQ t3, ran_marker
 .endm
 
 .option norvc

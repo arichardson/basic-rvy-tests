@@ -94,12 +94,12 @@ _start:
     li   t1, EBT_MALFORMED_E_GT_MAX
     YHIW a2, x0, t1
     YBASER t2, a2
-    bnez t2, fail
+    EXPECT_ZERO t2
     YLENR t2, a2
-    bnez t2, fail
+    EXPECT_ZERO t2
 #ifndef CHERI_093
     YTOPR t2, a2
-    bnez t2, fail
+    EXPECT_ZERO t2
 #endif
     EXPECT_NO_TRAP
 
@@ -193,15 +193,15 @@ _start:
     SX   t1, 0(a0)               /* clear tag in memory */
     LY   a2, 0(a0)               /* a2 = untagged copy of a1 */
     YSS  t3, a0, a2              /* cs1 tagged, cs2 untagged */
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSS  t3, a2, a1              /* cs1 untagged, cs2 tagged */
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSS  t3, a1, a0              /* cs2 has wider bounds than cs1 */
-    bnez t3, fail
+    EXPECT_ZERO t3
     li   t2, DROP_MASK(PERM_W)
     DROP_PERMS a2, a0, t2        /* a2 lacks PERM_W, which a1 still has */
     YSS  t3, a2, a1
-    bnez t3, fail
+    EXPECT_ZERO t3
     EXPECT_NO_TRAP
 
     /*
@@ -228,7 +228,7 @@ _start:
     YMODEW a4, a2, t1
     EXPECT_TAG a4, 1
     YMODER t3, a4
-    bnez t3, fail                /* mode stays CHERI_MODE_CAP (0) */
+    EXPECT_ZERO t3               /* mode stays CHERI_MODE_CAP (0) */
     EXPECT_NO_TRAP
 
     /*
@@ -247,19 +247,19 @@ _start:
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSS  t3, x0, a3              /* cs1 valid untagged, cs2 malformed untagged */
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
 #ifdef CHERI_093
     YPERMR t4, a1
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     li   t2, 0xfc00
     and  t3, t3, t2
-    bnez t3, fail
+    EXPECT_ZERO t3
 #else
     YPERMR t4, x0
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 #endif
     EXPECT_NO_TRAP
 
@@ -286,16 +286,16 @@ _start:
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
 #ifdef CHERI_093
     srli t3, t3, 6
     andi t3, t3, 0xf
     li   t4, 0x5
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 #else
     YPERMR t4, x0
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 #endif
     li   t2, (0xa << 60)
     or   t2, t1, t2
@@ -305,20 +305,20 @@ _start:
 #ifdef CHERI_093
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
     srli t3, t3, 6
     andi t3, t3, 0xf
-    bnez t3, fail
+    EXPECT_ZERO t3
 #else
     EXPECT_TAG a4, 1
     YSS  t3, a3, a3
-    beqz t3, fail
+    EXPECT_NONZERO t3
     YPERMR t3, a3
     srli t3, t3, 6
     andi t3, t3, 0xf
     li   t4, 0xa
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 #endif
     EXPECT_NO_TRAP
 #else /* __riscv_xlen == 32 */
@@ -341,13 +341,13 @@ _start:
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
     YPERMR t4, x0
 #ifdef CHERI_093
     ori  t4, t4, 0x0080          /* 2-bit SDP=0b10 preserved, all AP bits 0 */
 #endif
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     EXPECT_NO_TRAP
 #endif
 

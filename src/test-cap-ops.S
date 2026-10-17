@@ -34,7 +34,7 @@
 .macro EXPECT_LEN reg, len
     YLENR t3, \reg
     li   t4, \len
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 .endm
 
 /* Bound a copy of the authorizing capability and check the decoded length. */
@@ -100,7 +100,7 @@ _start:
     EXPECT_LEN a2, 64
     YBASER t3, a2
     lla   t4, buf
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     EXPECT_NO_TRAP
 
     NEXT_TEST "ybndsrw rounds inexact bounds outward and keeps the tag"
@@ -111,28 +111,30 @@ _start:
     YBNDSRW a2, a2, t2
     EXPECT_TAG a2, 1
     YBASER t3, a2
-    bgtu t3, t1, fail            /* rounded base <= requested base */
+    sltu t3, t1, t3              /* 1 if rounded base > requested base */
+    EXPECT_ZERO t3
     YLENR t4, a2
-    bltu t4, t2, fail            /* rounded length >= requested length */
+    sltu t4, t4, t2              /* 1 if rounded length < requested length */
+    EXPECT_ZERO t4
     YAMASK t3, t2
-    beqz t3, fail
+    EXPECT_NONZERO t3
     EXPECT_NO_TRAP
 
     /* YBASER, YLENR, and (on RVY) YTOPR report bounds and clamp 2^XLEN to ~0. */
     NEXT_TEST "ybaser, ylenr, and ytopr report bounded and root bounds"
     YBASER t1, s0
-    bnez t1, fail
+    EXPECT_ZERO t1
     YLENR t1, s0
     li   t2, -1
-    bne  t2, t1, fail
+    EXPECT_EQ t2, t1
 #ifndef CHERI_093
     YTOPR t1, s0
-    bne  t2, t1, fail
+    EXPECT_EQ t2, t1
     YTOPR t1, x0
-    bne  t2, t1, fail
+    EXPECT_EQ t2, t1
     YTOPR t1, a0
     lla   t2, buf + 4096
-    bne  t2, t1, fail
+    EXPECT_EQ t2, t1
 #endif
     EXPECT_NO_TRAP
 
@@ -143,15 +145,15 @@ _start:
     EXPECT_TAG a2, 1
     lla   t2, buf
     addi t2, t2, 24
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     li   t1, -8
     YADD a2, a2, t1
     EXPECT_TAG a2, 1
     addi t2, t2, -8
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YADD a3, x0, t2              /* cs1 = x0 produces an untagged capability at rs2 */
     EXPECT_TAG a3, 0
-    bne  a3, t2, fail
+    EXPECT_EQ a3, t2
     EXPECT_NO_TRAP
 
 #ifndef CHERI_093
@@ -161,15 +163,15 @@ _start:
     YSH1ADD a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 10
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YSH2ADD a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 20
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YSH3ADD a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 40
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YSH1ADD x0, t1, a0           /* cd = x0 discards the result */
     EXPECT_NO_TRAP
 
@@ -179,25 +181,25 @@ _start:
     YSH4ADD a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 80
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     /* Set bits [63:32] all-ones and low 32 bits = 6 so .uw strips the upper half. */
     li   t1, -0x100000000 + 6
     YSH1ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 12
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YSH2ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 24
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YSH3ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 48
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     YSH4ADD_UW a2, t1, a0
     EXPECT_TAG a2, 1
     lla   t2, buf + 96
-    bne  a2, t2, fail
+    EXPECT_EQ a2, t2
     EXPECT_NO_TRAP
 #endif
 #endif /* !CHERI_093 */
@@ -206,33 +208,33 @@ _start:
     NEXT_TEST "yeq compares tag, cursor, bounds, permissions, and seal state"
     YMV  a2, a0
     YEQ  t1, a0, a2
-    beqz t1, fail
+    EXPECT_NONZERO t1
     YEQ  t1, x0, x0
-    beqz t1, fail
+    EXPECT_NONZERO t1
     YADDI a2, a0, 4
     YEQ  t1, a0, a2              /* different cursor */
-    bnez t1, fail
+    EXPECT_ZERO t1
     li   t2, 2048
     YBNDSW a2, a0, t2
     YEQ  t1, a0, a2              /* different bounds */
-    bnez t1, fail
+    EXPECT_ZERO t1
     li   t2, DROP_MASK(PERM_W)
     DROP_PERMS a2, a0, t2
     YEQ  t1, a0, a2              /* different permissions */
-    bnez t1, fail
+    EXPECT_ZERO t1
     YSEALE a2, a0
     YEQ  t1, a0, a2              /* different otype */
-    bnez t1, fail
+    EXPECT_ZERO t1
     lla   t2, buf
     YADDRW a2, x0, t2            /* untagged with same address */
     YEQ  t1, a0, a2              /* different tag */
-    bnez t1, fail
+    EXPECT_ZERO t1
     EXPECT_NO_TRAP
 
     /* YHIR (SRLIY by XLEN on v0.9.9, gchi on 0.9.3) reads the capability metadata half. */
     NEXT_TEST "yhir reads the capability metadata"
     YHIR t1, a0
-    beqz t1, fail
+    EXPECT_NONZERO t1
     EXPECT_NO_TRAP
 
     /* a1 is a subset of a0, which the tag reconstruction below builds on. */
@@ -252,18 +254,18 @@ _start:
     YSEALE a2, a1                /* a2 = a1 sealed as a sentry */
     EXPECT_TAG a2, 1
     YTYPER t3, a2
-    beqz t3, fail                /* it really is sealed */
+    EXPECT_NONZERO t3            /* it really is sealed */
     YUNSEALS a3, a0, a2
     EXPECT_TAG a3, 1
     YTYPER t3, a3
-    bnez t3, fail                /* comes back unsealed */
+    EXPECT_ZERO t3               /* comes back unsealed */
     EXPECT_NO_TRAP
 
     NEXT_TEST "yunseals with cs1=x0 copies untags and unseals"
     YUNSEALS a3, x0, a2
     EXPECT_TAG a3, 0
     YTYPER t3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     EXPECT_NO_TRAP
 #endif /* !CHERI_093 */
 
@@ -281,14 +283,14 @@ _start:
     EXPECT_TAG a4, 1
     EXPECT_LEN a4, 8
     YSS  t3, a0, a4              /* a4 is a tagged subset of a0 */
-    beqz t3, fail
+    EXPECT_NONZERO t3
     YSEALE a2, a4
     YSS  t3, a0, a2              /* YSS ignores otype when bounds and perms are a subset */
-    beqz t3, fail
+    EXPECT_NONZERO t3
     YSS  t3, a3, a3              /* untagged capability is a subset of itself */
-    beqz t3, fail
+    EXPECT_NONZERO t3
     YSS  t3, x0, x0
-    beqz t3, fail
+    EXPECT_NONZERO t3
     EXPECT_NO_TRAP
 
     /*
@@ -298,13 +300,13 @@ _start:
      */
     NEXT_TEST "ytyper returns 0 for unsealed capabilities and 1 for sentries"
     YTYPER t3, x0
-    bnez t3, fail
+    EXPECT_ZERO t3
     YTYPER t3, a0
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSEALE a2, a1
     YTYPER t3, a2
     li   t4, 1
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     SY   a2, 0(a0)
     LX   t1, XBYTES(a0)
     li   t2, PESBT_RESERVED0_BIT
@@ -314,7 +316,7 @@ _start:
     EXPECT_TAG a3, 0
     YTYPER t3, a3
     li   t4, 1
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     EXPECT_NO_TRAP
 
     /*
@@ -328,12 +330,12 @@ _start:
     YMODEW a2, a2, t1
     EXPECT_TAG a2, 1
     YMODER t3, a2
-    bne  t3, t1, fail
+    EXPECT_EQ t3, t1
     li   t2, DROP_MASK(PERM_X)
     DROP_PERMS a2, a2, t2
     EXPECT_TAG a2, 1
     YMODER t3, a2
-    bnez t3, fail                /* forced back to CHERI_MODE_CAP (0) */
+    EXPECT_ZERO t3               /* forced back to CHERI_MODE_CAP (0) */
     EXPECT_NO_TRAP
 
     YMODESWI

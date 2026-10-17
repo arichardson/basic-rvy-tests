@@ -59,11 +59,10 @@
     EXPECT_TRAP CAUSE_CHERI_INST
     EXPECT_EPC expected_epc
     EXPECT_EPC_TAG \tag
-    YTAGR t2, ra
-    beqz t2, fail
+    EXPECT_TAG ra, 1
     YTYPER t2, ra
-    beqz t2, fail
-    bne  expected_ra, ra, fail
+    EXPECT_NONZERO t2
+    EXPECT_EQ expected_ra, ra
 .endm
 
 .option norvc
