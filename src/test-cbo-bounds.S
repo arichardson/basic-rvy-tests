@@ -13,12 +13,22 @@
  *  - All four CBOs require W (store) permission on the authorizing capability
  *    (and R as well for CLEAN/FLUSH/INVAL), reporting a store capability
  *    permission fault when W is missing even if the whole block is in bounds.
+ *  - CBO.ZERO clears the capability tag and data of every capability granule
+ *    across the entire 64-byte cache block.
+ *  - In S-mode, CBO.ZERO, CBO.CLEAN/FLUSH, and CBO.INVAL are gated by
+ *    menvcfg.CBZE, menvcfg.CBCFE, and menvcfg.CBIE respectively.
  */
 #define TEST_NAME "cbo-bounds"
 #include "testmacros.h"
 #include "exceptions.h"
 
 #define CBOM_LEN 64
+#define MENVCFG_CBO_ALL 0xf0         /* CBIE (3 << 4) | CBCFE (1 << 6) | CBZE (1 << 7) */
+#if __riscv_xlen == 64
+#define CACHELINE_CAP_OFFSETS 0, 16, 32, 48
+#else
+#define CACHELINE_CAP_OFFSETS 0, 8, 16, 24, 32, 40, 48, 56
+#endif
 
 .option norvc
 .section .text
@@ -56,7 +66,7 @@ _start:
     EXPECT_TVAL t0
     lbu  t2, 0(a0)
     li   t3, 0x5a
-    bne  t3, t2, fail
+    EXPECT_EQ t3, t2
 
     /*
      * INVAL has the same rule under RVY, but 0.9.3 predates it and instead
@@ -95,18 +105,28 @@ _start:
     CBO_FLUSH a0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
 
-    /* A capability over the whole block passes every CBO (sanity/decode check). */
+    /*
+     * A capability over the whole 64-byte block passes every CBO, and CBO.ZERO
+     * clears the capability tag and data of every capability granule across
+     * the block.
+     */
     csrrs a0, CSR_DDC, x0
     lla   t0, buf
     YADDRW a0, a0, t0
     li   t1, CBOM_LEN
     YBNDSW a0, a0, t1
 
-    NEXT_TEST "cbo.zero passes when the whole block is in bounds"
+    NEXT_TEST "cbo.zero clears capability tags and data across the entire 64-byte block"
+    .irp off, CACHELINE_CAP_OFFSETS
+    SY   a0, \off(a0)
+    .endr
     CBO_ZERO a0
     EXPECT_NO_TRAP
-    lbu  t2, 0(a0)
-    bnez t2, fail
+    .irp off, CACHELINE_CAP_OFFSETS
+    LY   t1, \off(a0)
+    EXPECT_TAG t1, 0
+    EXPECT_CAP_EQ t1, x0
+    .endr
 
     NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0
@@ -138,6 +158,89 @@ _start:
     CBO_INVAL a1
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL t0
+
+    /*
+     * S-mode CBO gating via menvcfg.{CBZE,CBCFE,CBIE}: when clear (0), S-mode
+     * CBOs raise illegal instruction; once set in menvcfg, S-mode CBOs
+     * execute normally.
+     */
+    li   t1, -1
+    csrw CSR_PMPADDR0, t1
+    li   t1, 0x1f
+    csrw CSR_PMPCFG0, t1
+    li   t1, MENVCFG_CRE
+    csrs CSR_MENVCFG, t1
+    li   t1, MENVCFG_CBO_ALL
+    csrc CSR_MENVCFG, t1
+
+    li   t1, 0x1800
+    csrc CSR_MSTATUS, t1
+    li   t1, 0x0800
+    csrs CSR_MSTATUS, t1
+    auipc t2, 0
+    lla   t1, s_cbo_disabled
+    YADDRW t2, t2, t1
+    csrw CSR_MEPC, t2
+    lla   m_continue, s_cbo_disabled_done
+    mret
+
+s_cbo_disabled:
+    NEXT_TEST "S-mode cbo.zero faults with illegal instruction when menvcfg.CBZE is clear"
+    CBO_ZERO a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "S-mode cbo.clean faults with illegal instruction when menvcfg.CBCFE is clear"
+    CBO_CLEAN a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "S-mode cbo.flush faults with illegal instruction when menvcfg.CBCFE is clear"
+    CBO_FLUSH a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "S-mode cbo.inval faults with illegal instruction when menvcfg.CBIE is clear"
+    CBO_INVAL a0
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    ecall
+
+s_cbo_disabled_done:
+    /* Enable CBZE, CBCFE, and CBIE in menvcfg and re-enter S-mode. */
+    NEXT_TEST "menvcfg CBO enable fields are writable"
+    li   t1, MENVCFG_CBO_ALL
+    csrs CSR_MENVCFG, t1
+    csrr t2, CSR_MENVCFG
+    and  t2, t2, t1
+    EXPECT_EQ t2, t1
+
+    li   t1, 0x1800
+    csrc CSR_MSTATUS, t1
+    li   t1, 0x0800
+    csrs CSR_MSTATUS, t1
+    auipc t2, 0
+    lla   t1, s_cbo_enabled
+    YADDRW t2, t2, t1
+    csrw CSR_MEPC, t2
+    lla   m_continue, s_cbo_enabled_done
+    mret
+
+s_cbo_enabled:
+    NEXT_TEST "S-mode cbo.zero succeeds once menvcfg.CBZE is set"
+    CBO_ZERO a0
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "S-mode cbo.clean succeeds once menvcfg.CBCFE is set"
+    CBO_CLEAN a0
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "S-mode cbo.flush succeeds once menvcfg.CBCFE is set"
+    CBO_FLUSH a0
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "S-mode cbo.inval succeeds once menvcfg.CBIE is set"
+    CBO_INVAL a0
+    EXPECT_NO_TRAP
+    ecall
+
+s_cbo_enabled_done:
 
     YMODESWI
     TEST_PASS

@@ -8,11 +8,23 @@
  *     EXPECT_NO_TRAP                       nothing faulted
  *     EXPECT_TRAP cause[, tval2]           exactly one trap, with this cause
  *     EXPECT_EPC reg                       ... reported against this address
+ *     EXPECT_TVAL reg                      ... with this fault address in mtval
  *     EXPECT_EPC_TAG tag                   ... with a PCC of this tag
+ *     EXPECT_TAG reg, tag                  capability in reg carries tag
+ *     EXPECT_EQ r1, r2                     r1 == r2
+ *     EXPECT_NE r1, r2                     r1 != r2
+ *     EXPECT_ZERO reg                      reg == 0
+ *     EXPECT_NONZERO reg                   reg != 0
  *
- * EXPECT_TRAP consumes the trap, so each operation under test is followed by
- * exactly one of it or EXPECT_NO_TRAP. EXPECT_EPC and EXPECT_EPC_TAG read the
- * recorded state and may follow in any order.
+ * EXPECT_* checks record a failure for the current NEXT_TEST case (via
+ * console_fail) and continue running so later cases still execute. Each has
+ * a fatal ASSERT_* counterpart (ASSERT_NO_TRAP, ASSERT_TRAP, ASSERT_EQ, ...)
+ * that branches to fail and stops the test immediately when subsequent cases
+ * cannot safely run after a failure.
+ *
+ * EXPECT_TRAP and EXPECT_NO_TRAP consume trap_count, so each operation under
+ * test is followed by one of them. EXPECT_EPC, EXPECT_TVAL and EXPECT_EPC_TAG
+ * read the recorded state and may follow in any order.
  *
  * Tests number themselves with NEXT_TEST rather than a literal, so inserting
  * a case does not renumber the ones after it. The id is what a failure
@@ -138,12 +150,15 @@
  */
 .macro NEXT_TEST desc=
     .set __tap_cases, __tap_cases + 1
+    .if __tap_cases >= TAP_MAX_CASES
+      .error "TAP_MAX_CASES exceeded"
+    .endif
     li   test_id, __tap_cases
     .pushsection .rodata
-79: .asciz "\desc"   /* the quotes go here: the assembler strips the caller's */
+.Ltap_name_\@: .asciz "\desc"   /* the quotes go here: the assembler strips the caller's */
     .popsection
     .pushsection .tapnames, "a"
-    WORD_X 79b
+    WORD_X .Ltap_name_\@
     .popsection
 .endm
 
@@ -169,9 +184,9 @@
 
 .macro SKIPPABLE_BLOCK_SKIPPED reason
     .pushsection .rodata
-78: .asciz "\reason"
+.Lskip_str_\@: .asciz "\reason"
     .popsection
-    lla   a0, 78b
+    lla   a0, .Lskip_str_\@
     li   a1, __tap_skip_from
     li   a2, __tap_cases
     call console_skip
@@ -184,9 +199,9 @@
  */
 .macro MARK_XFAIL reason
     .pushsection .rodata
-77: .asciz "\reason"
+.Lxfail_str_\@: .asciz "\reason"
     .popsection
-    lla   a0, 77b
+    lla   a0, .Lxfail_str_\@
     mv   a1, test_id
     call console_xfail
 .endm
@@ -206,7 +221,29 @@
 __rvy_used_resume_after_fault = 1
 .endm
 
+.macro EXPECT_FAIL
+    YMV  t5, ra
+    YMV  t6, a0
+    YMV  trap_tval2, t0
+    mv   a0, test_id
+    call console_fail
+    YMV  t0, trap_tval2
+    YMV  a0, t6
+    YMV  ra, t5
+.endm
+
+.macro ASSERT_FAIL
+    j    fail
+.endm
+
 .macro EXPECT_NO_TRAP
+    beqz trap_count, .Lexpect_ok_\@
+    EXPECT_FAIL
+    CLEAR_TRAPS
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_NO_TRAP
     bnez trap_count, fail
 .endm
 
@@ -216,13 +253,29 @@ __rvy_used_resume_after_fault = 1
  * live there rather than in mcause.
  */
 .macro EXPECT_TRAP cause, tval2=0
-    li   t3, 1
-    bne  t3, trap_count, fail
-    li   t3, \cause
-    bne  t3, trap_cause, fail
+    li   t5, 1
+    bne  t5, trap_count, .Lexpect_fail_\@
+    li   t5, \cause
+    bne  t5, trap_cause, .Lexpect_fail_\@
 #ifdef CHERI_093
-    li   t3, \tval2
-    bne  t3, trap_tval2, fail
+    li   t5, \tval2
+    bne  t5, trap_tval2, .Lexpect_fail_\@
+#endif
+    j    .Lexpect_ok_\@
+.Lexpect_fail_\@:
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+    CLEAR_TRAPS
+.endm
+
+.macro ASSERT_TRAP cause, tval2=0
+    li   t5, 1
+    bne  t5, trap_count, fail
+    li   t5, \cause
+    bne  t5, trap_cause, fail
+#ifdef CHERI_093
+    li   t5, \tval2
+    bne  t5, trap_tval2, fail
 #endif
     CLEAR_TRAPS
 .endm
@@ -235,13 +288,29 @@ __rvy_used_resume_after_fault = 1
  * allow-list of the two access faults rather than a list of what to reject.
  */
 .macro EXPECT_ONLY_MEMORY_FAULT
-    beqz trap_count, 87f
-    li   t3, CAUSE_LOAD_ACCESS_FAULT
-    beq  t3, trap_cause, 87f
-    li   t3, CAUSE_STORE_ACCESS_FAULT
-    beq  t3, trap_cause, 87f
+    beqz trap_count, .Lexpect_ok_\@
+    li   t5, 1
+    bne  t5, trap_count, .Lexpect_fail_\@
+    li   t5, CAUSE_LOAD_ACCESS_FAULT
+    beq  t5, trap_cause, .Lexpect_ok_\@
+    li   t5, CAUSE_STORE_ACCESS_FAULT
+    beq  t5, trap_cause, .Lexpect_ok_\@
+.Lexpect_fail_\@:
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+    CLEAR_TRAPS
+.endm
+
+.macro ASSERT_ONLY_MEMORY_FAULT
+    beqz trap_count, .Lexpect_ok_\@
+    li   t5, 1
+    bne  t5, trap_count, fail
+    li   t5, CAUSE_LOAD_ACCESS_FAULT
+    beq  t5, trap_cause, .Lexpect_ok_\@
+    li   t5, CAUSE_STORE_ACCESS_FAULT
+    beq  t5, trap_cause, .Lexpect_ok_\@
     j    fail
-87:
+.Lexpect_ok_\@:
     CLEAR_TRAPS
 .endm
 
@@ -251,19 +320,27 @@ __rvy_used_resume_after_fault = 1
  * \label if it did not take, rather than assuming either outcome.
  */
 .macro TRY_CLEAR_MISA_C label
-    csrr t3, CSR_MISA
-    li   t4, MISA_C
-    not  t4, t4
-    and  t3, t3, t4
-    csrw CSR_MISA, t3
-    csrr t3, CSR_MISA
-    andi t3, t3, MISA_C
-    bnez t3, \label
+    csrr t5, CSR_MISA
+    li   t6, MISA_C
+    not  t6, t6
+    and  t5, t5, t6
+    csrw CSR_MISA, t5
+    csrr t5, CSR_MISA
+    andi t5, t5, MISA_C
+    bnez t5, \label
 .endm
 
 /* The trap was reported against the address in \reg. */
 .macro EXPECT_EPC reg
-    bne  trap_epc, \reg, fail
+    sub  t5, trap_epc, \reg
+    beqz t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_EPC reg
+    sub  t5, trap_epc, \reg
+    bnez t5, fail
 .endm
 
 /*
@@ -272,42 +349,146 @@ __rvy_used_resume_after_fault = 1
  */
 .macro EXPECT_TVAL reg
 #ifdef CHERI_093
-    li   t3, CAUSE_CHERI_ANY
-    beq  trap_cause, t3, 86f
+    li   t5, CAUSE_CHERI_ANY
+    beq  t5, trap_cause, .Lexpect_ok_\@
 #endif
-    csrr t3, CSR_MTVAL
-    bne  t3, \reg, fail
-86:
+    csrr t5, CSR_MTVAL
+    sub  t5, t5, \reg
+    beqz t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_TVAL reg
+#ifdef CHERI_093
+    li   t5, CAUSE_CHERI_ANY
+    beq  t5, trap_cause, .Lexpect_ok_\@
+#endif
+    csrr t5, CSR_MTVAL
+    sub  t5, t5, \reg
+    bnez t5, fail
+.Lexpect_ok_\@:
 .endm
 
 /* ... and the capability left in mepc had this tag (TRAP_HANDLER_PCC only). */
 .macro EXPECT_EPC_TAG tag
-    li   t3, \tag
-    bne  t3, trap_epc_tag, fail
+    li   t5, \tag
+    beq  t5, trap_epc_tag, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_EPC_TAG tag
+    li   t5, \tag
+    bne  t5, trap_epc_tag, fail
 .endm
 
 /* The capability in \reg carries \tag. */
 .macro EXPECT_TAG reg, tag
-    YTAGR t3, \reg
-    li   t4, \tag
-    bne  t4, t3, fail
+    YTAGR t5, \reg
+    li   t6, \tag
+    beq  t6, t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_TAG reg, tag
+    YTAGR t5, \reg
+    li   t6, \tag
+    bne  t6, t5, fail
+.endm
+
+/* Register value comparisons (safe in capability mode for any register pair). */
+.macro EXPECT_EQ r1, r2
+    sub  t5, \r1, \r2
+    beqz t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_EQ r1, r2
+    sub  t5, \r1, \r2
+    bnez t5, fail
+.endm
+
+.macro EXPECT_NE r1, r2
+    sub  t5, \r1, \r2
+    bnez t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_NE r1, r2
+    sub  t5, \r1, \r2
+    beqz t5, fail
+.endm
+
+.macro EXPECT_ZERO reg
+    beqz \reg, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_ZERO reg
+    bnez \reg, fail
+.endm
+
+.macro EXPECT_NONZERO reg
+    bnez \reg, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_NONZERO reg
+    beqz \reg, fail
+.endm
+
+.macro EXPECT_CAP_EQ c1, c2
+    YEQ  t5, \c1, \c2
+    bnez t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
+
+.macro ASSERT_CAP_EQ c1, c2
+    YEQ  t5, \c1, \c2
+    beqz t5, fail
+.endm
+
+/*
+ * Seed \reg with a poison capability pattern (both halves set to POISON_VAL)
+ * before an operation that should fault, and check afterwards that the
+ * faulting instruction left \reg unmodified.
+ */
+#define POISON_VAL 0x55555555
+
+.macro POISON_REG reg
+    li   \reg, POISON_VAL
+    YHIW \reg, \reg, \reg
+.endm
+
+.macro CHECK_POISON_REG reg
+    li   t6, POISON_VAL
+    YHIW t6, t6, t6
+    EXPECT_CAP_EQ \reg, t6
 .endm
 
 /* Shared prologue: record the trap, letting an S-mode ecall back to M-mode. */
 .macro TRAP_RECORD_AND_LET_ECALL_THROUGH
-    csrr trap_cause, CSR_MCAUSE
-#ifdef CHERI_093
-    csrr trap_tval2, CSR_MTVAL2
-#else
-    csrr trap_tval2, CSR_MTVAL
-#endif
+    csrr t6, CSR_MCAUSE
     li   t5, CAUSE_S_ECALL
-    bne  t5, trap_cause, 8f
+    bne  t5, t6, 8f
     li   t5, 0x1800              /* mstatus.MPP = M */
     csrs CSR_MSTATUS, t5
     csrw CSR_MEPC, m_continue
     mret
 8:
+    mv   trap_cause, t6
+#ifdef CHERI_093
+    csrr trap_tval2, CSR_MTVAL2
+#else
+    csrr trap_tval2, CSR_MTVAL
+#endif
     addi trap_count, trap_count, 1
     csrr trap_epc, CSR_MEPC
 .endm
@@ -361,4 +542,4 @@ trap_handler:
  * the raw names are errors: a test that wants a scratch register has to pick
  * one that is not spoken for.
  */
-#pragma GCC poison s3 s4 s5 s6 s8 s9 s10 s11
+#pragma GCC poison s3 s4 s5 s6 s8 s9 s10 s11 t5 t6

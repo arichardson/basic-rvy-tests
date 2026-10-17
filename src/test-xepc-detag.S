@@ -52,9 +52,7 @@
     NEXT_TEST "\desc"
     csrw \csr, \reg
     csrrs a2, \csr, x0
-    YTAGR t1, a2
-    li   t2, \tag
-    bne  t2, t1, fail
+    EXPECT_TAG a2, \tag
 .endm
 
 .option norvc
@@ -95,7 +93,7 @@ _start:
     csrw CSR_MEPC, a1
     csrrs a2, CSR_MEPC, x0
     andi t1, a2, 1
-    bnez t1, fail
+    EXPECT_ZERO t1
 
     /*
      * Unsealed at the lower representable limit (rep_base = base - REP_BELOW,
@@ -106,8 +104,7 @@ _start:
     li   t2, REP_BELOW
     sub  t0, t0, t2              /* t0 = (victim + 1) - REP_BELOW = rep_base */
     YADDRW a3, a1, t0
-    YTAGR t1, a3
-    beqz t1, fail                /* still representable and tagged before write */
+    EXPECT_TAG a3, 1             /* still representable and tagged before write */
     EXPECT_XEPC_TAG CSR_MEPC, a3, 0, "mepc clears the tag of an unsealed capability rounded below rep_base"
     EXPECT_XEPC_TAG CSR_SEPC, a3, 0, "sepc clears the tag of an unsealed capability rounded below rep_base"
 
@@ -143,7 +140,7 @@ _start:
     csrw CSR_MEPC, a0
     csrrs a1, CSR_MEPC, x0
     andi t1, a1, 2
-    bnez t1, fail
+    EXPECT_ZERO t1
 
     /*
      * Unsealed at rep_base = (victim + 2) - REP_BELOW (bit 1 set, bit 0
@@ -153,8 +150,7 @@ _start:
     li   t2, REP_BELOW
     sub  t0, t0, t2
     YADDRW a3, a0, t0
-    YTAGR t1, a3
-    beqz t1, fail
+    EXPECT_TAG a3, 1
     EXPECT_XEPC_TAG CSR_MEPC, a3, 0, "mepc clears the tag of an unsealed capability when masking bit 1 crosses rep_base"
     EXPECT_XEPC_TAG CSR_SEPC, a3, 0, "sepc clears the tag of an unsealed capability when masking bit 1 crosses rep_base"
 
@@ -168,8 +164,7 @@ _start:
     li   t2, REP_BELOW
     sub  t0, t0, t2
     YADDRW a4, a4, t0
-    YTAGR t1, a4
-    beqz t1, fail
+    EXPECT_TAG a4, 1
     RESUME_AFTER_FAULT ialign32_unsealed_recovered
     csrw CSR_MEPC, a4
     li   t0, 0x1800
@@ -207,9 +202,39 @@ ialign32_unsealed_recovered:
 ialign32_recovered:
     EXPECT_TRAP TRAP_CAP_FETCH(CAP_TAG)
     EXPECT_EPC_TAG 0
-
-    li   t0, MISA_C               /* leave misa.C as this test found it */
+    /*
+     * Bit 1 is legalized on read rather than on write: restoring misa.C makes
+     * the sentry written to sepc above (which read back detagged while misa.C
+     * was 0) read back with bit 1 and its tag intact; conversely, writing
+     * mepc/sepc while misa.C is 1 and then clearing misa.C masks bit 1 and
+     * detags on read without another write to mepc/sepc.
+     */
+    li   t0, MISA_C
     csrs CSR_MISA, t0
+
+    NEXT_TEST "setting misa.C restores bit 1 and the tag of the sentry already in sepc"
+    csrr a1, CSR_SEPC
+    EXPECT_TAG a1, 1
+    andi t1, a1, 2
+    EXPECT_NONZERO t1
+
+    csrw CSR_MEPC, a0             /* sentry with bit 1 set, written while misa.C=1 */
+    csrw CSR_SEPC, a3             /* unsealed at rep_base with bit 1 set, written while misa.C=1 */
+    csrc CSR_MISA, t0             /* switch to IALIGN=32 without rewriting mepc or sepc */
+
+    NEXT_TEST "clearing misa.C masks bit 1 and detags a sentry written to mepc under IALIGN=16"
+    csrr a1, CSR_MEPC
+    EXPECT_TAG a1, 0
+    andi t1, a1, 2
+    EXPECT_ZERO t1
+
+    NEXT_TEST "clearing misa.C masks bit 1 and detags sepc at rep_base written under IALIGN=16"
+    csrr a1, CSR_SEPC
+    EXPECT_TAG a1, 0
+    andi t1, a1, 2
+    EXPECT_ZERO t1
+
+    csrs CSR_MISA, t0             /* leave misa.C as this test found it */
     j    ialign32_done
 skip_ialign32:
     SKIPPABLE_BLOCK_SKIPPED "misa.C is hard-wired here so IALIGN=32 is unreachable"

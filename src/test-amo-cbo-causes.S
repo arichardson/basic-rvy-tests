@@ -2,7 +2,9 @@
  *
  * Verify the RVY exception causes, fault addresses (mtval), permission and
  * bounds checks, reservation semantics, and tag filtering for capability
- * loads/stores, capability atomics, and cache-block operations:
+ * loads/stores, capability atomics, and cache-block operations, ensuring
+ * that faulting operations leave cd/rd holding its prior poison capability
+ * and memory unmodified:
  *
  *  - Misaligned capability accesses raise *access* faults (not misaligned
  *    faults) since they cannot be emulated in software: cause 5 for LY and LR.Y
@@ -36,6 +38,15 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
+.macro CHECK_BUF base_reg
+    LY   t0, 0(\base_reg)
+    EXPECT_CAP_EQ t0, a3
+    LY   t0, YLEN_BYTES(\base_reg)
+    EXPECT_CAP_EQ t0, s7
+    SY   a3, 0(\base_reg)
+    SY   s7, YLEN_BYTES(\base_reg)
+.endm
+
 .option norvc
 .section .text
 .globl _start
@@ -45,42 +56,7 @@ _start:
     lla   a0, buf                 /* aligned to 64 bytes */
     addi a1, a0, 4               /* misaligned for YLEN/8 on RV32 and RV64 */
 
-    /* Aligned LR.Y via root DDC succeeds (sanity/decode check) */
-    NEXT_TEST "aligned lr.y through root ddc succeeds"
-    LR_Y t1, a0
-    EXPECT_NO_TRAP
-
-    /* Misaligned LY raises a load fault and reports the address in mtval */
-    NEXT_TEST "misaligned ly raises a load fault"
-    LY   t1, 0(a1)
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    EXPECT_TVAL a1
-
-    /* Misaligned SY raises a store fault and reports the address in mtval */
-    NEXT_TEST "misaligned sy raises a store fault"
-    SY   t2, 0(a1)
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-
-    /* Misaligned LR.Y raises a load access fault */
-    NEXT_TEST "misaligned lr.y raises a load access fault"
-    LR_Y t1, a1
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    EXPECT_TVAL a1
-
-    /* Misaligned SC.Y raises a store/AMO access fault */
-    NEXT_TEST "misaligned sc.y raises a store fault"
-    SC_Y t1, a1, t2
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-
-    /* Misaligned AMOSWAP.Y also raises a store/AMO access fault */
-    NEXT_TEST "misaligned amoswap.y raises a store fault"
-    AMOSWAP_Y t1, a1, t2
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-
-    /* Derive test capabilities covering buf. */
+    /* Derive test capabilities covering buf and seed buf with tagged capabilities. */
     csrrs s0, CSR_DDC, x0
     YADDRW a2, x0, a0            /* a2: untagged capability at buf */
     YADDRW a3, s0, a0            /* a3: full-permission capability at buf */
@@ -96,103 +72,193 @@ _start:
     YBNDSW s2, a3, t2            /* [buf, buf + YLEN_BYTES) */
     YADDI  s2, s2, YLEN_BYTES    /* s2: cursor at top (out of bounds) */
     YADDI  s7, a3, YLEN_BYTES    /* s7: full-permission capability at buf + YLEN_BYTES */
+    SY   a3, 0(a0)
+    SY   s7, YLEN_BYTES(a0)
+    li   t0, 0xdeadbeef
+    YADDRW t2, s0, t0            /* t2: distinct tagged store capability */
+
+    /* Aligned LR.Y via root DDC succeeds (sanity/decode check) */
+    NEXT_TEST "aligned lr.y through root ddc succeeds"
+    LR_Y t1, a0
+    EXPECT_NO_TRAP
+
+    /* Misaligned LY raises a load fault and reports the address in mtval */
+    NEXT_TEST "misaligned ly raises a load fault"
+    POISON_REG t1
+    LY   t1, 0(a1)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+
+    /* Misaligned SY raises a store fault and reports the address in mtval */
+    NEXT_TEST "misaligned sy raises a store fault"
+    SY   t2, 0(a1)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+    CHECK_BUF a0
+
+    /* Misaligned LR.Y raises a load access fault */
+    NEXT_TEST "misaligned lr.y raises a load access fault"
+    POISON_REG t1
+    LR_Y t1, a1
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+
+    /* Misaligned SC.Y raises a store/AMO access fault */
+    NEXT_TEST "misaligned sc.y raises a store fault"
+    POISON_REG t1
+    SC_Y t1, a1, t2
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
+
+    /* Misaligned AMOSWAP.Y also raises a store/AMO access fault */
+    NEXT_TEST "misaligned amoswap.y raises a store fault"
+    POISON_REG t1
+    AMOSWAP_Y t1, a1, t2
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
 
     /* Enter capability mode: cs1=x0 is now the untagged NULL capability. */
     YMODESWY
 
     /* Misaligned capability accesses in capability mode */
     NEXT_TEST "capability-mode misaligned ly raises a load fault"
+    POISON_REG t1
     LY   t1, 0(a6)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
     EXPECT_TVAL a1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "capability-mode misaligned sy raises a store fault"
-    SY   a3, 0(a6)
+    SY   t2, 0(a6)
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
     EXPECT_TVAL a1
+    CHECK_BUF a3
 
     NEXT_TEST "capability-mode misaligned lr.y raises a load access fault"
+    POISON_REG t1
     LR_Y t1, a6
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
     EXPECT_TVAL a1
+    CHECK_POISON_REG t1
 
     NEXT_TEST "capability-mode misaligned sc.y raises a store fault"
-    SC_Y t1, a6, a3
+    POISON_REG t1
+    SC_Y t1, a6, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
     EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "capability-mode misaligned amoswap.y raises a store fault"
-    AMOSWAP_Y t1, a6, a3
+    POISON_REG t1
+    AMOSWAP_Y t1, a6, t2
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
     EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     /* LR.Y via NULL cap: load-classified tag fault */
     NEXT_TEST "lr.y through the NULL capability is load classified"
+    POISON_REG t1
     LR_Y t1, x0
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
+    CHECK_POISON_REG t1
 
     /* SC.Y via NULL cap: store-classified tag fault */
     NEXT_TEST "sc.y through the NULL capability is store classified"
+    POISON_REG t1
     SC_Y t1, x0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_POISON_REG t1
 
     /* AMOSWAP.Y via NULL cap */
     NEXT_TEST "amoswap.y through the NULL capability is store classified"
+    POISON_REG t1
     AMOSWAP_Y t1, x0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_POISON_REG t1
 
     /*
      * LR.Y, SC.Y, and AMOSWAP.Y through an untagged capability at a non-zero
      * address must report that address in mtval (not 0) on v0.9.9.
      */
     NEXT_TEST "lr.y through an untagged capability reports the fault address in mtval"
+    POISON_REG t1
     LR_Y t1, a2
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.y through an untagged capability reports the fault address in mtval"
+    POISON_REG t1
     SC_Y t1, a2, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "amoswap.y through an untagged capability reports the fault address in mtval"
+    POISON_REG t1
     AMOSWAP_Y t1, a2, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     /*
      * Sealed sentry capability (s1): LR.Y reports a load CAP_SEAL fault;
      * SC.Y, AMOSWAP.Y, integer AMOs, and CBOs report a store CAP_SEAL fault.
      */
     NEXT_TEST "lr.y through a sealed sentry faults with load CAP_SEAL"
+    POISON_REG t1
     LR_Y t1, s1
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.y through a sealed sentry faults with store CAP_SEAL"
-    SC_Y t1, s1, a3
+    POISON_REG t1
+    SC_Y t1, s1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "amoswap.y through a sealed sentry faults with store CAP_SEAL"
-    AMOSWAP_Y t1, s1, a3
+    POISON_REG t1
+    AMOSWAP_Y t1, s1, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "sc.w through a sealed sentry faults with store CAP_SEAL"
-    sc.w t1, x0, (s1)
+    POISON_REG t1
+    sc.w t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "amoswap.w through a sealed sentry faults with store CAP_SEAL"
-    amoswap.w t1, x0, (s1)
+    POISON_REG t1
+    amoswap.w t1, t2, (s1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "cbo.zero through a sealed sentry faults with store CAP_SEAL"
     CBO_ZERO s1
     EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
     EXPECT_TVAL a0
+    CHECK_BUF a3
 
     NEXT_TEST "cbo.clean through a sealed sentry faults with store CAP_SEAL"
     CBO_CLEAN s1
@@ -214,24 +280,35 @@ _start:
      * CAP_BOUNDS; SC.Y, AMOSWAP.Y, and integer SC.W report store CAP_BOUNDS.
      */
     NEXT_TEST "lr.y at capability top faults with load CAP_BOUNDS"
+    POISON_REG t1
     LR_Y t1, s2
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     EXPECT_TVAL s7
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.y at capability top faults with store CAP_BOUNDS"
-    SC_Y t1, s2, a3
+    POISON_REG t1
+    SC_Y t1, s2, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s7
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "amoswap.y at capability top faults with store CAP_BOUNDS"
-    AMOSWAP_Y t1, s2, a3
+    POISON_REG t1
+    AMOSWAP_Y t1, s2, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s7
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "sc.w at capability top faults with store CAP_BOUNDS"
-    sc.w t1, x0, (s2)
+    POISON_REG t1
+    sc.w t1, t2, (s2)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     EXPECT_TVAL s7
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     /*
      * Read-only capability (a4, W=0): SC.W, SC.Y, and AMOSWAP.Y must fault
@@ -241,50 +318,45 @@ _start:
      */
     NEXT_TEST "sc.w through a read-only capability faults with store CAP_PERM"
     lr.w t1, (a4)
-    sc.w t2, x0, (a4)
+    POISON_REG t1
+    sc.w t1, t2, (a4)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "sc.y through a read-only capability faults with store CAP_PERM"
-    SY   a3, 0(a3)
+    LR_Y t1, a4
+    POISON_REG t1
     SC_Y t1, a4, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
-    LY   t2, 0(a3)
-    YTAGR t3, t2
-    beqz t3, fail
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "amoswap.y of x0 through a read-only capability faults without side effects"
-    SY   a3, 0(a3)
-    YMV  t1, a3
+    POISON_REG t1
     AMOSWAP_Y t1, a4, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
-    YTAGR t3, t1
-    beqz t3, fail                /* cd (t1) must stay tagged */
-    LY   t2, 0(a3)
-    YTAGR t3, t2
-    beqz t3, fail                /* memory must stay tagged */
+    CHECK_POISON_REG t1          /* cd (t1) must keep poison capability */
+    CHECK_BUF a3                 /* memory must keep a3 */
 
     NEXT_TEST "amoswap.y of an untagged capability through a read-only capability faults"
+    POISON_REG t1
     AMOSWAP_Y t1, a4, a2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
-    YTAGR t3, t1
-    beqz t3, fail
-    LY   t2, 0(a3)
-    YTAGR t3, t2
-    beqz t3, fail
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "control: amoswap.y of x0 succeeds when W is granted"
     YMV  t1, x0
     AMOSWAP_Y t1, a3, x0
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz t3, fail                /* loaded the tagged capability from memory */
+    EXPECT_TAG t1, 1             /* loaded the tagged capability from memory */
     LY   t2, 0(a3)
-    YTAGR t3, t2
-    bnez t3, fail                /* stored x0 to memory */
+    EXPECT_TAG t2, 0             /* stored x0 to memory */
 
     /*
      * Write-only capability (a7, R=0, W=1):
@@ -296,36 +368,42 @@ _start:
      *  - CBO.ZERO requires only W and succeeds.
      */
     NEXT_TEST "lr.y through a write-only capability faults with load CAP_PERM"
+    SY   a3, 0(a3)
+    POISON_REG t1
     LR_Y t1, a7
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
 
     NEXT_TEST "sc.w through a write-only capability succeeds after a valid lr.w"
     lr.w t1, (a3)
     li   t0, 0x33cc33cc
     sc.w t2, t0, (a7)
     EXPECT_NO_TRAP
-    bnez t2, fail
+    EXPECT_ZERO t2
 
     NEXT_TEST "sc.y through a write-only capability succeeds after a valid lr.y"
     SY   x0, 0(a3)
     LR_Y t1, a3
     SC_Y t2, a7, a3
     EXPECT_NO_TRAP
-    bnez t2, fail
+    EXPECT_ZERO t2
     LY   t3, 0(a3)
-    YTAGR t4, t3
 #if __riscv_xlen == 64
-    beqz t4, fail
+    EXPECT_TAG t3, 1
 #else
     /* 64-bit compressed capabilities cannot encode C without R, so a7 lacks C and strips the tag */
-    bnez t4, fail
+    EXPECT_TAG t3, 0
 #endif
 
     NEXT_TEST "amoswap.y through a write-only capability faults with store/AMO CAP_PERM"
+    SY   a3, 0(a3)
+    POISON_REG t1
     AMOSWAP_Y t1, a7, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
+    CHECK_POISON_REG t1
+    CHECK_BUF a3
 
     NEXT_TEST "cbo.clean through a write-only capability faults with store/AMO CAP_PERM"
     CBO_CLEAN a7
@@ -342,17 +420,20 @@ _start:
     CBO_ZERO a7
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
 
     /* Integer SC.W and AMO via NULL cap: store-classified */
     NEXT_TEST "sc.w through the NULL capability is store classified"
+    POISON_REG t1
     sc.w t1, x0, (x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_POISON_REG t1
 
     NEXT_TEST "an integer amo through the NULL capability is store classified"
+    POISON_REG t1
     amoswap.w t1, t2, (x0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
+    CHECK_POISON_REG t1
 
     /* CBO.ZERO via NULL cap */
     NEXT_TEST "cbo.zero through the NULL capability is store classified"
@@ -382,39 +463,33 @@ _start:
     SY   a3, 0(a5)
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
-    bne  a0, t1, fail
+    EXPECT_TAG t1, 0
+    EXPECT_EQ a0, t1
 
     NEXT_TEST "capability-mode lr.y and sc.y without PERM_C strip loaded and stored tags"
     SY   a3, 0(a3)
     LR_Y t1, a5
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
     SC_Y t3, a5, a3
     EXPECT_NO_TRAP
-    bnez t3, fail
+    EXPECT_ZERO t3
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
 
     NEXT_TEST "capability-mode amoswap.y without PERM_C strips both loaded and stored tags"
     SY   a3, 0(a3)
     AMOSWAP_Y t1, a5, a3
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
     LY   t3, 0(a3)
-    YTAGR t4, t3
-    bnez t4, fail
+    EXPECT_TAG t3, 0
 
     NEXT_TEST "capability-mode ly without PERM_C strips the loaded tag"
     SY   a3, 0(a3)
     LY   t1, 0(a5)
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    bnez t2, fail
-    bne  a0, t1, fail
+    EXPECT_TAG t1, 0
+    EXPECT_EQ a0, t1
 
     /*
      * Capability-mode PERM_LM permission filtering on LY and LR.Y when
@@ -428,31 +503,28 @@ _start:
     LY   t1, 0(s2)
     LR_Y t2, s2
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     YPERMR t3, t1
     andi t4, t3, (PERM_W | PERM_LM)
-    bnez t4, fail
-    YTAGR t3, t2
-    beqz t3, fail
+    EXPECT_ZERO t4
+    EXPECT_TAG t2, 1
     YPERMR t3, t2
     andi t4, t3, (PERM_W | PERM_LM)
-    bnez t4, fail
+    EXPECT_ZERO t4
 
     NEXT_TEST "capability-mode ly and lr.y without PERM_LM preserve W and LM on a sealed sentry"
     SY   s1, 0(a3)
     LY   t1, 0(s2)
     LR_Y t2, s2
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     YPERMR t3, t1
     andi t4, t3, (PERM_W | PERM_LM)
     li   t0, (PERM_W | PERM_LM)
-    bne  t4, t0, fail
+    EXPECT_EQ t4, t0
     YPERMR t3, t2
     andi t4, t3, (PERM_W | PERM_LM)
-    bne  t4, t0, fail
+    EXPECT_EQ t4, t0
 
     /*
      * LR.Y / SC.Y reservation behaviour in Capability Mode:
@@ -466,13 +538,12 @@ _start:
     SY   x0, 0(a3)
     LR_Y t1, a3
     SC_Y t2, a3, a3
-    bnez t2, fail
+    EXPECT_ZERO t2
     SC_Y t2, a3, x0
     EXPECT_NO_TRAP
-    beqz t2, fail                /* second SC.Y must report failure (rd != 0) */
+    EXPECT_NONZERO t2            /* second SC.Y must report failure (rd != 0) */
     LY   t3, 0(a3)
-    YTAGR t4, t3
-    beqz t4, fail                /* tagged capability from first SC.Y stays intact */
+    EXPECT_TAG t3, 1             /* tagged capability from first SC.Y stays intact */
 
     NEXT_TEST "sc.y to a different address than the preceding lr.y fails and cancels the reservation"
     SY   a3, 0(a3)
@@ -480,16 +551,14 @@ _start:
     LR_Y t1, a3
     SC_Y t2, s7, x0
     EXPECT_NO_TRAP
-    beqz t2, fail                /* address mismatch must fail */
+    EXPECT_NONZERO t2            /* address mismatch must fail */
     LY   t3, 0(s7)
-    YTAGR t4, t3
-    beqz t4, fail                /* s7 slot stays tagged */
+    EXPECT_TAG t3, 1             /* s7 slot stays tagged */
     SC_Y t2, a3, x0
     EXPECT_NO_TRAP
-    beqz t2, fail                /* prior SC.Y cancelled the reservation on a3 */
+    EXPECT_NONZERO t2            /* prior SC.Y cancelled the reservation on a3 */
     LY   t3, 0(a3)
-    YTAGR t4, t3
-    beqz t4, fail                /* a3 slot also stays tagged */
+    EXPECT_TAG t3, 1             /* a3 slot also stays tagged */
 
     /*
      * Unaligned integer store straddling two adjacent capability slots at
@@ -501,11 +570,9 @@ _start:
     sw   x0, (YLEN_BYTES - 2)(a3)
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
     LY   t3, 0(s7)
-    YTAGR t4, t3
-    bnez t4, fail
+    EXPECT_TAG t3, 0
 
     YMODESWI                     /* back to int mode */
     TEST_PASS

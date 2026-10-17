@@ -15,10 +15,13 @@
  *    on RV32.
  *  - YUNSEALS, YBLD, and YSS reject untagged, sealed, malformed, or
  *    non-superset operands.
- *  - YMODEW and YPERMC / ACPERM clear the tag on sealed inputs, and YMODEW
- *    leaves the mode bit unmodified when PERM_X is absent.
- *  - YPERMR, YBLD, and YSS enforce metadata integrity on non-zero RESERVED0/1
- *    bits and (on RV32) reserved AP Quadrant 0 encodings.
+ *  - YMODEW clears the tag on sealed inputs and leaves the mode bit
+ *    unmodified when PERM_X is absent; YPERMC / ACPERM clears the tag on
+ *    sealed inputs when clearing a permission that was granted before
+ *    sealing, and preserves the tag when clearing only permissions that were
+ *    already zero.
+ *  - YPERMR, YPERMC, YSEALE, YBLD, and YSS enforce metadata integrity on
+ *    non-zero RESERVED0/1 bits and (on RV32) reserved AP Quadrant 0 encodings.
  */
 #define TEST_NAME "cap-ops-failures"
 #include "testmacros.h"
@@ -26,9 +29,11 @@
 
 #if __riscv_xlen == 64
 #define PESBT_RESERVED0_BIT    (1 << 28)
+#define PESBT_SDP_AP_MASK      ((0xf << 60) | (0xff << 44))
 #define EBT_MALFORMED_E_GT_MAX 0x000000000001c007
 #else
 #define PESBT_RESERVED0_BIT    (1 << 21)
+#define PESBT_SDP_AP_MASK      (0x7f << 25)
 #define EBT_MALFORMED_E_GT_MAX 0x00040c03
 #endif
 
@@ -94,12 +99,12 @@ _start:
     li   t1, EBT_MALFORMED_E_GT_MAX
     YHIW a2, x0, t1
     YBASER t2, a2
-    bnez t2, fail
+    EXPECT_ZERO t2
     YLENR t2, a2
-    bnez t2, fail
+    EXPECT_ZERO t2
 #ifndef CHERI_093
     YTOPR t2, a2
-    bnez t2, fail
+    EXPECT_ZERO t2
 #endif
     EXPECT_NO_TRAP
 
@@ -193,15 +198,15 @@ _start:
     SX   t1, 0(a0)               /* clear tag in memory */
     LY   a2, 0(a0)               /* a2 = untagged copy of a1 */
     YSS  t3, a0, a2              /* cs1 tagged, cs2 untagged */
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSS  t3, a2, a1              /* cs1 untagged, cs2 tagged */
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSS  t3, a1, a0              /* cs2 has wider bounds than cs1 */
-    bnez t3, fail
+    EXPECT_ZERO t3
     li   t2, DROP_MASK(PERM_W)
     DROP_PERMS a2, a0, t2        /* a2 lacks PERM_W, which a1 still has */
     YSS  t3, a2, a1
-    bnez t3, fail
+    EXPECT_ZERO t3
     EXPECT_NO_TRAP
 
     /*
@@ -228,14 +233,29 @@ _start:
     YMODEW a4, a2, t1
     EXPECT_TAG a4, 1
     YMODER t3, a4
-    bnez t3, fail                /* mode stays CHERI_MODE_CAP (0) */
+    EXPECT_ZERO t3               /* mode stays CHERI_MODE_CAP (0) */
     EXPECT_NO_TRAP
+
+#ifndef CHERI_093
+    /*
+     * RVY YPERMC on a sentry also preserves the tag when rs2 requests clearing
+     * a permission bit (PERM_W) that was already 0 before sealing, since
+     * neither AP nor SDP changes.
+     */
+    NEXT_TEST "ypermc on a sentry preserves the tag when clearing a permission that was already zero"
+    auipc a2, 0
+    li   t2, PERM_W
+    YPERMC a4, a2, t2
+    YSEALE a4, a4                /* sentry with PERM_W already cleared */
+    YPERMC a4, a4, t2            /* clearing PERM_W again changes no bits */
+    EXPECT_TAG a4, 1
+    EXPECT_NO_TRAP
+#endif
 
     /*
      * Non-zero RESERVED0 metadata bits cause YBLD to detag and YSS to return
-     * 0 in both versions, and cause YPERMR to zero all allocated AP and SDP
-     * bits (matching YPERMR of x0) in v0.9.9 while 0.9.3 gcperm preserves AP
-     * and SDP.
+     * 0 in all versions, and cause RVY YPERMR and YPERMC to zero all allocated
+     * AP and SDP bits while 0.9.3 gcperm preserves AP and SDP.
      */
     NEXT_TEST "non-zero reserved0 metadata fails ybld, yss, and v0.9.9 ypermr"
     SY   a1, 0(a0)
@@ -247,32 +267,45 @@ _start:
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YSS  t3, x0, a3              /* cs1 valid untagged, cs2 malformed untagged */
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
 #ifdef CHERI_093
     YPERMR t4, a1
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     li   t2, 0xfc00
     and  t3, t3, t2
-    bnez t3, fail
+    EXPECT_ZERO t3
 #else
     YPERMR t4, x0
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 #endif
     EXPECT_NO_TRAP
 
+#ifndef CHERI_093
+    NEXT_TEST "ypermc zeroes ap and sdp and yseale clears tag on non-zero reserved0 metadata"
+    YPERMC a4, a3, x0
+    EXPECT_TAG a4, 0
+    YHIR t3, a4
+    li   t4, PESBT_SDP_AP_MASK
+    and  t3, t3, t4
+    EXPECT_ZERO t3
+    YSEALE a4, a3
+    EXPECT_TAG a4, 0
+    EXPECT_NO_TRAP
+#endif
+
 #if __riscv_xlen == 64
     /*
-     * On RV64, v0.9.9 moved the 4-bit SDP field from pesbt[56:53] (bits
-     * 120:117) to pesbt[63:60] (bits 127:124), shifting RESERVED1 to
-     * pesbt[59:53]. Setting both pesbt[63:60]=0xa and pesbt[56:53]=0x5 puts
-     * non-zero bits into RESERVED1 in both versions: 0.9.3 gcperm still
-     * reports SDP=0x5 and AP, whereas v0.9.9 ypermr zeroes both AP and SDP
-     * (matching YPERMR of x0). Clearing pesbt[59:53] leaves a valid v0.9.9
-     * capability with SDP=0xa that passes ybld and yss, while still
-     * malformed (RESERVED1 != 0) in 0.9.3.
+     * On RV64, RVY moved the 4-bit SDP field from pesbt[56:53] (bits 120:117)
+     * to pesbt[63:60] (bits 127:124), shifting RESERVED1 to pesbt[59:53].
+     * Setting both pesbt[63:60]=0xa and pesbt[56:53]=0x5 puts non-zero bits
+     * into RESERVED1 in both formats: 0.9.3 gcperm still reports SDP=0x5 and
+     * AP, whereas RVY ypermr and ypermc zero both AP and SDP (matching YPERMR
+     * of x0). Clearing pesbt[59:53] leaves a valid RVY capability with
+     * SDP=0xa that passes ybld, yss, ypermc, and yseale, while still malformed
+     * (RESERVED1 != 0) in 0.9.3.
      */
     NEXT_TEST "rv64 sdp and reserved1 relocation between 0.9.3 and v0.9.9"
     SY   a1, 0(a0)
@@ -286,17 +319,32 @@ _start:
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
 #ifdef CHERI_093
     srli t3, t3, 6
     andi t3, t3, 0xf
     li   t4, 0x5
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
+    EXPECT_NO_TRAP
 #else
     YPERMR t4, x0
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "ypermc zeroes ap and sdp and yseale clears tag on non-zero reserved1 metadata"
+    YPERMC a4, a3, x0
+    EXPECT_TAG a4, 0
+    YHIR t3, a4
+    li   t4, PESBT_SDP_AP_MASK
+    and  t3, t3, t4
+    EXPECT_ZERO t3
+    YSEALE a4, a3
+    EXPECT_TAG a4, 0
+    EXPECT_NO_TRAP
 #endif
+
+    NEXT_TEST "rv64 sdp at pesbt[63:60] is valid in rvy and rejected as reserved1 in 0.9.3"
     li   t2, (0xa << 60)
     or   t2, t1, t2
     SX   t2, XBYTES(a0)
@@ -305,29 +353,33 @@ _start:
 #ifdef CHERI_093
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
     srli t3, t3, 6
     andi t3, t3, 0xf
-    bnez t3, fail
+    EXPECT_ZERO t3
 #else
     EXPECT_TAG a4, 1
     YSS  t3, a3, a3
-    beqz t3, fail
+    EXPECT_NONZERO t3
     YPERMR t3, a3
     srli t3, t3, 6
     andi t3, t3, 0xf
     li   t4, 0xa
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
+    YPERMC a4, a4, x0
+    EXPECT_TAG a4, 1
+    YSEALE a5, a4
+    EXPECT_TAG a5, 1
 #endif
     EXPECT_NO_TRAP
 #else /* __riscv_xlen == 32 */
     /*
      * On RV32, Quadrant 0 (Q=0) encodings with bit 1 set (such as
-     * AP_M = 0b00010 at pesbt[29:25]) are reserved in both 0.9.3 and v0.9.9:
+     * AP_M = 0b00010 at pesbt[29:25]) are reserved in both 0.9.3 and RVY:
      * YBLD clears the tag, YSS returns 0, 0.9.3 gcperm zeroes AP while
-     * preserving SDP (set to 0b10 at pesbt[31:30]), and v0.9.9 ypermr zeroes
-     * both AP and SDP (matching YPERMR of x0).
+     * preserving SDP (set to 0b10 at pesbt[31:30]), and RVY ypermr and ypermc
+     * zero both AP and SDP (matching YPERMR of x0).
      */
     NEXT_TEST "rv32 reserved ap quadrant 0 encoding is rejected"
     SY   a1, 0(a0)
@@ -341,14 +393,27 @@ _start:
     YBLD a4, a0, a3
     EXPECT_TAG a4, 0
     YSS  t3, a3, a3
-    bnez t3, fail
+    EXPECT_ZERO t3
     YPERMR t3, a3
     YPERMR t4, x0
 #ifdef CHERI_093
     ori  t4, t4, 0x0080          /* 2-bit SDP=0b10 preserved, all AP bits 0 */
 #endif
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
     EXPECT_NO_TRAP
+
+#ifndef CHERI_093
+    NEXT_TEST "ypermc zeroes ap and sdp and yseale clears tag on rv32 reserved ap quadrant 0 encoding"
+    YPERMC a4, a3, x0
+    EXPECT_TAG a4, 0
+    YHIR t3, a4
+    li   t4, PESBT_SDP_AP_MASK
+    and  t3, t3, t4
+    EXPECT_ZERO t3
+    YSEALE a4, a3
+    EXPECT_TAG a4, 0
+    EXPECT_NO_TRAP
+#endif
 #endif
 
     YMODESWI

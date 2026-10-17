@@ -25,10 +25,10 @@
     EXPECT_NO_TRAP
     LX   t0, 0(a0)
     LX   t1, 0(a1)
-    bne  t0, t1, fail
+    EXPECT_EQ t0, t1
     LX   t2, XBYTES(a0)
     LX   t3, XBYTES(a1)
-    bne  t2, t3, fail
+    EXPECT_EQ t2, t3
 .endm
 
 .option norvc

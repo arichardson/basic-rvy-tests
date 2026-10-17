@@ -56,29 +56,26 @@ _start:
     csrw CSR_MTVEC, a0           /* mode 0 (direct) */
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2           /* restore handler immediately */
-    YTAGR t0, a1
-    beqz t0, fail
-    bne  a1, s1, fail
+    EXPECT_TAG a1, 1
+    EXPECT_EQ a1, s1
 
     addi t1, s1, 1               /* mode 1 (vectored) */
     YADDRW a2, a0, t1
     csrw CSR_MTVEC, a2
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
-    YTAGR t0, a1
-    beqz t0, fail
-    bne  t1, a1, fail
+    EXPECT_TAG a1, 1
+    EXPECT_EQ t1, a1
 
     NEXT_TEST "mtvec detags a sealed sentry even when mode is direct or vectored"
     YSEALE a2, a0                /* sentry at victim (mode 0) */
     csrw CSR_MTVEC, a2
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
-    YTAGR t0, a1
-    bnez t0, fail
+    EXPECT_TAG a1, 0
     YTYPER t0, a1
-    beqz t0, fail
-    bne  a1, s1, fail
+    EXPECT_NONZERO t0
+    EXPECT_EQ a1, s1
 
     addi t1, s1, 1
     YADDRW a2, a0, t1
@@ -86,11 +83,10 @@ _start:
     csrw CSR_MTVEC, a2
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
-    YTAGR t0, a1
-    bnez t0, fail
+    EXPECT_TAG a1, 0
     YTYPER t0, a1
-    beqz t0, fail
-    bne  t1, a1, fail
+    EXPECT_NONZERO t0
+    EXPECT_EQ t1, a1
 
     NEXT_TEST "mtvec reserved modes 2 and 3 retain the prior mode while updating BASE"
     addi t1, s1, 1               /* first set mtvec to mode 1 (vectored) */
@@ -101,9 +97,8 @@ _start:
     csrw CSR_MTVEC, a3
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
-    YTAGR t0, a1
-    beqz t0, fail
-    bne  t1, a1, fail            /* mode 1 retained, BASE = victim */
+    EXPECT_TAG a1, 1
+    EXPECT_EQ t1, a1             /* mode 1 retained, BASE = victim */
 
     csrw CSR_MTVEC, a0           /* set mtvec to mode 0 (direct) */
     addi t2, s1, 3               /* write mode 3 (reserved) */
@@ -111,9 +106,8 @@ _start:
     csrw CSR_MTVEC, a3
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
-    YTAGR t0, a1
-    beqz t0, fail
-    bne  a1, s1, fail            /* mode 0 retained, BASE = victim */
+    EXPECT_TAG a1, 1
+    EXPECT_EQ a1, s1             /* mode 0 retained, BASE = victim */
 
     NEXT_TEST "mtvec detags an unsealed capability when aligning BASE down crosses rep_base"
     addi t1, s1, 1               /* base = victim + 1 */
@@ -123,14 +117,12 @@ _start:
     li   t2, REP_BELOW
     sub  t1, t1, t2              /* cursor = rep_base (low bits 0b01: vectored) */
     YADDRW a2, a2, t1
-    YTAGR t0, a2
-    beqz t0, fail                /* tagged before CSR write */
+    EXPECT_TAG a2, 1             /* tagged before CSR write */
     csrw CSR_MTVEC, a2
     csrrs a1, CSR_MTVEC, x0
     csrw CSR_MTVEC, s2
-    YTAGR t0, a1
-    bnez t0, fail                /* BASE = rep_base - 1 is unrepresentable */
-    bne  t1, a1, fail            /* cursor remains rep_base (BASE | mode 1) */
+    EXPECT_TAG a1, 0             /* BASE = rep_base - 1 is unrepresentable */
+    EXPECT_EQ t1, a1             /* cursor remains rep_base (BASE | mode 1) */
 
     /* =========================================================================
      * stvec legalization
@@ -140,11 +132,10 @@ _start:
     YSEALE a2, a0
     csrw CSR_STVEC, a2
     csrrs a1, CSR_STVEC, x0
-    YTAGR t0, a1
-    bnez t0, fail
+    EXPECT_TAG a1, 0
     YTYPER t0, a1
-    beqz t0, fail
-    bne  a1, s1, fail
+    EXPECT_NONZERO t0
+    EXPECT_EQ a1, s1
 
     NEXT_TEST "stvec detags an unsealed capability when aligning BASE down crosses rep_base"
     addi t1, s1, 1
@@ -154,13 +145,11 @@ _start:
     li   t2, REP_BELOW
     sub  t1, t1, t2
     YADDRW a2, a2, t1
-    YTAGR t0, a2
-    beqz t0, fail
+    EXPECT_TAG a2, 1
     csrw CSR_STVEC, a2
     csrrs a1, CSR_STVEC, x0
-    YTAGR t0, a1
-    bnez t0, fail
-    bne  t1, a1, fail
+    EXPECT_TAG a1, 0
+    EXPECT_EQ t1, a1
 
     /* =========================================================================
      * Same-block CSR write visibility before ecall and mret
@@ -175,7 +164,7 @@ _start:
     ecall
     csrw CSR_MTVEC, s2           /* restore normal trap handler */
     li   t0, 0x55aa
-    bne  a3, t0, fail
+    EXPECT_EQ a3, t0
 
     NEXT_TEST "mepc write immediately before mret returns to the new target"
     li   t0, (3 << 11)           /* mstatus.MPP = M */

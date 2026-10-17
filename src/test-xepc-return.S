@@ -30,8 +30,8 @@
     mv   expected_epc, \target
     RESUME_AFTER_FAULT 88f
     csrw CSR_MEPC, \cap
-    li   t5, 0x1800               /* mstatus.MPP = M, so mret returns to M-mode */
-    csrs CSR_MSTATUS, t5
+    li   t2, 0x1800               /* mstatus.MPP = M, so mret returns to M-mode */
+    csrs CSR_MSTATUS, t2
     mret
 88:
 .endm
@@ -54,8 +54,8 @@ _start:
     YADDRW a0, a0, t0
     YSEALE a0, a0
     csrw CSR_MEPC, a0
-    li   t5, 0x1800
-    csrs CSR_MSTATUS, t5
+    li   t2, 0x1800
+    csrs CSR_MSTATUS, t2
     mret
     /* Falling through here (rather than to good_target) fails the test. */
     j    fail
@@ -64,7 +64,7 @@ good_target:
     /* Landed here running, so prove PCC itself came out unsealed. */
     auipc a0, 0
     YTYPER t0, a0
-    bnez t0, fail
+    EXPECT_ZERO t0
     YMODESWI
     NEXT_TEST "a target without execute permission faults at the fetch not at mret"
 

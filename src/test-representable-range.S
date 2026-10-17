@@ -56,10 +56,10 @@
 
 .macro EXPECT_BOUNDS reg, base_reg, len
     YBASER t3, \reg
-    bne  t3, \base_reg, fail
+    EXPECT_EQ t3, \base_reg
     YLENR t3, \reg
     li   t4, \len
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 .endm
 
 .option norvc
@@ -87,11 +87,11 @@ _start:
     li   t0, -1
     YADDRW a2, s0, t0
     EXPECT_TAG a2, 1
-    bne  a2, t0, fail
+    EXPECT_EQ a2, t0
     li   t1, 1
     YADD a2, a2, t1              /* wraps from ~0 to 0 */
     EXPECT_TAG a2, 1
-    bnez a2, fail
+    EXPECT_ZERO a2
     EXPECT_NO_TRAP
 
     /* E = 0 lower boundary via YADDRW: rep_base is representable, rep_base - 1 detags. */
@@ -100,7 +100,7 @@ _start:
     sub  t1, s1, t0              /* t1 = rep_base */
     YADDRW a2, a0, t1
     EXPECT_TAG a2, 1
-    bne  a2, t1, fail
+    EXPECT_EQ a2, t1
     EXPECT_BOUNDS a2, s1, REP_E0_LEN
     EXPECT_NO_TRAP
 
@@ -108,7 +108,7 @@ _start:
     addi t1, t1, -1              /* t1 = rep_base - 1 */
     YADDRW a2, a0, t1
     EXPECT_TAG a2, 0
-    bne  a2, t1, fail
+    EXPECT_EQ a2, t1
     li   t0, REP_E0_SPAN
     sub  t2, s1, t0              /* decoded base shifts down by 2^(E+MW) */
     EXPECT_BOUNDS a2, t2, REP_E0_LEN
@@ -124,7 +124,7 @@ _start:
     add  t1, s1, t0              /* t1 = rep_top - 1 */
     YADDRW a2, a0, t1
     EXPECT_TAG a2, 1
-    bne  a2, t1, fail
+    EXPECT_EQ a2, t1
     EXPECT_BOUNDS a2, s1, REP_E0_LEN
     EXPECT_NO_TRAP
 
@@ -132,7 +132,7 @@ _start:
     addi t1, t1, 1               /* t1 = rep_top */
     YADDRW a2, a0, t1
     EXPECT_TAG a2, 0
-    bne  a2, t1, fail
+    EXPECT_EQ a2, t1
     li   t0, REP_E0_SPAN
     add  t2, s1, t0              /* decoded base shifts up by 2^(E+MW) */
     EXPECT_BOUNDS a2, t2, REP_E0_LEN
