@@ -214,6 +214,18 @@ s_entry:
     csrr t1, 0x100
     and  t1, t1, t0
     EXPECT_NONZERO t1
+    /*
+     * Under Svyrg, yr=0/yrg=0 strips loaded tags whereas yr=0/yrg=1 preserves
+     * them; update the code/data gigapage (index 2) to yrg=1 now that YRGE is
+     * set so capability loads from .data (such as console_fail's sentry) keep
+     * their tags.
+     */
+    lla  t0, pagetable
+    ld   t1, 16(t0)
+    li   t2, PTE_YRG_BIT
+    or   t1, t1, t2
+    sd   t1, 16(t0)
+    sfence.vma
 
     /* rvy=0 page under Svyrg behaves like base pte.y=0 */
     NEXT_TEST "rvy=0 under Svyrg clears loaded tags on ly"
@@ -289,8 +301,10 @@ s_entry:
     LY   t3, 0(a4)               /* a4 has yr=0/yrg=1 so loads preserve tag */
     YEQ  t0, t3, s2
     EXPECT_NONZERO t0            /* memory still holds s2, not t2 */
+    SY   s2, 0(a6)               /* restore buffer in case a buggy AMO modified memory */
 
     NEXT_TEST "yr=1/yrg=1/yw=1/yd=1 faults untagged amoswap.y on tagged memory with cause 35 without modifying cd or memory"
+    li   t1, 0x5555
     AMOSWAP_Y t1, a2, x0         /* untagged rs2 also faults on the tagged load with no side effect */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     EXPECT_TAG t1, 0
@@ -299,6 +313,7 @@ s_entry:
     LY   t3, 0(a4)
     YEQ  t0, t3, s2
     EXPECT_NONZERO t0
+    SY   s2, 0(a6)
 
     NEXT_TEST "yr=1/yrg=1 allows a tagged load once SYRG=1 matches"
     li   t0, SSTATUS_SYRG
@@ -407,8 +422,10 @@ s_entry:
     LY   t3, 0(a2)
     YEQ  t0, t3, s2
     EXPECT_NONZERO t0
+    SY   s2, 0(a2)
 
     NEXT_TEST "control: an AMO with x0 skips the store page fault and takes cause 35 without modifying cd or memory"
+    li   t1, 0x5555
     AMOSWAP_Y t1, a5, x0
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     EXPECT_TAG t1, 0
@@ -417,6 +434,7 @@ s_entry:
     LY   t3, 0(a2)
     YEQ  t0, t3, s2
     EXPECT_NONZERO t0
+    SY   s2, 0(a2)
 
     lla   m_continue, m_done
     ecall
