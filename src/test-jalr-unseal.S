@@ -33,7 +33,7 @@
     EXPECT_EPC_TAG 0
     YTYPER  t3, trap_epc
     li      t4, \expected_sealed
-    bne     t4, t3, fail
+    EXPECT_EQ t4, t3
 #endif
 .endm
 

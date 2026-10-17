@@ -56,7 +56,7 @@ _start:
     EXPECT_TVAL t0
     lbu  t2, 0(a0)
     li   t3, 0x5a
-    bne  t3, t2, fail
+    EXPECT_EQ t3, t2
 
     /*
      * INVAL has the same rule under RVY, but 0.9.3 predates it and instead
@@ -106,7 +106,7 @@ _start:
     CBO_ZERO a0
     EXPECT_NO_TRAP
     lbu  t2, 0(a0)
-    bnez t2, fail
+    EXPECT_ZERO t2
 
     NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0

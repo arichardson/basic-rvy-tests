@@ -22,7 +22,7 @@ _start:
     li   t0, 0
     YAMASK t1, t0
     li   t2, -1
-    bne  t2, t1, fail
+    EXPECT_EQ t2, t1
 
     /* YAMASK of an inexactly representable length -> the mask is
      * still contiguous ones in the high bits, but not all-ones */
@@ -30,10 +30,10 @@ _start:
     li   t0, 0x10000001
     YAMASK t1, t0
     not  t2, t1
-    beqz t2, fail                /* must require some rounding */
+    EXPECT_NONZERO t2            /* must require some rounding */
     addi t3, t2, 1
     and  t3, t3, t2
-    bnez t3, fail                /* ~mask + 1 must be a power of two */
+    EXPECT_ZERO t3               /* ~mask + 1 must be a power of two */
 
     /* ddc is the root capability the cases below derive from. */
     csrrs t0, CSR_DDC, x0
@@ -49,11 +49,10 @@ _start:
 
 .macro CHECK_YBNDSWI length
     YBNDSWI t1, t0, \length
-    YTAGR t2, t1
-    beqz t2, fail
+    EXPECT_TAG t1, 1
     YLENR t2, t1
     li   t3, \length
-    bne  t3, t2, fail
+    EXPECT_EQ t3, t2
 .endm
 
     CHECK_YBNDSWI 4096           /* page-sized */
@@ -69,23 +68,20 @@ _start:
     /* 4080 is not exactly representable in the RV32 capability format, so
      * the exact bounds request must clear the tag */
     YBNDSWI t1, t0, 4080
-    YTAGR t2, t1                 /* ytagr = 0 */
-    bnez t2, fail
+    EXPECT_TAG t1, 0
 #endif
 #endif /* !CHERI_093 */
 
     /* YSEALE (the macro picks each version's encoding) */
     NEXT_TEST "yseale seals as a sentry and sealing again detags"
     YSEALE t1, t0
-    YTAGR t2, t1                 /* ytagr = 1 */
-    beqz t2, fail
+    EXPECT_TAG t1, 1
     YTYPER t2, t1                /* ytyper = 1 (sentry) */
     li   t3, 1
-    bne  t3, t2, fail
+    EXPECT_EQ t3, t2
     /* sealing an already sealed capability clears the tag */
     YSEALE t4, t1
-    YTAGR t2, t4                 /* ytagr = 0 */
-    bnez t2, fail
+    EXPECT_TAG t4, 0
 
 #ifndef CHERI_093
     /* The pre-0.9.9 YSEALE encoding (2OP space) must be illegal */
@@ -101,7 +97,7 @@ _start:
      */
     NEXT_TEST "yhir (or v0.9.9 srliy by XLEN) reads the metadata"
     YHIR t1, t0
-    beqz t1, fail                /* pesbt of the root cap is non-zero */
+    EXPECT_NONZERO t1            /* pesbt of the root cap is non-zero */
     EXPECT_NO_TRAP
 
 #ifdef CHERI_099
@@ -125,17 +121,15 @@ _start:
     NEXT_TEST "ymodew updates the execution mode in integer and capability mode"
     li   t2, 1
     YMODEW t1, t0, t2
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     YMODER t3, t1
-    bne  t3, t2, fail
+    EXPECT_EQ t3, t2
     YMODESWY
     YMODEW t1, t1, x0
     YMODESWI
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     YMODER t3, t1
-    bnez t3, fail
+    EXPECT_ZERO t3
     EXPECT_NO_TRAP
 
     NEXT_TEST "ymodew with cd=x0 and cs1!=x0 is reserved in v0.9.9"

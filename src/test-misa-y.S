@@ -30,20 +30,20 @@ _start:
     csrr t0, CSR_MISA
     li   t1, MISA_Y
     and  t2, t0, t1
-    beqz t2, fail
+    EXPECT_NONZERO t2
 
     /* Test 2: menvcfg resets to 0; CRE is bit 9; bit 28 is not writable */
     NEXT_TEST "menvcfg resets to 0 and CRE is bit 9 not bit 28"
     csrr t0, CSR_MENVCFG
-    bnez t0, fail
+    EXPECT_ZERO t0
     li   t1, MENVCFG_CRE
     csrs CSR_MENVCFG, t1
     csrr t0, CSR_MENVCFG
-    bne  t1, t0, fail
+    EXPECT_EQ t0, t1
     li   t2, 1 << 28             /* pre-0.9.9 CRE position */
     csrs CSR_MENVCFG, t2
     csrr t0, CSR_MENVCFG
-    bne  t1, t0, fail
+    EXPECT_EQ t0, t1
     csrc CSR_MENVCFG, t1         /* back to the reset value */
 
     /*
@@ -64,11 +64,13 @@ _start:
      */
 .macro CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT csr_num, save_creg
     csrrw \save_creg, \csr_num, x0
-    li    t5, MISA_Y
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    csrs  CSR_MISA, t2
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
+    YMODESWY
     csrrw x0, \csr_num, \save_creg
 .endm
 
@@ -77,8 +79,13 @@ _start:
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_MEPC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_STVEC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_SEPC, s2
+    /* vstvec/vsepc only exist when the hypervisor extension is implemented. */
+    csrr  t0, CSR_MISA
+    andi  t0, t0, (1 << 7)       /* misa.H */
+    beqz  t0, 1f
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSTVEC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_VSEPC, s2
+1:
 
     /*
      * A capability with full bounds and tag=1 that has a single architectural
@@ -89,28 +96,36 @@ _start:
     li    t0, PERM_W
     YPERMC t1, s2, t0
     csrrw x0, CSR_DDC, t1
-    li    t5, MISA_Y
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    csrs  CSR_MISA, t2
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
+    YMODESWY
 
     li    t0, (1 << 6)           /* single SDP bit */
     YPERMC t1, s2, t0
     csrrw x0, CSR_DDC, t1
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    csrs  CSR_MISA, t2
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
+    YMODESWY
     csrrw x0, CSR_DDC, s2
 
     csrrs s2, CSR_MEPC, x0
     YSEALE t1, s2                /* root bounds and perms, but sealed (CT=1) */
     csrrw x0, CSR_MEPC, t1
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    csrs  CSR_MISA, t2
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
+    YMODESWY
     csrrw x0, CSR_MEPC, s2
 
     /*
@@ -133,10 +148,11 @@ _start:
     csrc  CSR_MISA, t2                   /* +24 */
     csrr  t3, CSR_MISA                   /* +28 */
     and   t3, t3, t2                     /* +32 */
-    beqz  t3, fail                       /* +36 */
+    csrs  CSR_MISA, t2                   /* +36 */
     jalr  x0, 44(t0)                     /* +40: pcc <- ct0 (root); jump to +44 */
 
     YMODESWI                             /* +44: back to int mode */
+    EXPECT_NONZERO t3
 
     /* Test 4: with every checked register a root capability again,
      * clearing misa.Y succeeds */
@@ -145,37 +161,47 @@ _start:
     csrc CSR_MISA, t1
     csrr t0, CSR_MISA
     and  t2, t0, t1
-    bnez t2, fail
+    ASSERT_ZERO t2
 
     /*
      * Test 5: with Y=0 the extension is gone, so its instructions and every
      * CSR it adds must read as illegal rather than as some stale value. The
      * CSRs are checked one at a time so a failure names the one at fault.
+     * Re-enable misa.Y across EXPECT_TRAP so console_fail can run if a check
+     * does not trap.
      */
+.macro EXPECT_ILLEGAL_WITH_Y_CLEAR
+    li   t4, MISA_Y
+    csrs CSR_MISA, t4
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    li   t4, MISA_Y
+    csrc CSR_MISA, t4
+.endm
+
     NEXT_TEST "with Y clear an RVY instruction is illegal"
     YAMASK t2, t0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     NEXT_TEST "with Y clear reading ddc is illegal"
     csrrs t2, CSR_DDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     NEXT_TEST "with Y clear reading mtidc is illegal"
     csrrs t2, CSR_MTIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     NEXT_TEST "with Y clear reading stidc is illegal"
     csrrs t2, CSR_STIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     NEXT_TEST "with Y clear reading utidc is illegal"
     csrrs t2, CSR_UTIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     /* Writes are gone too, not just reads. */
     NEXT_TEST "with Y clear writing mtidc is illegal"
     csrw CSR_MTIDC, x0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     /* Test 6: misa.Y can be set again and RVY instructions work */
     NEXT_TEST "misa.Y can be set again and RVY instructions work"
@@ -183,7 +209,7 @@ _start:
     csrs CSR_MISA, t1
     csrr t0, CSR_MISA
     and  t2, t0, t1
-    beqz t2, fail
+    ASSERT_NONZERO t2
     li   t0, 0
     YAMASK t2, t0
     EXPECT_NO_TRAP
@@ -211,14 +237,12 @@ _start:
     lla   t0, s_code_disabled
     csrw CSR_MEPC, t0
     lla   m_continue, m_cont_a
-    mv   s0, trap_count
-    addi s0, s0, 1
     mret
 s_code_disabled:
     YAMASK t2, t0                        /* in S-mode: illegal */
     ecall
 m_cont_a:
-    bne  trap_count, s0, fail
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
     /* enable S-mode CHERI and retry */
     li   t1, MENVCFG_CRE
     csrs CSR_MENVCFG, t1
@@ -229,13 +253,12 @@ m_cont_a:
     lla   t0, s_code_enabled
     csrw CSR_MEPC, t0
     lla   m_continue, m_cont_b
-    mv   s0, trap_count
     mret
 s_code_enabled:
     YAMASK t2, t0                        /* in S-mode: works */
     ecall
 m_cont_b:
-    bne  trap_count, s0, fail
+    EXPECT_NO_TRAP
 
     TEST_PASS
 fail:

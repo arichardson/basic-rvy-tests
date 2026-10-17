@@ -66,10 +66,10 @@
     lla   t0, sink
     lbu  t1, 0(t0)
     li   t2, \ch
-    bne  t1, t2, fail
+    EXPECT_EQ t1, t2
     lw   t1, 4(t0)
     li   t2, HTIF_PUTCHAR
-    bne  t1, t2, fail
+    EXPECT_EQ t1, t2
 .endm
 
 .option norvc
@@ -86,7 +86,7 @@ _start:
     lla   t0, console_target
     LOAD_X t1, 0(t0)
     lla   t2, tohost
-    bne  t1, t2, fail
+    EXPECT_EQ t1, t2
 
     /*
      * Whether there is a UART is a property of the machine, so neither
@@ -96,8 +96,7 @@ _start:
     NEXT_TEST "console_init agreed with whether the UART is really there"
     lla   t0, console_putc_fn
     LY    s1, 0(t0)
-    YTAGR t0, s1
-    beqz  t0, fail
+    EXPECT_TAG s1, 1
     lla   t0, console_putc_htif
     beq   s1, t0, 1f
     li   t0, UART_ADDR
@@ -122,16 +121,16 @@ _start:
     LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
     lbu  t2, TARGET_INFO_OFF_HAS_HTIF(t0)
     bnez t1, 1f
-    beqz t2, fail
+    EXPECT_NONZERO t2
     lla   t0, console_putc_htif
-    bne  s1, t0, fail
+    EXPECT_EQ s1, t0
     j    3f
 1:  bnez t2, 2f
     lla   t0, console_putc_uart
-    bne  s1, t0, fail
+    EXPECT_EQ s1, t0
     j    3f
 2:  lla   t0, console_putc_both
-    bne  s1, t0, fail
+    EXPECT_EQ s1, t0
 3:
 
     /*
@@ -148,13 +147,13 @@ _start:
     bnez trap_count, 1f
     li   t2, TARGET_INFO_MAGIC
     bne  t2, t1, 1f
-    bne  t2, s1, fail
+    EXPECT_EQ t2, s1
     lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
-    bne  s2, t1, fail
+    EXPECT_EQ s2, t1
     j    2f
 1:  li   trap_count, 0
-    bnez s1, fail
-    bnez s2, fail
+    EXPECT_ZERO s1
+    EXPECT_ZERO s2
 2:
 
     REDIRECT_CONSOLE
@@ -186,13 +185,13 @@ _start:
     EXPECT_NO_TRAP
     lla   t0, target_info
     lw   t1, TARGET_INFO_OFF_MAGIC(t0)
-    bnez t1, fail
+    EXPECT_ZERO t1
     lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
-    bnez t1, fail
+    EXPECT_ZERO t1
     LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
-    bnez t1, fail
+    EXPECT_ZERO t1
     lbu  t1, TARGET_INFO_OFF_HAS_HTIF(t0)
-    beqz t1, fail
+    EXPECT_NONZERO t1
     sw   s1, TARGET_INFO_OFF_MAGIC(t0)
     sw   s2, TARGET_INFO_OFF_IMPL_ID(t0)
     STORE_X a6, TARGET_INFO_OFF_UART_ADDR(t0)
@@ -223,9 +222,9 @@ _start:
     lla   t0, sink
     lbu  t1, 0(t0)
     li   t2, 'c'
-    bne  t1, t2, fail
+    EXPECT_EQ t1, t2
     lw   t1, 4(t0)
-    bnez t1, fail
+    EXPECT_ZERO t1
 
     /* One character: the byte and the command word both have to appear. */
     NEXT_TEST "console_putc emits the byte and the HTIF command word"
@@ -273,7 +272,7 @@ _start:
     auipc t0, 0
     YPERMR t0, t0
     andi  t0, t0, PERM_W
-    bnez  t0, fail               /* caller's read-only PCC was restored */
+    EXPECT_ZERO t0               /* caller's read-only PCC was restored */
     lla   t0, 2f
     YADDRW s1, s1, t0
     jr    s1
@@ -281,6 +280,46 @@ _start:
     YMODESWI
     EXPECT_NO_TRAP
     EXPECT_EMITTED 'c'
+
+    /*
+     * console_fail records the failing case in tap_failed and records the
+     * first failing id in tap_fail_first; EXPECT_FAIL preserves ra, a0, and
+     * t0-t4.
+     */
+    NEXT_TEST "console_fail records non-fatal failures and preserves caller state"
+    mv    s1, test_id
+    li    a0, 5
+    call  console_fail
+    YMODESWY
+    li    ra, 0x1111
+    li    a0, 0x2222
+    li    t0, 0x3333
+    li    t1, 0x4444
+    li    test_id, 9
+    EXPECT_FAIL
+    YMODESWI
+    mv    test_id, s1
+    lla   a1, tap_fail_first
+    LOAD_X a2, 0(a1)
+    STORE_X x0, 0(a1)
+    lla   a1, tap_failed
+    lbu   a3, 5(a1)
+    lbu   a4, 9(a1)
+    sb    x0, 5(a1)
+    sb    x0, 9(a1)
+    li    a5, 5
+    EXPECT_EQ a2, a5
+    li    a5, 1
+    EXPECT_EQ a3, a5
+    EXPECT_EQ a4, a5
+    li    a5, 0x1111
+    EXPECT_EQ ra, a5
+    li    a5, 0x2222
+    EXPECT_EQ a0, a5
+    li    a5, 0x3333
+    EXPECT_EQ t0, a5
+    li    a5, 0x4444
+    EXPECT_EQ t1, a5
 
     RESTORE_CONSOLE
 
