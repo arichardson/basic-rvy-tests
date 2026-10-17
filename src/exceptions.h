@@ -455,6 +455,24 @@ __rvy_used_resume_after_fault = 1
     beqz t5, fail
 .endm
 
+/*
+ * Seed \reg with a poison capability pattern (both halves set to POISON_VAL)
+ * before an operation that should fault, and check afterwards that the
+ * faulting instruction left \reg unmodified.
+ */
+#define POISON_VAL 0x55555555
+
+.macro POISON_REG reg
+    li   \reg, POISON_VAL
+    YHIW \reg, \reg, \reg
+.endm
+
+.macro CHECK_POISON_REG reg
+    li   t6, POISON_VAL
+    YHIW t6, t6, t6
+    EXPECT_CAP_EQ \reg, t6
+.endm
+
 /* Shared prologue: record the trap, letting an S-mode ecall back to M-mode. */
 .macro TRAP_RECORD_AND_LET_ECALL_THROUGH
     csrr t6, CSR_MCAUSE

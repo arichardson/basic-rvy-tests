@@ -40,9 +40,9 @@
  *   - M-mode with mstatus.MPRV=1 and MPP=S enforces Svyrg load and store
  *     checks.
  *
- * Register use: s2 = tagged root capability, s7 (svyrg_conservative) =
- * target_info.svyrg_traps_conservatively, a0-a7 = VA aliases of the test
- * buffer.
+ * Register use: s2 = tagged root capability, s1 = distinct tagged store
+ * capability, s7 (svyrg_conservative) = target_info.svyrg_traps_conservatively,
+ * a0-a7 = VA aliases of the test buffer.
  */
 #define TEST_NAME "svyrg"
 #ifdef CHERI_093
@@ -68,6 +68,12 @@
 #define SSTATUS_SYRG (1 << 60)
 #define SSTATUS_UYRG (1 << 61)
 
+.macro CHECK_BUF load_alias, store_alias=a0
+    LY   t0, 0(\load_alias)
+    EXPECT_CAP_EQ t0, s2
+    SY   s2, 0(\store_alias)
+.endm
+
 .option norvc
 .section .text
 .globl _start
@@ -75,8 +81,10 @@ _start:
     SETUP_TRAPS
     LOAD_TARGET_FLAG svyrg_conservative, TARGET_INFO_OFF_SVYRG_TRAPS_CONSERVATIVELY
 
-    /* Keep a tagged root capability for the store tests. */
+    /* Keep a tagged root capability in s2 and a distinct store capability in s1. */
     csrrs s2, CSR_DDC, x0
+    li   t0, 0xdeadbeef
+    YADDRW s1, s2, t0
 
     /* PMP entry 0: allow everything (required for S-mode accesses). */
     li   t0, -1
@@ -188,8 +196,25 @@ s_entry:
 
     NEXT_TEST "base mode pte.y=0 faults tagged sy"
     SY   s2, 0(a0)               /* restore tagged capability in buffer */
-    SY   s2, 0(a1)               /* tagged -> cause 36 */
+    SY   s1, 0(a1)               /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF a0
+
+    NEXT_TEST "base mode pte.y=0 faults tagged amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a1, s1         /* tagged amoswap.y -> cause 36 without modifying cd or memory */
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
+
+    NEXT_TEST "base mode pte.y=0 faults tagged sc.y"
+    LR_Y t1, a1
+    EXPECT_NO_TRAP
+    POISON_REG t1
+    SC_Y t1, a1, s1              /* reserved tagged sc.y -> cause 36 without modifying cd or memory */
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
 
     NEXT_TEST "base mode pte.y=0 allows untagged sy"
     SY   x0, 0(a1)               /* NULL (untagged) -> no trap */
@@ -203,9 +228,24 @@ s_entry:
      * reserved, so using the page now must fault like any other reserved
      * PTE bit would.
      */
-    NEXT_TEST "a page carrying the Svyrg bits faults while they are reserved"
+    NEXT_TEST "a page carrying the Svyrg bits faults ly while they are reserved"
+    POISON_REG t1
     LY   t1, 0(a2)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "a page carrying the Svyrg bits faults lr.y while they are reserved"
+    POISON_REG t1
+    LR_Y t1, a2
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "a page carrying the Svyrg bits faults amoswap.y while they are reserved"
+    POISON_REG t1
+    AMOSWAP_Y t1, a2, s1
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
 
     /* Enable Svyrg; the bit must read back as set */
     NEXT_TEST "sstatus.YRGE reads back as set"
@@ -239,8 +279,25 @@ s_entry:
 
     NEXT_TEST "rvy=0 under Svyrg faults tagged sy"
     SY   s2, 0(a6)
-    SY   s2, 0(a1)  /* tagged -> cause 36 */
+    SY   s1, 0(a1)  /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF a4, a6
+
+    NEXT_TEST "rvy=0 under Svyrg faults tagged amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a1, s1
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
+
+    NEXT_TEST "rvy=0 under Svyrg faults tagged sc.y"
+    LR_Y t1, a1
+    EXPECT_NO_TRAP
+    POISON_REG t1
+    SC_Y t1, a1, s1
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
 
     /*
      * yr=1/yrg=1 S-page: a tagged capability in memory faults with cause 35
@@ -248,9 +305,17 @@ s_entry:
      * without raising cause 35 unless svyrg_traps_conservatively is set; once
      * SYRG=1 is set, tagged loads succeed too.
      */
-    NEXT_TEST "yr=1/yrg=1 faults a tagged load while SYRG=0"
+    NEXT_TEST "yr=1/yrg=1 faults a tagged ly while SYRG=0"
+    POISON_REG t1
     LY   t1, 0(a2)               /* tagged in memory -> cause 35 (mismatch) */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "yr=1/yrg=1 faults a tagged lr.y while SYRG=0"
+    POISON_REG t1
+    LR_Y t1, a2
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
 
     NEXT_TEST "yr=1/yrg=1 allows an untagged ly while SYRG=0"
     li   t0, 0x12345678
@@ -285,35 +350,31 @@ s_entry:
     EXPECT_EQ t1, t0
 2:
 
-    NEXT_TEST "yr=1/yrg=1 faults a tagged load again after amoswap.y wrote a tag"
+    NEXT_TEST "yr=1/yrg=1 faults a tagged ly again after amoswap.y wrote a tag"
+    POISON_REG t1
     LY   t1, 0(a2)               /* memory is now tagged again -> cause 35 */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "yr=1/yrg=1 faults a tagged lr.y again after amoswap.y wrote a tag"
+    POISON_REG t1
+    LR_Y t1, a2
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
 
     NEXT_TEST "yr=1/yrg=1/yw=1/yd=1 faults tagged amoswap.y on tagged memory with cause 35 without modifying cd or memory"
-    li   t0, 0xdeadbeef
-    YADDRW t2, s2, t0            /* distinct tagged capability t2 != s2 */
-    li   t1, 0x5555
-    AMOSWAP_Y t1, a2, t2         /* store side is permitted (yw=1/yd=1), load side faults (35) */
+    POISON_REG t1
+    AMOSWAP_Y t1, a2, s1         /* store side is permitted (yw=1/yd=1), load side faults (35) */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    EXPECT_TAG t1, 0
-    li   t0, 0x5555
-    EXPECT_EQ t1, t0             /* cd was not modified */
-    LY   t3, 0(a4)               /* a4 has yr=0/yrg=1 so loads preserve tag */
-    YEQ  t0, t3, s2
-    EXPECT_NONZERO t0            /* memory still holds s2, not t2 */
-    SY   s2, 0(a6)               /* restore buffer in case a buggy AMO modified memory */
+    CHECK_POISON_REG t1          /* cd was not modified */
+    CHECK_BUF a4, a6             /* memory still holds s2, not s1 */
 
     NEXT_TEST "yr=1/yrg=1/yw=1/yd=1 faults untagged amoswap.y on tagged memory with cause 35 without modifying cd or memory"
-    li   t1, 0x5555
+    POISON_REG t1
     AMOSWAP_Y t1, a2, x0         /* untagged rs2 also faults on the tagged load with no side effect */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    EXPECT_TAG t1, 0
-    li   t0, 0x5555
-    EXPECT_EQ t1, t0
-    LY   t3, 0(a4)
-    YEQ  t0, t3, s2
-    EXPECT_NONZERO t0
-    SY   s2, 0(a6)
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
 
     NEXT_TEST "yr=1/yrg=1 allows a tagged load once SYRG=1 matches"
     li   t0, SSTATUS_SYRG
@@ -335,12 +396,28 @@ s_entry:
 
     /* Non-zero rvy on a non-leaf PTE is reserved even when YRGE=1 */
     NEXT_TEST "rvy bits on a non-leaf PTE fault ly as reserved"
+    POISON_REG t1
     LY   t1, 0(a7)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "rvy bits on a non-leaf PTE fault lr.y as reserved"
+    POISON_REG t1
+    LR_Y t1, a7
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
 
     NEXT_TEST "rvy bits on a non-leaf PTE fault sy as reserved"
-    SY   s2, 0(a7)
+    SY   s1, 0(a7)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF a4, a6
+
+    NEXT_TEST "rvy bits on a non-leaf PTE fault amoswap.y as reserved"
+    POISON_REG t1
+    AMOSWAP_Y t1, a7, s1
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
 
     /* yr=1/yrg=0 U-page: UYRG (not SYRG) selects the generation */
     NEXT_TEST "yr=1/yrg=0 on a U-page allows a tagged load while UYRG=0 matches"
@@ -348,11 +425,26 @@ s_entry:
     EXPECT_NO_TRAP
     EXPECT_TAG t1, 1
 
-    NEXT_TEST "yr=1/yrg=0 on a U-page faults a tagged load once UYRG=1 mismatches"
+    NEXT_TEST "yr=1/yrg=0 on a U-page faults a tagged ly once UYRG=1 mismatches"
     li   t0, SSTATUS_UYRG
     csrs 0x100, t0                       /* UYRG = 1: mismatch */
+    POISON_REG t1
     LY   t1, 0(a3)  /* cause 35 */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "yr=1/yrg=0 on a U-page faults a tagged lr.y once UYRG=1 mismatches"
+    POISON_REG t1
+    LR_Y t1, a3
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "yr=1/yrg=0 on a U-page faults a tagged amoswap.y once UYRG=1 mismatches"
+    POISON_REG t1
+    AMOSWAP_Y t1, a3, s1
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
 
     /* yw=1/yd=0: loads normal, tagged stores fault, PERM_C=0 stores strip tag and succeed */
     NEXT_TEST "yw=1/yd=0 allows a tagged load"
@@ -361,13 +453,24 @@ s_entry:
     EXPECT_TAG t1, 1
 
     NEXT_TEST "yw=1/yd=0 faults a tagged sy"
-    SY   s2, 0(a4)  /* tagged -> cause 36 */
+    SY   s1, 0(a4)  /* tagged -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF a4, a6
+
+    NEXT_TEST "yw=1/yd=0 faults a tagged amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a4, s1
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
 
     NEXT_TEST "yw=1/yd=0 faults a tagged sc.y"
     LR_Y t1, a4
-    SC_Y t1, a4, s2 /* reserved tagged sc.y -> cause 36 */
+    POISON_REG t1
+    SC_Y t1, a4, s1 /* reserved tagged sc.y -> cause 36 */
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a6
 
     NEXT_TEST "yw=1/yd=0 allows an untagged sc.y"
     LR_Y t1, a4
@@ -397,13 +500,22 @@ s_entry:
     SY   s2, 0(a2)               /* index 4 still allows tagged stores */
     EXPECT_NO_TRAP
 
-    NEXT_TEST "yr only: the capability load mismatches the generation"
+    NEXT_TEST "yr only: the capability ly mismatches the generation"
+    POISON_REG t1
     LY   t1, 0(a5)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "yr only: the capability lr.y mismatches the generation"
+    POISON_REG t1
+    LR_Y t1, a5
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
 
     NEXT_TEST "yr only: the tagged capability store is refused"
-    SY   s2, 0(a5)
+    SY   s1, 0(a5)
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF a4, a2
 
     /*
      * An AMO with a tagged source trips both (yw=0 and yr=1/yrg=0), and the
@@ -411,30 +523,18 @@ s_entry:
      * load capability fault (35) fires, and neither case modifies cd or memory.
      */
     NEXT_TEST "an AMO with a tagged source trips both and the store page fault wins without modifying cd or memory"
-    li   t0, 0xdeadbeef
-    YADDRW t2, s2, t0            /* distinct tagged capability t2 != s2 */
-    li   t1, 0x5555
-    AMOSWAP_Y t1, a5, t2
+    POISON_REG t1
+    AMOSWAP_Y t1, a5, s1
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
-    EXPECT_TAG t1, 0
-    li   t0, 0x5555
-    EXPECT_EQ t1, t0
-    LY   t3, 0(a2)
-    YEQ  t0, t3, s2
-    EXPECT_NONZERO t0
-    SY   s2, 0(a2)
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a2
 
     NEXT_TEST "control: an AMO with x0 skips the store page fault and takes cause 35 without modifying cd or memory"
-    li   t1, 0x5555
+    POISON_REG t1
     AMOSWAP_Y t1, a5, x0
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    EXPECT_TAG t1, 0
-    li   t0, 0x5555
-    EXPECT_EQ t1, t0
-    LY   t3, 0(a2)
-    YEQ  t0, t3, s2
-    EXPECT_NONZERO t0
-    SY   s2, 0(a2)
+    CHECK_POISON_REG t1
+    CHECK_BUF a4, a2
 
     lla   m_continue, m_done
     ecall
@@ -446,7 +546,8 @@ m_done:
      * MPRV=1, MPP=S before each access and clear MPRV before any check that
      * could branch to fail.
      */
-    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg load checks"
+    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg ly checks"
+    POISON_REG t1
     li   t0, 0x1800
     csrc CSR_MSTATUS, t0
     li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
@@ -454,15 +555,52 @@ m_done:
     LY   t1, 0(a5)
     csrc CSR_MSTATUS, t0
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
 
-    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg store checks"
+    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg lr.y checks"
+    POISON_REG t1
     li   t0, 0x1800
     csrc CSR_MSTATUS, t0
     li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
     csrs CSR_MSTATUS, t0
-    SY   s2, 0(a5)
+    LR_Y t1, a5
+    csrc CSR_MSTATUS, t0
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg sy checks"
+    li   t0, 0x1800
+    csrc CSR_MSTATUS, t0
+    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
+    csrs CSR_MSTATUS, t0
+    SY   s1, 0(a5)
     csrc CSR_MSTATUS, t0
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF a0
+
+    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg tagged amoswap.y checks"
+    POISON_REG t1
+    li   t0, 0x1800
+    csrc CSR_MSTATUS, t0
+    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
+    csrs CSR_MSTATUS, t0
+    AMOSWAP_Y t1, a5, s1
+    csrc CSR_MSTATUS, t0
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
+
+    NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg untagged amoswap.y checks"
+    POISON_REG t1
+    li   t0, 0x1800
+    csrc CSR_MSTATUS, t0
+    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
+    csrs CSR_MSTATUS, t0
+    AMOSWAP_Y t1, a5, x0
+    csrc CSR_MSTATUS, t0
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+    CHECK_BUF a0
 
     TEST_PASS
 fail:
