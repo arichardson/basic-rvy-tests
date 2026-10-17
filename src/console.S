@@ -27,29 +27,31 @@
 
 /*
  * If the caller was in integer mode, ra holds an untagged address; wrap it in
- * \pcc_reg with integer execution mode so ret resumes in the caller's mode.
+ * the caller's PCC with integer execution mode so returning resumes in the
+ * caller's mode.
  */
-.macro WRAP_INT_RA pcc_reg, tmp_reg
+.macro WRAP_INT_RA tmp_reg
     YTAGR  \tmp_reg, ra
-    bnez   \tmp_reg, 99f         /* cap-mode calls already leave a sentry in ra */
-    YADDRW ra, \pcc_reg, ra
+    bnez   \tmp_reg, .Lwrap_ra_done_\@ /* cap-mode calls already leave a sentry in ra */
+    auipc  \tmp_reg, 0
+    YADDRW ra, \tmp_reg, ra
     li     \tmp_reg, CHERI_MODE_INT
     YMODEW ra, ra, \tmp_reg
-99:
+.Lwrap_ra_done_\@:
 .endm
 
 /*
  * Enter capability mode, make ra returnable to the caller's PCC and mode, and
  * jump through this function's saved RWX PCC sentry to .L\name\()_impl.
- * Clobbers t0-t2.
+ * Clobbers t0.
  */
 .macro CONSOLE_ENTRY name
 .globl \name
 \name:
     YMODESWY
-1:  auipc  t1, %pcrel_hi(.L\name\()_sentry)
-    LY     t0, %pcrel_lo(1b)(t1)
-    WRAP_INT_RA t1, t2
+    WRAP_INT_RA t0
+1:  auipc  t0, %pcrel_hi(.L\name\()_sentry)
+    LY     t0, %pcrel_lo(1b)(t0)
     jr     t0
     .pushsection .data.console_sentries, "aw", @progbits
     /* Replaced in-place with a sentry by console_init; must be YLEN-aligned. */
@@ -77,8 +79,8 @@
 .globl console_init
 console_init:
     YMODESWY
+    WRAP_INT_RA t0
     auipc  t0, 0
-    WRAP_INT_RA t0, t1
     YMV    a1, ra                /* kept across the probe */
 
     /* Seal the initial RWX PCC into each helper's entry sentry on first call. */
@@ -321,12 +323,39 @@ CONSOLE_ENTRY console_xfail
     ret
 
 /*
+ * Record that case a0 failed a non-fatal EXPECT_* check. Clobbers only t0
+ * so EXPECT_FAIL can preserve all caller registers around the call.
+ */
+CONSOLE_ENTRY console_fail
+.Lconsole_fail_impl:
+1:  auipc  t0, %pcrel_hi(fail_save_t1)
+    SY     t1, %pcrel_lo(1b)(t0)
+2:  auipc  t0, %pcrel_hi(tap_fail_first)
+    LOAD_X t1, %pcrel_lo(2b)(t0)
+    bnez   t1, 3f
+    STORE_X a0, %pcrel_lo(2b)(t0)
+3:  li     t1, TAP_MAX_CASES
+    bgeu   a0, t1, 4f
+    lla    t1, tap_failed
+    add    t1, t1, a0
+    YADDRW t0, t0, t1
+    li     t1, 1
+    sb     t1, 0(t0)
+4:  auipc  t0, %pcrel_hi(fail_save_t1)
+    LY     t1, %pcrel_lo(4b)(t0)
+    ret
+
+/*
  * Emit the whole TAP stream: a0 = how many cases ran, a1 = which one failed
- * (0 if none). It is written out here at the end rather than a line at a time
- * as the cases run, because NEXT_TEST would then have to clobber the argument
- * registers, and tests set those up before it as often as after.
+ * fatally (0 if none), a2 = NUL-terminated test name for the # PASS / # FAIL
+ * comment line (0 to omit). Returns the first failing case number (0 if all
+ * cases passed) in a0.
  *
- * Clobbers a0-a7 and t0-t4, which is more than the rest of this file, but the
+ * It is written out here at the end rather than a line at a time as the cases
+ * run, because NEXT_TEST would then have to clobber the argument registers,
+ * and tests set those up before it as often as after.
+ *
+ * Clobbers a0-a7 and t0-t6, which is more than the rest of this file, but the
  * only callers are TEST_PASS and TEST_FAIL and nothing runs after them.
  *
  * Note the operand order of the bne/beq below: RVY reserves BEQ/BNE with the
@@ -338,8 +367,46 @@ CONSOLE_ENTRY console_tap
     auipc  t6, 0                 /* kept for the table loads below */
     YMV    a4, ra                /* none of the calls below touch a4-a7 */
     mv     a6, a0
-    mv     a7, a1
+    mv     a3, a2
 
+    beqz   a1, 15f
+    li     t0, TAP_MAX_CASES
+    bgeu   a1, t0, 16f
+    lla    t0, tap_failed
+    add    t0, t0, a1
+    YADDRW t0, t6, t0
+    li     t1, 1
+    sb     t1, 0(t0)
+16: lla    t0, tap_fail_first
+    YADDRW t0, t6, t0
+    LOAD_X t1, 0(t0)
+    bnez   t1, 15f
+    STORE_X a1, 0(t0)
+15:
+    lla    t0, tap_fail_first
+    YADDRW t0, t6, t0
+    LOAD_X a7, 0(t0)             /* a7 = first failing case (0 if all passed) */
+
+    beqz   a3, 18f
+    bnez   a7, 17f
+    lla    a0, .Ltap_pass
+    jal    ra, .Lconsole_puts_impl
+    mv     a0, a3
+    jal    ra, .Lconsole_puts_impl
+    lla    a0, .Ltap_nl
+    jal    ra, .Lconsole_puts_impl
+    j      18f
+17: lla    a0, .Ltap_fail
+    jal    ra, .Lconsole_puts_impl
+    mv     a0, a3
+    jal    ra, .Lconsole_puts_impl
+    lla    a0, .Ltap_test
+    jal    ra, .Lconsole_puts_impl
+    mv     a0, a7
+    jal    ra, .Lconsole_put_dec_impl
+    lla    a0, .Ltap_nl
+    jal    ra, .Lconsole_puts_impl
+18:
     /*
      * Entry i of the table names case i: NEXT_TEST emits it and loads test_id
      * from the same assembly-time counter, so the two cannot disagree. t5 is
@@ -352,7 +419,13 @@ CONSOLE_ENTRY console_tap
 
     li   a5, 1
 1:  blt  a6, a5, 2f              /* while i <= total */
-    bne  a7, a5, 3f
+    li   t0, TAP_MAX_CASES
+    bgeu a5, t0, 3f
+    lla   t0, tap_failed
+    add  t0, t0, a5
+    YADDRW t0, t6, t0
+    lbu  t1, 0(t0)
+    beqz t1, 3f
 5:  lla   a0, .Ltap_notok
     j    4f
 3:  lla   t0, tap_xfail_count
@@ -434,11 +507,15 @@ CONSOLE_ENTRY console_tap
     jal  ra, .Lconsole_put_dec_impl
     lla   a0, .Ltap_nl
     jal  ra, .Lconsole_puts_impl
+    mv   a0, a7
     YMV  ra, a4
     ret
 
 .section .rodata
 .Ltap_version: .asciz "TAP version 13\n"
+.Ltap_pass:  .asciz "# PASS: "
+.Ltap_fail:  .asciz "# FAIL: "
+.Ltap_test:  .asciz " test "
 .Ltap_plan:  .asciz "1.."
 .Ltap_ok:    .asciz "ok "
 .Ltap_notok: .asciz "not ok "
@@ -501,6 +578,14 @@ tap_xfail_count:
 tap_xfails:
     .space 2 * XBYTES * TAP_MAX_XFAILS
 
+/* Set by console_fail and console_tap: first failing case and per-case byte map. */
+.globl tap_fail_first
+tap_fail_first:
+    WORD_X 0
+.globl tap_failed
+tap_failed:
+    .space TAP_MAX_CASES
+
 /*
  * Resolved by console_init to a capability for console_putc_htif,
  * console_putc_uart, or console_putc_both.
@@ -522,6 +607,9 @@ target_info:
     .space TARGET_INFO_SIZE
 
 .section .bss
+.balign YLEN_BYTES
+fail_save_t1:
+    .space YLEN_BYTES
 .balign 8
 dec_buf:
     .space DEC_BUF_LEN

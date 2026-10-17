@@ -26,6 +26,13 @@ renumber the rest, and give each one a description: it is what the TAP stream
 calls the case, and is the first thing anyone reads when it fails. Say what
 the case establishes rather than what it does, and keep it to one line.
 
+Use `EXPECT_*` macros (`EXPECT_TRAP`, `EXPECT_NO_TRAP`, `EXPECT_EQ`,
+`EXPECT_ZERO`, `EXPECT_NONZERO`, `EXPECT_TAG`, etc.) for case checks so a
+failing case is recorded in the TAP output (`tap_failed`) and remaining cases
+still run. Reserve `ASSERT_*` (or jumping to `fail:`) for preconditions where
+continuing execution is impossible, such as a failed control-flow transition or
+a mode switch that subsequent cases depend on.
+
 Use `lla` rather than `la` for symbol addresses so they always expand to
 PC-relative `auipc` + `addi`.
 

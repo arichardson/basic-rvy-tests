@@ -65,47 +65,33 @@
 
 /*
  * Report the result as TAP, so a run reports each case rather than just a
- * verdict: the plan, then one line per case up to the one that failed. The
- * name goes out as a TAP comment, which keeps the old human-readable line
- * without putting anything in the stream a parser would choke on.
+ * verdict: a # PASS / # FAIL comment line, one line per case, and the trailing
+ * plan. If any earlier case failed a non-fatal EXPECT_* check, console_tap
+ * emits # FAIL with the first failing case number and returns that case number
+ * in a0 as the exit code.
  */
 .macro TEST_PASS
     .pushsection .rodata
     .balign 4
-94: .ascii "# PASS: "
-    .ascii TEST_NAME
-    .asciz "\n"
+94: .asciz TEST_NAME
     .popsection
-    lla   a0, 94b
-    call console_puts
     li   a0, __tap_cases         /* every case in the file, skips included */
     li   a1, 0
+    lla   a2, 94b
     call console_tap
-    li   a0, 0
     call console_exit
 .endm
 
-/* Report failure with exit code = test_id. */
+/* Abort at the current case and report failure. */
 .macro TEST_FAIL
     .pushsection .rodata
     .balign 4
-95: .ascii "# FAIL: "
-    .ascii TEST_NAME
-    .asciz " test "
+95: .asciz TEST_NAME
     .popsection
-    lla   a0, 95b
-    call console_puts
-    mv   a0, test_id
-    call console_put_dec
-    .pushsection .rodata
-96: .asciz "\n"
-    .popsection
-    lla   a0, 96b
-    call console_puts
     mv   a0, test_id             /* the last case reached is the one that failed */
     mv   a1, test_id
+    lla   a2, 95b
     call console_tap
-    mv   a0, test_id
     call console_exit
 .endm
 
