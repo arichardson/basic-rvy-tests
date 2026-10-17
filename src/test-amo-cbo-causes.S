@@ -251,8 +251,7 @@ _start:
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
     LY   t2, 0(a3)
-    YTAGR t3, t2
-    beqz t3, fail
+    EXPECT_TAG t2, 1
 
     NEXT_TEST "amoswap.y of x0 through a read-only capability faults without side effects"
     SY   a3, 0(a3)
@@ -260,31 +259,25 @@ _start:
     AMOSWAP_Y t1, a4, x0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
-    YTAGR t3, t1
-    beqz t3, fail                /* cd (t1) must stay tagged */
+    EXPECT_TAG t1, 1             /* cd (t1) must stay tagged */
     LY   t2, 0(a3)
-    YTAGR t3, t2
-    beqz t3, fail                /* memory must stay tagged */
+    EXPECT_TAG t2, 1             /* memory must stay tagged */
 
     NEXT_TEST "amoswap.y of an untagged capability through a read-only capability faults"
     AMOSWAP_Y t1, a4, a2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     EXPECT_TVAL a0
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     LY   t2, 0(a3)
-    YTAGR t3, t2
-    beqz t3, fail
+    EXPECT_TAG t2, 1
 
     NEXT_TEST "control: amoswap.y of x0 succeeds when W is granted"
     YMV  t1, x0
     AMOSWAP_Y t1, a3, x0
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz t3, fail                /* loaded the tagged capability from memory */
+    EXPECT_TAG t1, 1             /* loaded the tagged capability from memory */
     LY   t2, 0(a3)
-    YTAGR t3, t2
-    bnez t3, fail                /* stored x0 to memory */
+    EXPECT_TAG t2, 0             /* stored x0 to memory */
 
     /*
      * Write-only capability (a7, R=0, W=1):
@@ -305,21 +298,20 @@ _start:
     li   t0, 0x33cc33cc
     sc.w t2, t0, (a7)
     EXPECT_NO_TRAP
-    bnez t2, fail
+    EXPECT_ZERO t2
 
     NEXT_TEST "sc.y through a write-only capability succeeds after a valid lr.y"
     SY   x0, 0(a3)
     LR_Y t1, a3
     SC_Y t2, a7, a3
     EXPECT_NO_TRAP
-    bnez t2, fail
+    EXPECT_ZERO t2
     LY   t3, 0(a3)
-    YTAGR t4, t3
 #if __riscv_xlen == 64
-    beqz t4, fail
+    EXPECT_TAG t3, 1
 #else
     /* 64-bit compressed capabilities cannot encode C without R, so a7 lacks C and strips the tag */
-    bnez t4, fail
+    EXPECT_TAG t3, 0
 #endif
 
     NEXT_TEST "amoswap.y through a write-only capability faults with store/AMO CAP_PERM"
@@ -342,8 +334,7 @@ _start:
     CBO_ZERO a7
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
 
     /* Integer SC.W and AMO via NULL cap: store-classified */
     NEXT_TEST "sc.w through the NULL capability is store classified"
@@ -382,39 +373,33 @@ _start:
     SY   a3, 0(a5)
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
-    bne  a0, t1, fail
+    EXPECT_TAG t1, 0
+    EXPECT_EQ a0, t1
 
     NEXT_TEST "capability-mode lr.y and sc.y without PERM_C strip loaded and stored tags"
     SY   a3, 0(a3)
     LR_Y t1, a5
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
     SC_Y t3, a5, a3
     EXPECT_NO_TRAP
-    bnez t3, fail
+    EXPECT_ZERO t3
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
 
     NEXT_TEST "capability-mode amoswap.y without PERM_C strips both loaded and stored tags"
     SY   a3, 0(a3)
     AMOSWAP_Y t1, a5, a3
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
     LY   t3, 0(a3)
-    YTAGR t4, t3
-    bnez t4, fail
+    EXPECT_TAG t3, 0
 
     NEXT_TEST "capability-mode ly without PERM_C strips the loaded tag"
     SY   a3, 0(a3)
     LY   t1, 0(a5)
     EXPECT_NO_TRAP
-    YTAGR t2, t1
-    bnez t2, fail
-    bne  a0, t1, fail
+    EXPECT_TAG t1, 0
+    EXPECT_EQ a0, t1
 
     /*
      * Capability-mode PERM_LM permission filtering on LY and LR.Y when
@@ -428,31 +413,28 @@ _start:
     LY   t1, 0(s2)
     LR_Y t2, s2
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     YPERMR t3, t1
     andi t4, t3, (PERM_W | PERM_LM)
-    bnez t4, fail
-    YTAGR t3, t2
-    beqz t3, fail
+    EXPECT_ZERO t4
+    EXPECT_TAG t2, 1
     YPERMR t3, t2
     andi t4, t3, (PERM_W | PERM_LM)
-    bnez t4, fail
+    EXPECT_ZERO t4
 
     NEXT_TEST "capability-mode ly and lr.y without PERM_LM preserve W and LM on a sealed sentry"
     SY   s1, 0(a3)
     LY   t1, 0(s2)
     LR_Y t2, s2
     EXPECT_NO_TRAP
-    YTAGR t3, t1
-    beqz t3, fail
+    EXPECT_TAG t1, 1
     YPERMR t3, t1
     andi t4, t3, (PERM_W | PERM_LM)
     li   t0, (PERM_W | PERM_LM)
-    bne  t4, t0, fail
+    EXPECT_EQ t4, t0
     YPERMR t3, t2
     andi t4, t3, (PERM_W | PERM_LM)
-    bne  t4, t0, fail
+    EXPECT_EQ t4, t0
 
     /*
      * LR.Y / SC.Y reservation behaviour in Capability Mode:
@@ -466,13 +448,12 @@ _start:
     SY   x0, 0(a3)
     LR_Y t1, a3
     SC_Y t2, a3, a3
-    bnez t2, fail
+    EXPECT_ZERO t2
     SC_Y t2, a3, x0
     EXPECT_NO_TRAP
-    beqz t2, fail                /* second SC.Y must report failure (rd != 0) */
+    EXPECT_NONZERO t2            /* second SC.Y must report failure (rd != 0) */
     LY   t3, 0(a3)
-    YTAGR t4, t3
-    beqz t4, fail                /* tagged capability from first SC.Y stays intact */
+    EXPECT_TAG t3, 1             /* tagged capability from first SC.Y stays intact */
 
     NEXT_TEST "sc.y to a different address than the preceding lr.y fails and cancels the reservation"
     SY   a3, 0(a3)
@@ -480,16 +461,14 @@ _start:
     LR_Y t1, a3
     SC_Y t2, s7, x0
     EXPECT_NO_TRAP
-    beqz t2, fail                /* address mismatch must fail */
+    EXPECT_NONZERO t2            /* address mismatch must fail */
     LY   t3, 0(s7)
-    YTAGR t4, t3
-    beqz t4, fail                /* s7 slot stays tagged */
+    EXPECT_TAG t3, 1             /* s7 slot stays tagged */
     SC_Y t2, a3, x0
     EXPECT_NO_TRAP
-    beqz t2, fail                /* prior SC.Y cancelled the reservation on a3 */
+    EXPECT_NONZERO t2            /* prior SC.Y cancelled the reservation on a3 */
     LY   t3, 0(a3)
-    YTAGR t4, t3
-    beqz t4, fail                /* a3 slot also stays tagged */
+    EXPECT_TAG t3, 1             /* a3 slot also stays tagged */
 
     /*
      * Unaligned integer store straddling two adjacent capability slots at
@@ -501,11 +480,9 @@ _start:
     sw   x0, (YLEN_BYTES - 2)(a3)
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
-    YTAGR t2, t1
-    bnez t2, fail
+    EXPECT_TAG t1, 0
     LY   t3, 0(s7)
-    YTAGR t4, t3
-    bnez t4, fail
+    EXPECT_TAG t3, 0
 
     YMODESWI                     /* back to int mode */
     TEST_PASS

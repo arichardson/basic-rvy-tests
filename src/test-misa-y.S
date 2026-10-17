@@ -30,20 +30,20 @@ _start:
     csrr t0, CSR_MISA
     li   t1, MISA_Y
     and  t2, t0, t1
-    beqz t2, fail
+    EXPECT_NONZERO t2
 
     /* Test 2: menvcfg resets to 0; CRE is bit 9; bit 28 is not writable */
     NEXT_TEST "menvcfg resets to 0 and CRE is bit 9 not bit 28"
     csrr t0, CSR_MENVCFG
-    bnez t0, fail
+    EXPECT_ZERO t0
     li   t1, MENVCFG_CRE
     csrs CSR_MENVCFG, t1
     csrr t0, CSR_MENVCFG
-    bne  t1, t0, fail
+    EXPECT_EQ t0, t1
     li   t2, 1 << 28             /* pre-0.9.9 CRE position */
     csrs CSR_MENVCFG, t2
     csrr t0, CSR_MENVCFG
-    bne  t1, t0, fail
+    EXPECT_EQ t0, t1
     csrc CSR_MENVCFG, t1         /* back to the reset value */
 
     /*
@@ -64,11 +64,11 @@ _start:
      */
 .macro CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT csr_num, save_creg
     csrrw \save_creg, \csr_num, x0
-    li    t5, MISA_Y
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
     csrrw x0, \csr_num, \save_creg
 .endm
 
@@ -89,28 +89,30 @@ _start:
     li    t0, PERM_W
     YPERMC t1, s2, t0
     csrrw x0, CSR_DDC, t1
-    li    t5, MISA_Y
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
 
     li    t0, (1 << 6)           /* single SDP bit */
     YPERMC t1, s2, t0
     csrrw x0, CSR_DDC, t1
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
     csrrw x0, CSR_DDC, s2
 
     csrrs s2, CSR_MEPC, x0
     YSEALE t1, s2                /* root bounds and perms, but sealed (CT=1) */
     csrrw x0, CSR_MEPC, t1
-    csrc  CSR_MISA, t5
-    csrr  t6, CSR_MISA
-    and   t6, t6, t5
-    beqz  t6, fail
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
     csrrw x0, CSR_MEPC, s2
 
     /*
@@ -145,7 +147,7 @@ _start:
     csrc CSR_MISA, t1
     csrr t0, CSR_MISA
     and  t2, t0, t1
-    bnez t2, fail
+    ASSERT_ZERO t2
 
     /*
      * Test 5: with Y=0 the extension is gone, so its instructions and every
@@ -183,7 +185,7 @@ _start:
     csrs CSR_MISA, t1
     csrr t0, CSR_MISA
     and  t2, t0, t1
-    beqz t2, fail
+    ASSERT_NONZERO t2
     li   t0, 0
     YAMASK t2, t0
     EXPECT_NO_TRAP
@@ -218,7 +220,7 @@ s_code_disabled:
     YAMASK t2, t0                        /* in S-mode: illegal */
     ecall
 m_cont_a:
-    bne  trap_count, s0, fail
+    EXPECT_EQ trap_count, s0
     /* enable S-mode CHERI and retry */
     li   t1, MENVCFG_CRE
     csrs CSR_MENVCFG, t1
@@ -235,7 +237,7 @@ s_code_enabled:
     YAMASK t2, t0                        /* in S-mode: works */
     ecall
 m_cont_b:
-    bne  trap_count, s0, fail
+    EXPECT_EQ trap_count, s0
 
     TEST_PASS
 fail:

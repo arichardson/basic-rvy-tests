@@ -62,9 +62,9 @@
     SY   a1, 0(a2)
     EXPECT_NO_TRAP
     LX   t2, 0(a2)
-    bne  t2, t0, fail
+    EXPECT_EQ t2, t0
     LX   t3, XBYTES(a2)
-    bne  t3, t1, fail
+    EXPECT_EQ t3, t1
 
     NEXT_TEST "\desc (decompressed via inspection and ybld)"
     SX   x0, 0(a2)
@@ -80,9 +80,9 @@
     SY     a3, 0(a2)
     EXPECT_NO_TRAP
     LX   t2, 0(a2)
-    bne  t2, t0, fail
+    EXPECT_EQ t2, t0
     LX   t3, XBYTES(a2)
-    bne  t3, t1, fail
+    EXPECT_EQ t3, t1
 .endm
 
 /*
@@ -104,9 +104,9 @@
     SY   a3, 0(a2)
     EXPECT_NO_TRAP
     LX   t2, 0(a2)
-    bne  t2, t0, fail
+    EXPECT_EQ t2, t0
     LX   t3, XBYTES(a2)
-    bne  t3, t1, fail
+    EXPECT_EQ t3, t1
 .endm
 
 /*
@@ -123,13 +123,13 @@
     YHIW   a1, t0, t1
     YBASER t4, a1                /* force decompression before YHIR/SY */
     YHIR   t3, a1
-    bne    t3, t1, fail
+    EXPECT_EQ t3, t1
     SY     a1, 0(a2)
     EXPECT_NO_TRAP
     LX   t2, 0(a2)
-    bne  t2, t0, fail
+    EXPECT_EQ t2, t0
     LX   t3, XBYTES(a2)
-    bne  t3, t1, fail
+    EXPECT_EQ t3, t1
 .endm
 
 .option norvc
@@ -188,14 +188,14 @@ _start:
     AMOSWAP_Y a3, a2, a1         /* dst <- a1, a3 <- old dst */
     EXPECT_NO_TRAP
     LX   t4, 0(a2)
-    bne  t4, t0, fail
+    EXPECT_EQ t4, t0
     LX   t4, XBYTES(a2)
-    bne  t4, t1, fail
+    EXPECT_EQ t4, t1
     SY   a3, 0(a0)
     LX   t4, 0(a0)
-    bne  t4, t2, fail
+    EXPECT_EQ t4, t2
     LX   t4, XBYTES(a0)
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 
     /* LR.Y / SC.Y preserves arbitrary untagged bit patterns. */
     NEXT_TEST "lr.y and sc.y preserve arbitrary untagged bit patterns"
@@ -206,19 +206,19 @@ _start:
     LY   a1, 0(a0)               /* a1 = (PAT_ALT_AA, PAT_ALT_55) */
     LR_Y a3, a2                  /* a3 = (PAT_SEQ_LO, PAT_SEQ_HI) from dst */
     SC_Y t4, a2, a1              /* dst <- a1 */
-    bnez t4, fail
+    EXPECT_ZERO t4
     EXPECT_NO_TRAP
     LX   t4, 0(a2)
-    bne  t4, t0, fail
+    EXPECT_EQ t4, t0
     LX   t4, XBYTES(a2)
-    bne  t4, t1, fail
+    EXPECT_EQ t4, t1
     SY   a3, 0(a0)
     li   t2, PAT_SEQ_LO
     li   t3, PAT_SEQ_HI
     LX   t4, 0(a0)
-    bne  t4, t2, fail
+    EXPECT_EQ t4, t2
     LX   t4, XBYTES(a0)
-    bne  t4, t3, fail
+    EXPECT_EQ t4, t3
 
     EXPECT_YHIW_YHIR_ROUNDTRIP "all-zero bits", 0, 0
     EXPECT_YHIW_YHIR_ROUNDTRIP "all-one bits", -1, -1
