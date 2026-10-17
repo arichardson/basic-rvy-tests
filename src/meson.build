@@ -93,6 +93,7 @@ if rvy_test_cc_found
     # table.
     {'name': 'test-branch-target-faults', 'min_version': '0.9.6'},
     {'name': 'test-exception-priority', 'min_version': '0.9.6'},
+    {'name': 'test-ifetch-exception-priority', 'min_version': '0.9.6'},
     {'name': 'test-xepc-return', 'min_version': '0.9.6'},
     # 0.9.7 replaced the 1-bit/3-bit PTE layout with the 4-bit pte.rvy field
     # (yd, yw, yrg, yr in bits 58:55) and defined the Svyrg extension (RV64
