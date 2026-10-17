@@ -102,7 +102,7 @@ def fmt_delta(curr: int, base: int | None, show_zero: bool = False) -> str:
     return f"{curr} (+0)" if show_zero and curr > 0 else str(curr)
 
 
-def format_cell(r: dict | None, b: dict | None) -> str:
+def format_cell(r: dict | None, b: dict | None, has_target_base: bool = False) -> str:
     if r is None:
         return "-"
     notes = []
@@ -114,6 +114,8 @@ def format_cell(r: dict | None, b: dict | None) -> str:
         notes.append(f"{r['failed']} fail" if r["total"] else r["result"])
     if r["ok"] and b is not None and not b["ok"]:
         notes.append("fixed")
+    elif r["ok"] and has_target_base and b is None:
+        notes.append("new")
     suffix = f" ({', '.join(notes)})" if notes else ""
     if r["ok"]:
         icon = "✅"
@@ -143,7 +145,9 @@ def print_failure(f: dict, icon: str) -> None:
 
 def main() -> None:
     entries = load_log(Path(sys.argv[1]))
-    base_entries = load_log(Path(sys.argv[2])) if len(sys.argv) > 2 else []
+    base_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
+    base_entries = load_log(base_path) if base_path and base_path.is_file() else []
+    missing_baseline = base_path is not None and not base_path.is_file()
 
     by_target: dict[str, list[dict]] = collections.defaultdict(list)
     by_test: dict[str, dict[str, dict]] = collections.defaultdict(dict)
@@ -161,11 +165,17 @@ def main() -> None:
 
     print("<!-- rvy-test-results -->")
     print("### RVY Test Results\n")
+    if missing_baseline:
+        print(
+            "> [!NOTE]\n"
+            "> No baseline `testlog.json` artifact found on `main`; "
+            "showing results without baseline comparison.\n"
+        )
     print("| Target | Suites | Subtests | Passed | XFail | Skipped | Failed | Time |")
     print("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for t in targets:
         items = by_target[t]
-        b_items = base_by_target.get(t) if base_entries else None
+        b_items = base_by_target.get(t, []) if base_entries else None
         suites_ok = sum(1 for i in items if i["ok"])
         b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
         b_len = len(b_items) if b_items is not None else None
@@ -213,7 +223,11 @@ def main() -> None:
     print(f"| :--- | {sep} |")
     for test_name in sorted(by_test):
         row = " | ".join(
-            format_cell(by_test[test_name].get(t), base_by_test.get(test_name, {}).get(t))
+            format_cell(
+                by_test[test_name].get(t),
+                base_by_test.get(test_name, {}).get(t),
+                t in base_by_target,
+            )
             for t in targets
         )
         print(f"| `{test_name}` | {row} |")

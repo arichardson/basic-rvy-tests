@@ -116,6 +116,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: [build-qemu, build-sail-093]
     permissions:
+      actions: read
       contents: read
       pull-requests: write
     steps:
@@ -144,17 +145,6 @@ jobs:
             clang libfdt1 libglib2.0-0t64 libgmp10 libpixman-1-0 lld ninja-build python3-pip
           python3 -m pip install --break-system-packages 'meson>=1.10.0'
 
-      - name: Run baseline suite on main
-        run: |
-          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before || 'main' }}"
-          git fetch origin "$BASE_REF" --depth=1 || git fetch origin main --depth=1
-          git worktree add ../base FETCH_HEAD
-          meson setup build-base ../base \
-            -Dqemu="${{ runner.temp }}/qemu" \
-            -Dsail_093="${{ runner.temp }}/sail-093"
-          ninja -C build-base
-          meson test -C build-base || true
-
       - name: Build test ELFs and run suite
         run: |
           meson setup build \
@@ -163,12 +153,42 @@ jobs:
           ninja -C build
           meson test -C build --print-errorlogs || true
 
+      - name: Upload testlog.json artifact
+        if: always() && hashFiles('build/meson-logs/testlog.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog
+          path: build/meson-logs/testlog.json
+
+      - name: Download baseline testlog.json from main
+        if: always() && hashFiles('build/meson-logs/testlog.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          RUN_ID=""
+          if [ -n "$BASE_SHA" ]; then
+            RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow ci.yml \
+              --branch main --event push --commit "$BASE_SHA" --status completed \
+              --limit 1 --json databaseId --jq '.[0].databaseId // empty' || true)
+          fi
+          if [ -z "$RUN_ID" ] || ! gh run download "$RUN_ID" --repo "${{ github.repository }}" --name testlog --dir base-artifact 2>/dev/null; then
+            for id in $(gh run list --repo "${{ github.repository }}" --workflow ci.yml \
+              --branch main --event push --status completed \
+              --limit 10 --json databaseId --jq '.[].databaseId' || true); do
+              if [ "$id" != "${{ github.run_id }}" ] && \
+                 gh run download "$id" --repo "${{ github.repository }}" --name testlog --dir base-artifact 2>/dev/null; then
+                break
+              fi
+            done
+          fi
+
       - name: Summarize test results
         if: always() && hashFiles('build/meson-logs/testlog.json') != ''
         run: |
           python3 .github/summarize-test-results.py \
             build/meson-logs/testlog.json \
-            build-base/meson-logs/testlog.json \
+            base-artifact/testlog.json \
             | tee test-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post test results comment on PR
