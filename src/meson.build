@@ -105,6 +105,8 @@ if rvy_test_cc_found
     {'name': 'test-fp-loadstore'},
     {'name': 'test-hints'},
     {'name': 'test-int-amo', 'xlens': [64]},
+    {'name': 'test-noncanonical-addr', 'xlens': [64],
+     'qemu_args': ['-cpu', 'rv64']},
     # 0.9.6 removed capability checks from branches, jumps, and xRET so target
     # faults are taken on instruction fetch, split CHERI fault causes into
     # mcause 24-28 and 33-36, and defined the synchronous exception priority
