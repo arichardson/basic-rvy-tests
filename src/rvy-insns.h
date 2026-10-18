@@ -106,6 +106,9 @@
 /* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */
 #define PERM_W      (1 << 0)
 #define PERM_LM     (1 << 1)
+#define PERM_LG     (1 << 2)
+#define PERM_SL     (1 << 3)
+#define PERM_G      (1 << 4)
 #define PERM_C      (1 << 5)
 #define PERM_ASR    (1 << 16)
 #define PERM_X      (1 << 17)
