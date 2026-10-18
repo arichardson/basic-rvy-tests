@@ -9,19 +9,46 @@
  *
  * The walk can fail for the ordinary reasons the base ISA already has (an
  * invalid PTE, missing read or write permission, an unset accessed or dirty
- * bit) and for the two CHERI ones the pte.rvy field adds. The priority table
- * places them as follows, and each ordering below is one entry of it:
+ * bit) and for the two CHERI ones the pte.rvy field adds. Table
+ * "Synchronous exception priority in decreasing priority order for RVY"
+ * (exception-priority-cheri in the Smy chapter) and Section "Virtual Address
+ * Translation Process" (sv32algorithm_rvy in the Svyrg chapter, and
+ * sv32algorithm in the Supervisor chapter) place them as follows:
  *
- *  1. Capability checks happen *prior to* address translation, so a
- *     capability that fails one reports its own fault (33/34) whatever the
- *     walk would have done with the address it names.
- *  2. A misaligned capability access also outranks the walk, and reports an
- *     access fault rather than a misaligned fault, since it cannot be
- *     emulated in software.
- *  3. A CHERI Store/AMO Page Fault (36) sits below the standard Store/AMO
- *     Page Fault (15) from the same walk, and a CHERI Load Capability Fault
- *     (35) is the *lowest* priority entry in the entire table, below even the
- *     standard page faults (13/15) produced by the same leaf PTE.
+ *  - Capability checks happen *prior to* address translation
+ *    (exception-priority-cheri: "Prior to address translation for an explicit
+ *    memory access: CHERI Load Access Fault (33), CHERI Store/AMO Access
+ *    Fault (34) due to capability checks"), so a capability that fails one
+ *    reports its own fault whatever the walk would have done with the address
+ *    it names.
+ *  - A misaligned capability access sits between the capability checks and
+ *    address translation in exception-priority-cheri, and reports an access
+ *    fault (5/7) rather than a misaligned fault (4/6) since it cannot be
+ *    emulated in software.
+ *  - During address translation, CHERI Store/AMO Page Fault (36), standard
+ *    page faults (13/15), and PTW access faults (5/7) share a single row in
+ *    exception-priority-cheri ("First encountered CHERI Store/AMO Page Fault,
+ *    page fault or access fault"). In the Virtual Address Translation Process
+ *    (sv32algorithm_rvy / sv32algorithm), a PTE is checked in step order:
+ *      * Step 3: pte.v=0 or reserved encoding -> page fault (13/15)
+ *      * Step 5: misaligned superpage -> page fault (13/15)
+ *      * Step 6: pte.u (privilege mode / sstatus.SUM / mstatus.MXR) -> page
+ *        fault (13/15), outranking Step 7 (36) and post-translation (35)
+ *      * Step 7: pte.rvy capability store check (pte.yw=0 when YRGE=1, or
+ *        pte.y=0 when YRGE=0, with to-be-stored tag=1 per
+ *        pte_rvy_store_summary) -> CHERI Store/AMO Page Fault (36),
+ *        outranking Step 9 (15)
+ *      * Step 8: Shadow Stack (Zicfiss) pte.r/w/x rules -> access fault (5/7)
+ *      * Step 9: pte.r, pte.w, and pte.x -> page fault (13/15), outranking
+ *        post-translation (35)
+ *      * Step 10: pte.a=0, pte.d=0, or pte.yd=0 with to-be-stored tag=1
+ *  - A CHERI Load Capability Fault (35) is the *lowest* priority entry in
+ *    exception-priority-cheri (below all translation faults 36/13/15/5/7,
+ *    physical access faults 5/7, and misaligned faults 4/6), even when an
+ *    implementation traps conservatively without checking the loaded tag.
+ *
+ * The sections below follow the algorithm steps in order, and within each
+ * step check both the fault on its own and its priority over later steps.
  *
  * Each ordering is paired with a control that removes the higher-priority
  * condition and requires the lower-priority one to appear on its own.
@@ -84,17 +111,19 @@
 /* The pages, by root table index; all of them alias PA 0x80000000. */
 #define IDX_CODE          2      /* VA 0x0_80000000: code and data */
 #define IDX_OK            3      /* VA 0x0_C0000000: everything permitted */
-#define IDX_YRG           4      /* VA 0x1_00000000: yr=1/yrg=0, raises 35 */
-#define IDX_USER          5      /* VA 0x1_40000000: the same, on a U-page */
-#define IDX_INVALID       6      /* VA 0x1_80000000: V=0 */
-#define IDX_NOREAD        7      /* VA 0x1_C0000000: execute only */
-#define IDX_NOWRITE       8      /* VA 0x2_00000000: read only */
-#define IDX_NOACCESS      9      /* VA 0x2_40000000: A=0 */
-#define IDX_NODIRTY      10      /* VA 0x2_80000000: D=0 */
-#define IDX_NOREAD_YRG   11      /* VA 0x2_C0000000: execute only + yr=1/yrg=0 */
-#define IDX_NOWRITE_YRG  12      /* VA 0x3_00000000: read only + yr=1/yrg=0 */
-#define IDX_NOYW         13      /* VA 0x3_40000000: yw=0, raises 36 */
-#define IDX_NOWRITE_NOYW 14      /* VA 0x3_80000000: read only + yw=0 */
+#define IDX_INVALID       4      /* VA 0x1_00000000: Step 3: V=0 */
+#define IDX_USER_NOYW     5      /* VA 0x1_40000000: Step 6 vs Step 7: U-page + yw=0 */
+#define IDX_USER          6      /* VA 0x1_80000000: Step 6 vs 35: U-page + yr=1/yrg=0 */
+#define IDX_NOYW          7      /* VA 0x1_C0000000: Step 7: yw=0, raises 36 */
+#define IDX_NOREAD_NOYW   8      /* VA 0x2_00000000: Step 7 vs Step 9: execute only + yw=0 */
+#define IDX_NOWRITE_NOYW  9      /* VA 0x2_40000000: Step 7 vs Step 9: read only + yw=0 */
+#define IDX_NOREAD       10      /* VA 0x2_80000000: Step 9: execute only */
+#define IDX_NOWRITE      11      /* VA 0x2_C0000000: Step 9: read only */
+#define IDX_NOREAD_YRG   12      /* VA 0x3_00000000: Step 9 vs 35: execute only + yr=1/yrg=0 */
+#define IDX_NOWRITE_YRG  13      /* VA 0x3_40000000: Step 9 vs 35: read only + yr=1/yrg=0 */
+#define IDX_NOACCESS     14      /* VA 0x3_80000000: Step 10: A=0 */
+#define IDX_NODIRTY      15      /* VA 0x3_C0000000: Step 10: D=0 */
+#define IDX_YRG          16      /* VA 0x4_00000000: Lowest: yr=1/yrg=0, raises 35 */
 
 #define VA_OF(idx) ((idx) << 30)
 /* buf is linked into the code page, so an alias of it is this far along. */
@@ -200,8 +229,9 @@ _start:
 
     /*
      * Svyrg on, and both SYRG and UYRG set so any S-page or U-page with yrg=0
-     * is a generation mismatch. SUM stays clear: ordering 3 needs a U-page
-     * S-mode may not reach unless SUM is temporarily set for the control.
+     * is a generation mismatch. SUM stays clear: the U-page priority cases
+     * need a U-page S-mode may not reach unless SUM is temporarily set for the
+     * control.
      */
     li   t0, SSTATUS_YRGE | SSTATUS_SYRG | SSTATUS_UYRG
     csrs CSR_MSTATUS, t0
@@ -212,21 +242,24 @@ _start:
      */
     SET_PTE IDX_CODE, PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D | RVY_NORMAL
     SET_PTE IDX_OK, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | RVY_NORMAL
-    SET_PTE IDX_YRG, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YR_BIT \
-                     | PTE_YW_BIT | PTE_YD_BIT
+    /* IDX_INVALID is left as the zero the .bss gives it: V=0. */
+    SET_PTE IDX_USER_NOYW, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_U \
+                           | PTE_YRG_BIT
     SET_PTE IDX_USER, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_U \
                       | PTE_YR_BIT | PTE_YW_BIT | PTE_YD_BIT
-    /* IDX_INVALID is left as the zero the .bss gives it: V=0. */
+    SET_PTE IDX_NOYW, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YRG_BIT
+    SET_PTE IDX_NOREAD_NOYW, PTE_V | PTE_X | PTE_A | PTE_D | PTE_YRG_BIT
+    SET_PTE IDX_NOWRITE_NOYW, PTE_V | PTE_R | PTE_A | PTE_D | PTE_YRG_BIT
     SET_PTE IDX_NOREAD, PTE_V | PTE_X | PTE_A | PTE_D | RVY_NORMAL
     SET_PTE IDX_NOWRITE, PTE_V | PTE_R | PTE_A | PTE_D | RVY_NORMAL
-    SET_PTE IDX_NOACCESS, PTE_NOACCESS
-    SET_PTE IDX_NODIRTY, PTE_NODIRTY
     SET_PTE IDX_NOREAD_YRG, PTE_V | PTE_X | PTE_A | PTE_D | PTE_YR_BIT \
                             | PTE_YW_BIT | PTE_YD_BIT
     SET_PTE IDX_NOWRITE_YRG, PTE_V | PTE_R | PTE_A | PTE_D | PTE_YR_BIT \
                              | PTE_YW_BIT | PTE_YD_BIT
-    SET_PTE IDX_NOYW, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YRG_BIT
-    SET_PTE IDX_NOWRITE_NOYW, PTE_V | PTE_R | PTE_A | PTE_D | PTE_YRG_BIT
+    SET_PTE IDX_NOACCESS, PTE_NOACCESS
+    SET_PTE IDX_NODIRTY, PTE_NODIRTY
+    SET_PTE IDX_YRG, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YR_BIT \
+                     | PTE_YW_BIT | PTE_YD_BIT
 
     /* satp = Sv39 | PPN(pagetable) */
     lla   t0, pagetable
@@ -258,10 +291,7 @@ s_entry:
     YADDI a2, a0, 4
 
     CAP_TO_ALIAS a5, IDX_OK      /* everything permitted: the well-formed control */
-    CAP_TO_ALIAS a6, IDX_NOREAD
-    CAP_TO_ALIAS a7, IDX_NOWRITE
     CAP_TO_ALIAS s0, IDX_NOACCESS
-    CAP_TO_ALIAS s1, IDX_NODIRTY
 
     li   t0, 0xdeadbeef
     YADDRW t2, s2, t0            /* distinct tagged store source for faulting stores/AMOs */
@@ -282,7 +312,7 @@ s_entry:
 1:
     CLEAR_TRAPS
 
-    /* ---- Ordering 1: a capability check outranks the walk ------------- */
+    /* ---- Pre-walk: capability checks (33/34) outrank the walk ---------- */
 
     NEXT_TEST "an untagged capability outranks the page fault for ly"
     POISON_REG t1
@@ -341,7 +371,7 @@ s_entry:
     EXPECT_NONZERO t1
     CHECK_BUF
 
-    /* ---- Ordering 2: a misaligned capability access outranks it too --- */
+    /* ---- Pre-walk: misaligned capability accesses (5/7) outrank walk --- */
 
     NEXT_TEST "a misaligned ly outranks the page fault"
     POISON_REG t1
@@ -400,9 +430,8 @@ s_entry:
     EXPECT_NONZERO t1
     CHECK_BUF
 
-    /* ---- The walk's own faults, per reason and per instruction -------- */
+    /* ---- Walk Step 3: invalid PTE (pte.v=0 -> 13/15) ------------------- */
 
-    /* An invalid PTE: nothing may go through it. */
     NEXT_TEST "an invalid pte faults an ly"
     POISON_REG t1
     LY   t1, 0(a0)
@@ -424,27 +453,209 @@ s_entry:
     CHECK_POISON_REG t1
     CHECK_BUF
 
+    /* ---- Walk Step 6: user page check (pte.u=1, SUM=0 -> 13/15) -------- */
+
+    /*
+     * In sv32algorithm_rvy, Step 6 checks pte.u (given privilege mode and
+     * sstatus.SUM) before Step 7 checks pte.rvy for capability stores (36) and
+     * before the post-translation CHERI Load Capability Fault (35). Each
+     * ordering is paired with a control that sets sstatus.SUM=1 so Step 6
+     * passes and the lower-priority fault is reported.
+     */
+    CAP_TO_ALIAS a3, IDX_USER_NOYW    /* U-page + yw=0: Step 6 vs Step 7 (36) */
+    CAP_TO_ALIAS a4, IDX_USER         /* U-page + yr=1/yrg=0: Step 6 vs 35 */
+
+    NEXT_TEST "a user page fault at step 6 outranks the store capability page fault at step 7 for sy"
+    SY   t2, 0(a3)
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
+    li   t0, SSTATUS_SUM
+    csrs sstatus, t0
+    NEXT_TEST "control: with sstatus.SUM set, the user page with yw=0 faults at step 7 for sy"
+    SY   t2, 0(a3)
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF
+    li   t0, SSTATUS_SUM
+    csrc sstatus, t0
+
+    NEXT_TEST "a user page fault at step 6 outranks the store capability page fault at step 7 for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a3, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    li   t0, SSTATUS_SUM
+    csrs sstatus, t0
+    NEXT_TEST "control: with sstatus.SUM set, the user page with yw=0 faults at step 7 for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a3, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    li   t0, SSTATUS_SUM
+    csrc sstatus, t0
+
+    NEXT_TEST "a user page fault at step 6 outranks the load capability fault for ly"
+    POISON_REG t1
+    LY   t1, 0(a4)
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+    li   t0, SSTATUS_SUM
+    csrs sstatus, t0
+    NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault for ly"
+    POISON_REG t1
+    LY   t1, 0(a4)
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+    li   t0, SSTATUS_SUM
+    csrc sstatus, t0
+
+    NEXT_TEST "a user page fault at step 6 outranks the load capability fault for lr.y"
+    POISON_REG t1
+    LR_Y t1, a4
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+    li   t0, SSTATUS_SUM
+    csrs sstatus, t0
+    NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault for lr.y"
+    POISON_REG t1
+    LR_Y t1, a4
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+    li   t0, SSTATUS_SUM
+    csrc sstatus, t0
+
+    NEXT_TEST "a user page fault at step 6 outranks the load capability fault for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a4, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    li   t0, SSTATUS_SUM
+    csrs sstatus, t0
+    NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a4, t2
+    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    li   t0, SSTATUS_SUM
+    csrc sstatus, t0
+
+    /* ---- Walk Step 7: capability store check (pte.yw=0, tag=1 -> 36) --- */
+
+    /*
+     * Step 7 checks pte.rvy for capability stores (raising 36 when pte.yw=0
+     * and the to-be-stored capability tag is 1 per pte_rvy_store_summary)
+     * before Step 9 checks pte.r, pte.w, and pte.x (15). Each Step 7 vs Step 9
+     * case is paired with an untagged store (x0, tag=0) that passes Step 7 and
+     * faults at Step 9.
+     */
+    CAP_TO_ALIAS a3, IDX_NOYW         /* yw=0: raises 36 on its own */
+    CAP_TO_ALIAS a4, IDX_NOREAD_NOYW  /* X-only + yw=0: Step 7 vs Step 9 (R=0) */
+    CAP_TO_ALIAS a6, IDX_NOWRITE_NOYW /* R-only + yw=0: Step 7 vs Step 9 (W=0) */
+
+    NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for sy"
+    SY   t2, 0(a3)
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF
+    NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a3, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    NEXT_TEST "a page with yw=0 permits the lr.y that reserves the address"
+    LR_Y t1, a3
+    EXPECT_NO_TRAP
+    NEXT_TEST "and raises a store capability page fault on the sc.y"
+    POISON_REG t1
+    SC_Y t1, a3, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "the store capability page fault at step 7 outranks missing write permission at step 9 for sy"
+    SY   t2, 0(a6)
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_BUF
+    NEXT_TEST "control: an untagged sy on the same W=0, yw=0 page passes step 7 and faults at step 9"
+    SY   x0, 0(a6)
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_BUF
+
+    NEXT_TEST "the store capability page fault at step 7 outranks missing read permission at step 9 for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a4, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    NEXT_TEST "control: an untagged amoswap.y on the same R=0, yw=0 page passes step 7 and faults at step 9"
+    POISON_REG t1
+    AMOSWAP_Y t1, a4, x0
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "the store capability page fault at step 7 outranks missing write permission at step 9 for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a6, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    NEXT_TEST "control: an untagged amoswap.y on the same W=0, yw=0 page passes step 7 and faults at step 9"
+    POISON_REG t1
+    AMOSWAP_Y t1, a6, x0
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "a read-only page with yw=0 also permits the lr.y that reserves the address"
+    LR_Y t1, a6
+    EXPECT_NO_TRAP
+    NEXT_TEST "and the store capability page fault at step 7 outranks missing write permission at step 9 on sc.y"
+    POISON_REG t1
+    SC_Y t1, a6, t2
+    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    NEXT_TEST "control: an untagged sc.y on the same W=0, yw=0 page passes step 7 and faults at step 9"
+    LR_Y t1, a6
+    EXPECT_NO_TRAP
+    POISON_REG t1
+    SC_Y t1, a6, x0
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    /* ---- Walk Step 9: leaf pte.r / pte.w checks (13/15) ---------------- */
+
+    CAP_TO_ALIAS a3, IDX_NOREAD       /* execute-only (R=0, W=0) */
+    CAP_TO_ALIAS a4, IDX_NOWRITE      /* read-only (W=0) */
+    CAP_TO_ALIAS a6, IDX_NOREAD_YRG   /* execute-only + yr=1/yrg=0 */
+    CAP_TO_ALIAS a7, IDX_NOWRITE_YRG  /* read-only + yr=1/yrg=0 */
+
     /*
      * No read permission (an execute-only page). An AMO needs to read as
      * well as write, so it is refused here too, as a store/AMO fault.
      */
     NEXT_TEST "an execute-only page refuses an ly"
     POISON_REG t1
-    LY   t1, 0(a6)
+    LY   t1, 0(a3)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
     CHECK_POISON_REG t1
     NEXT_TEST "an execute-only page refuses an lr.y"
     POISON_REG t1
-    LR_Y t1, a6
+    LR_Y t1, a3
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
     CHECK_POISON_REG t1
     NEXT_TEST "an execute-only page refuses an sy"
-    SY   t2, 0(a6)
+    SY   t2, 0(a3)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
     CHECK_BUF
     NEXT_TEST "an execute-only page refuses an amoswap.y"
     POISON_REG t1
-    AMOSWAP_Y t1, a6, t2
+    AMOSWAP_Y t1, a3, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
     CHECK_POISON_REG t1
     CHECK_BUF
@@ -454,27 +665,60 @@ s_entry:
      * also gives the sc.y below a valid reservation to be refused with.
      */
     NEXT_TEST "a read-only page still permits an ly"
-    LY   t1, 0(a7)
+    LY   t1, 0(a4)
     EXPECT_NO_TRAP
     NEXT_TEST "a read-only page refuses an sy"
-    SY   t2, 0(a7)
+    SY   t2, 0(a4)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
     CHECK_BUF
     NEXT_TEST "a read-only page refuses an amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a4, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    NEXT_TEST "a read-only page permits the lr.y that reserves the address"
+    LR_Y t1, a4                  /* permitted, and reserves the address */
+    EXPECT_NO_TRAP
+    NEXT_TEST "and refuses the sc.y that reservation lets reach the walk"
+    POISON_REG t1
+    SC_Y t1, a4, t2              /* ... so this reaches the walk and is refused */
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    /*
+     * Step 9 page faults (13/15) outrank the post-translation CHERI Load
+     * Capability Fault (35); the Lowest section below confirms that the same
+     * yr=1/yrg=0 PTE with R=1 and W=1 raises 35.
+     */
+    NEXT_TEST "missing read permission at step 9 outranks the load capability fault for ly"
+    POISON_REG t1
+    LY   t1, 0(a6)
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+    NEXT_TEST "missing read permission at step 9 outranks the load capability fault for lr.y"
+    POISON_REG t1
+    LR_Y t1, a6
+    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
+    CHECK_POISON_REG t1
+    NEXT_TEST "missing read permission at step 9 outranks the load capability fault for amoswap.y"
+    POISON_REG t1
+    AMOSWAP_Y t1, a6, t2
+    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
+    CHECK_POISON_REG t1
+    CHECK_BUF
+    NEXT_TEST "missing write permission at step 9 outranks the load capability fault for amoswap.y"
     POISON_REG t1
     AMOSWAP_Y t1, a7, t2
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
     CHECK_POISON_REG t1
     CHECK_BUF
-    NEXT_TEST "a read-only page permits the lr.y that reserves the address"
-    LR_Y t1, a7                  /* permitted, and reserves the address */
-    EXPECT_NO_TRAP
-    NEXT_TEST "and refuses the sc.y that reservation lets reach the walk"
-    POISON_REG t1
-    SC_Y t1, a7, t2              /* ... so this reaches the walk and is refused */
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    CHECK_POISON_REG t1
-    CHECK_BUF
+
+    /* ---- Walk Step 10: accessed and dirty bits (pte.a=0, pte.d=0) ------ */
+
+    CAP_TO_ALIAS s0, IDX_NOACCESS
+    CAP_TO_ALIAS s1, IDX_NODIRTY
 
     /*
      * An unset accessed bit, which affects reads and writes alike. The pte
@@ -527,128 +771,30 @@ s_entry:
     SC_Y t1, s1, t2
     EXPECT_AD_AMO_FAULT CAUSE_STORE_PAGE_FAULT
 
-    /* ---- Ordering 3: standard page faults outrank 36 and 35 ----------- */
+    /* ---- Lowest: CHERI Load Capability Fault (35) ---------------------- */
 
+    /*
+     * Per exception-priority-cheri, CHERI Load Capability Fault (35) sits at
+     * the very bottom of the synchronous exception priority table, after the
+     * walk and memory read have completed; these also serve as the controls
+     * for the Step 9 vs 35 cases above.
+     */
     CAP_TO_ALIAS a3, IDX_YRG          /* yr=1/yrg=0: raises 35 on its own */
-    CAP_TO_ALIAS a4, IDX_USER         /* the same on a U-page */
-    CAP_TO_ALIAS a6, IDX_NOREAD_YRG   /* the same with R=0 */
-    CAP_TO_ALIAS a7, IDX_NOWRITE_YRG  /* the same with W=0 */
-    CAP_TO_ALIAS s0, IDX_NOYW         /* yw=0: raises 36 on its own */
-    CAP_TO_ALIAS s1, IDX_NOWRITE_NOYW /* the same with W=0 */
 
-    /* 35 only fires for a set tag, so put one in the buffer first. */
-    NEXT_TEST "put a tagged capability in the buffer for the loads below"
-    SY   s2, 0(a5)
-    EXPECT_NO_TRAP
-
-    /* The mismatching page raises 35 on its own. */
-    NEXT_TEST "the mismatching page raises a load capability fault on its own"
+    NEXT_TEST "the mismatching page raises a load capability fault on its own for ly"
     POISON_REG t1
     LY   t1, 0(a3)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
-    /* The U-page also raises 35 when sstatus.SUM permits S-mode access. */
-    li   t0, SSTATUS_SUM
-    csrs sstatus, t0
-    NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault"
-    POISON_REG t1
-    LY   t1, 0(a4)
-    EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    CHECK_POISON_REG t1
-    li   t0, SSTATUS_SUM
-    csrc sstatus, t0
-    /* With SUM=0 or R=0, the page fault from the same walk outranks 35. */
-    NEXT_TEST "but a user page fault on the same walk outranks it"
-    POISON_REG t1
-    LY   t1, 0(a4)
-    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    CHECK_POISON_REG t1
-    NEXT_TEST "and missing read permission on the leaf PTE outranks it too"
-    POISON_REG t1
-    LY   t1, 0(a6)
-    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "the mismatching page raises it for lr.y too"
+    NEXT_TEST "the mismatching page raises a load capability fault on its own for lr.y"
     POISON_REG t1
     LR_Y t1, a3
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
-    NEXT_TEST "and the user page fault still outranks it"
-    POISON_REG t1
-    LR_Y t1, a4
-    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    CHECK_POISON_REG t1
-    NEXT_TEST "and missing read permission on the leaf PTE outranks it for lr.y too"
-    POISON_REG t1
-    LR_Y t1, a6
-    EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "the mismatching page raises it for amoswap.y too"
+    NEXT_TEST "the mismatching page raises a load capability fault on its own for amoswap.y"
     POISON_REG t1
     AMOSWAP_Y t1, a3, t2
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
-    CHECK_POISON_REG t1
-    CHECK_BUF
-    NEXT_TEST "and the store page fault on a user page still outranks it"
-    POISON_REG t1
-    AMOSWAP_Y t1, a4, t2
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    CHECK_POISON_REG t1
-    CHECK_BUF
-    NEXT_TEST "and missing read permission on the leaf PTE outranks it for amoswap.y"
-    POISON_REG t1
-    AMOSWAP_Y t1, a6, t2
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    CHECK_POISON_REG t1
-    CHECK_BUF
-    NEXT_TEST "and missing write permission on the leaf PTE outranks it for amoswap.y"
-    POISON_REG t1
-    AMOSWAP_Y t1, a7, t2
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    /* A page with yw=0 raises 36 on its own for tagged stores, and W=0 outranks it. */
-    NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for sy"
-    SY   t2, 0(s0)
-    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
-    CHECK_BUF
-    NEXT_TEST "but missing write permission on the leaf PTE outranks it for sy"
-    SY   t2, 0(s1)
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    CHECK_BUF
-
-    NEXT_TEST "a page with yw=0 raises a store capability page fault on its own for amoswap.y"
-    POISON_REG t1
-    AMOSWAP_Y t1, s0, t2
-    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
-    CHECK_POISON_REG t1
-    CHECK_BUF
-    NEXT_TEST "but missing write permission on the leaf PTE outranks it for amoswap.y"
-    POISON_REG t1
-    AMOSWAP_Y t1, s1, t2
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "a page with yw=0 permits the lr.y that reserves the address"
-    LR_Y t1, s0
-    EXPECT_NO_TRAP
-    NEXT_TEST "and raises a store capability page fault on the sc.y"
-    POISON_REG t1
-    SC_Y t1, s0, t2
-    EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
-    CHECK_POISON_REG t1
-    CHECK_BUF
-    NEXT_TEST "a read-only page with yw=0 also permits the lr.y that reserves the address"
-    LR_Y t1, s1
-    EXPECT_NO_TRAP
-    NEXT_TEST "and missing write permission on the leaf PTE outranks the store capability page fault on sc.y"
-    POISON_REG t1
-    SC_Y t1, s1, t2
-    EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
     CHECK_POISON_REG t1
     CHECK_BUF
 
