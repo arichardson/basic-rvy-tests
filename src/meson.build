@@ -100,7 +100,10 @@ if rvy_test_cc_found
     {'name': 'test-csr-same-block'},
     {'name': 'test-jalr-unseal'},
     {'name': 'test-local-global',
-     'qemu_args': ['-global', 'riscv-cpu.Zylg=true']},
+     'qemu_variants': {
+       '': ['-global', 'riscv-cpu.Zylg=true'],
+       '-no-zylg': ['-global', 'riscv-cpu.Zylg=false'],
+     }},
     {'name': 'test-rvc'},
     {'name': 'test-fp-loadstore'},
     {'name': 'test-hints'},
