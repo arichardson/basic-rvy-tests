@@ -99,6 +99,8 @@ if rvy_test_cc_found
     {'name': 'test-xtvec-detag'},
     {'name': 'test-csr-same-block'},
     {'name': 'test-jalr-unseal'},
+    {'name': 'test-local-global',
+     'qemu_args': ['-global', 'riscv-cpu.Zylg=true']},
     # 0.9.6 removed capability checks from branches, jumps, and xRET so target
     # faults are taken on instruction fetch, split CHERI fault causes into
     # mcause 24-28 and 33-36, and defined the synchronous exception priority
