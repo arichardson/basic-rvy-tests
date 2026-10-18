@@ -21,6 +21,7 @@
 #define TARGET_INFO_OFF_UART_ADDR                  8
 #define TARGET_INFO_OFF_HAS_HTIF                   (8 + (__riscv_xlen / 8))
 #define TARGET_INFO_OFF_SVYRG_TRAPS_CONSERVATIVELY (9 + (__riscv_xlen / 8))
+#define TARGET_INFO_OFF_CAP_MODE_X0_TAG_FAULT      (10 + (__riscv_xlen / 8))
 
 #ifdef __ASSEMBLER__
 
@@ -52,6 +53,7 @@ struct target_info {
     unsigned long uart_addr;
     bool has_htif;
     bool svyrg_traps_conservatively;
+    bool cap_mode_x0_tag_fault;
 };
 
 _Static_assert(sizeof(struct target_info) ==
@@ -66,6 +68,9 @@ _Static_assert(offsetof(struct target_info, has_htif) ==
                TARGET_INFO_OFF_HAS_HTIF, "offset mismatch");
 _Static_assert(offsetof(struct target_info, svyrg_traps_conservatively) ==
                TARGET_INFO_OFF_SVYRG_TRAPS_CONSERVATIVELY,
+               "offset mismatch");
+_Static_assert(offsetof(struct target_info, cap_mode_x0_tag_fault) ==
+               TARGET_INFO_OFF_CAP_MODE_X0_TAG_FAULT,
                "offset mismatch");
 
 #endif

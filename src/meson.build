@@ -381,7 +381,7 @@ if rvy_test_cc_found
     machines = emulator['harness'] == 'sail' ? ['sail'] : rvy_machines
     foreach machine : machines
       info_slug = (emulator['harness'] == 'sail' ? emulator['label'] :
-                   'qemu_@0@_@1@'.format(machine, emulator['xlen'])).underscorify()
+                   'qemu_@0@_@1@'.format(emulator['label'], machine)).underscorify()
       if info_slug not in rvy_target_info_elfs
         target_info_c = configure_file(
           input: 'target-info.c.in',
@@ -391,6 +391,8 @@ if rvy_test_cc_found
             'UART_ADDR': machine == 'virt' ? '0x10000000' : '0',
             'HAS_HTIF': machine == 'virt' ? 'false' : 'true',
             'SVYRG_TRAPS_CONSERVATIVELY': emulator.get('svyrg_traps_conservatively', false) ? 'true' : 'false',
+            'CAP_MODE_X0_TAG_FAULT': emulator.get('cap_mode_x0_tag_fault',
+                                                  emulator['cheri_version'] == '0.9.3') ? 'true' : 'false',
           },
         )
         rvy_target_info_elfs += {
@@ -437,7 +439,7 @@ if rvy_test_cc_found
         else
           qemu_args = emulator.get('qemu_args', []) + t.get('qemu_args', [])
           foreach machine : rvy_machines
-            info_elf = rvy_target_info_elfs['qemu_@0@_@1@'.format(machine, emulator['xlen']).underscorify()]
+            info_elf = rvy_target_info_elfs['qemu_@0@_@1@'.format(emulator['label'], machine).underscorify()]
             run_args = no_info ? [] : ['--extra-elf', info_elf]
             deps = no_info ? emulator['depends'] : emulator['depends'] + [info_elf]
             test(test_id + suffix + '-' + machine, rvy_run_test,

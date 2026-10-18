@@ -70,8 +70,8 @@ _start:
     EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
 
     NEXT_TEST "a capability check outranks the misaligned capability load"
-    YMODESWY                     /* capability mode: x0 is the NULL capability */
-    LY   t1, 4(x0)
+    YMODESWY                     /* capability mode: a1 is untagged */
+    LY   t1, 0(a1)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     YMODESWI
 
@@ -81,7 +81,7 @@ _start:
 
     NEXT_TEST "a capability check outranks the misaligned capability store"
     YMODESWY
-    SY   x0, 4(x0)
+    SY   x0, 0(a1)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     YMODESWI
 

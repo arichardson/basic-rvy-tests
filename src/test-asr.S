@@ -10,8 +10,9 @@
  *
  * CBO.INVAL is the other ASR-gated operation. Under RVY a missing ASR is an
  * illegal instruction, which outranks the capability checks, so it is
- * reported even for the NULL capability; 0.9.3 instead treats ASR as one more
- * permission on the authorizing capability and reports the tag violation.
+ * reported even for an untagged capability; 0.9.3 instead treats ASR as one
+ * more permission on the authorizing capability and reports the tag
+ * violation.
  */
 #define TEST_NAME "asr"
 #include "testmacros.h"
@@ -28,7 +29,8 @@ _start:
     /* The M-mode root PCC grants ASR, so these all work to begin with. */
     NEXT_TEST "root pcc grants ASR so cbo.inval reports the capability fault"
     csrr t0, CSR_MTVEC
-    CBO_INVAL x0                 /* NULL cap, but ASR is checked first ... */
+    mv   a1, x0                  /* NULL capability in a non-x0 register */
+    CBO_INVAL a1                 /* untagged cap, but ASR is checked first ... */
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)  /* ... so this is the capability fault */
 
     /* Build a PCC-derived capability with ASR removed and call into it. */
@@ -80,7 +82,8 @@ asr_stub:
      * permission and so reaches the tag check first.
      */
     NEXT_TEST "cbo.inval without ASR: illegal on RVY, tag fault on 0.9.3"
-    CBO_INVAL x0
+    mv   a1, x0
+    CBO_INVAL a1
 #ifdef CHERI_093
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 #else
