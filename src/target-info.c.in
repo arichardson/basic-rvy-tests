@@ -7,4 +7,5 @@ const struct target_info target_info = {
     .uart_addr = @UART_ADDR@,
     .has_htif = @HAS_HTIF@,
     .svyrg_traps_conservatively = @SVYRG_TRAPS_CONSERVATIVELY@,
+    .cap_mode_x0_tag_fault = @CAP_MODE_X0_TAG_FAULT@,
 };

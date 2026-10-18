@@ -12,13 +12,13 @@
  *    AMOSWAP.Y, in both integer and capability pointer modes, with mtval
  *    holding the faulting virtual address. 0.9.3 predates that and reports
  *    them as misaligned faults (causes 4 and 6).
- *  - In capability mode with cs1=x0 (the NULL capability), an untagged
- *    capability, a sealed sentry, or an out-of-bounds capability, the check
- *    fails with CAP_TAG, CAP_SEAL, or CAP_BOUNDS respectively; the reported
- *    cause must be selected by the access type: LR.Y -> CHERI Load Access
- *    Fault (33); SC.Y, AMOSWAP.Y, integer AMOs (amoswap.w) and all CBOs ->
- *    CHERI Store/AMO Access Fault (34), with mtval holding the faulting
- *    virtual address in v0.9.9.
+ *  - In capability mode with the NULL capability, an untagged capability, a
+ *    sealed sentry, or an out-of-bounds capability, the check fails with
+ *    CAP_TAG, CAP_SEAL, or CAP_BOUNDS respectively; the reported cause must
+ *    be selected by the access type: LR.Y -> CHERI Load Access Fault (33);
+ *    SC.Y, AMOSWAP.Y, integer AMOs (amoswap.w) and all CBOs -> CHERI
+ *    Store/AMO Access Fault (34), with mtval holding the faulting virtual
+ *    address in v0.9.9.
  *  - Read-only capabilities (W=0) reject SC.Y and AMOSWAP.Y with a store
  *    permission fault without modifying cd or memory; write-only capabilities
  *    (R=0, W=1) permit SC.Y and CBO.ZERO while rejecting LR.Y with a load
@@ -166,21 +166,24 @@ _start:
     /* LR.Y via NULL cap: load-classified tag fault */
     NEXT_TEST "lr.y through the NULL capability is load classified"
     POISON_REG t1
-    LR_Y t1, x0
+    mv   t0, x0
+    LR_Y t1, t0
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
     CHECK_POISON_REG t1
 
     /* SC.Y via NULL cap: store-classified tag fault */
     NEXT_TEST "sc.y through the NULL capability is store classified"
     POISON_REG t1
-    SC_Y t1, x0, t2
+    mv   t0, x0
+    SC_Y t1, t0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     CHECK_POISON_REG t1
 
     /* AMOSWAP.Y via NULL cap */
     NEXT_TEST "amoswap.y through the NULL capability is store classified"
     POISON_REG t1
-    AMOSWAP_Y t1, x0, t2
+    mv   t0, x0
+    AMOSWAP_Y t1, t0, t2
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     CHECK_POISON_REG t1
 
@@ -425,34 +428,40 @@ _start:
     /* Integer SC.W and AMO via NULL cap: store-classified */
     NEXT_TEST "sc.w through the NULL capability is store classified"
     POISON_REG t1
-    sc.w t1, x0, (x0)
+    mv   t0, x0
+    sc.w t1, x0, (t0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     CHECK_POISON_REG t1
 
     NEXT_TEST "an integer amo through the NULL capability is store classified"
     POISON_REG t1
-    amoswap.w t1, t2, (x0)
+    mv   t0, x0
+    amoswap.w t1, t2, (t0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
     CHECK_POISON_REG t1
 
     /* CBO.ZERO via NULL cap */
     NEXT_TEST "cbo.zero through the NULL capability is store classified"
-    CBO_ZERO x0
+    mv   t0, x0
+    CBO_ZERO t0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.CLEAN via NULL cap */
     NEXT_TEST "cbo.clean through the NULL capability is store classified"
-    CBO_CLEAN x0
+    mv   t0, x0
+    CBO_CLEAN t0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.FLUSH via NULL cap */
     NEXT_TEST "cbo.flush through the NULL capability is store classified"
-    CBO_FLUSH x0
+    mv   t0, x0
+    CBO_FLUSH t0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /* CBO.INVAL via NULL cap (the M-mode root PCC grants ASR) */
     NEXT_TEST "cbo.inval through the NULL capability is store classified"
-    CBO_INVAL x0
+    mv   t0, x0
+    CBO_INVAL t0
     EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
 
     /*
