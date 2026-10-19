@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: Cache QEMU binaries
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/qemu
           key: qemu-sanitizers-ubuntu-24.04-${{ env.QEMU_SHA }}
@@ -43,7 +43,7 @@ jobs:
 
       - name: Checkout QEMU
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.QEMU_REPO }}
           ref: ${{ env.QEMU_SHA }}
@@ -81,7 +81,7 @@ jobs:
     steps:
       - name: Cache Sail 0.9.3 binary
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/sail-093
           key: sail-093-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
@@ -99,7 +99,7 @@ jobs:
 
       - name: Checkout Sail 0.9.3
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.SAIL_093_REPO }}
           ref: ${{ env.SAIL_093_SHA }}
@@ -120,7 +120,7 @@ jobs:
     steps:
       - name: Cache Sail 0.9.9 binary
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/sail-099
           key: sail-099-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
@@ -138,7 +138,7 @@ jobs:
 
       - name: Checkout Sail 0.9.9
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.SAIL_099_REPO }}
           ref: ${{ env.SAIL_099_SHA }}
@@ -163,24 +163,24 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore QEMU binaries
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/qemu
           key: qemu-sanitizers-ubuntu-24.04-${{ env.QEMU_SHA }}
           fail-on-cache-miss: true
 
       - name: Restore Sail 0.9.3 binary
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sail-093
           key: sail-093-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
           fail-on-cache-miss: true
 
       - name: Restore Sail 0.9.9 binary
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sail-099
           key: sail-099-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
@@ -205,7 +205,7 @@ jobs:
 
       - name: Upload testlog.json artifact
         if: always() && hashFiles('build/meson-logs/testlog.json') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testlog
           path: build/meson-logs/testlog.json
@@ -250,7 +250,7 @@ jobs:
       - name: Post test results comment on PR
         if: always() && github.event_name == 'pull_request' && hashFiles('test-summary.md') != ''
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
