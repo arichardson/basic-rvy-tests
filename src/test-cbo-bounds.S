@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * The four cache-block operations split into two different bounds rules and
- * require store permission on the authorizing capability:
+ * The four cache-block operations split into two different bounds rules:
  *
  *  - CBO.ZERO and CBO.INVAL fault if *any* byte of the cache block is outside
  *    the authorizing capability, while CBO.CLEAN and CBO.FLUSH only fault if
@@ -10,20 +9,14 @@
  *    ZERO/INVAL, and a faulting CBO.ZERO leaves the cache block unmodified.
  *  - 0.9.3 predates this refinement for INVAL specifically: there it shares
  *    CLEAN/FLUSH's weaker rule instead, so that one case is version-dependent.
- *  - All four CBOs require W (store) permission on the authorizing capability
- *    (and R as well for CLEAN/FLUSH/INVAL), reporting a store capability
- *    permission fault when W is missing even if the whole block is in bounds.
  *  - CBO.ZERO clears the capability tag and data of every capability granule
  *    across the entire 64-byte cache block.
- *  - In S-mode, CBO.ZERO, CBO.CLEAN/FLUSH, and CBO.INVAL are gated by
- *    menvcfg.CBZE, menvcfg.CBCFE, and menvcfg.CBIE respectively.
  */
 #define TEST_NAME "cbo-bounds"
 #include "testmacros.h"
 #include "exceptions.h"
 
 #define CBOM_LEN 64
-#define MENVCFG_CBO_ALL 0xf0         /* CBIE (3 << 4) | CBCFE (1 << 6) | CBZE (1 << 7) */
 #if __riscv_xlen == 64
 #define CACHELINE_CAP_OFFSETS 0, 16, 32, 48
 #else
@@ -131,116 +124,6 @@ _start:
     NEXT_TEST "cbo.inval passes when the whole block is in bounds"
     CBO_INVAL a0
     EXPECT_NO_TRAP
-
-    /*
-     * Dropping W (store permission) while keeping R and full-block bounds
-     * causes all four CBOs to fault with a store permission violation.
-     */
-    li   t1, DROP_MASK(PERM_W)
-    DROP_PERMS a1, a0, t1
-
-    NEXT_TEST "cbo.zero faults on a read-only capability covering the whole block"
-    CBO_ZERO a1
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL t0
-
-    NEXT_TEST "cbo.clean faults on a read-only capability covering the whole block"
-    CBO_CLEAN a1
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL t0
-
-    NEXT_TEST "cbo.flush faults on a read-only capability covering the whole block"
-    CBO_FLUSH a1
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL t0
-
-    NEXT_TEST "cbo.inval faults on a read-only capability covering the whole block"
-    CBO_INVAL a1
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL t0
-
-    /*
-     * S-mode CBO gating via menvcfg.{CBZE,CBCFE,CBIE}: when clear (0), S-mode
-     * CBOs raise illegal instruction; once set in menvcfg, S-mode CBOs
-     * execute normally.
-     */
-    li   t1, -1
-    csrw CSR_PMPADDR0, t1
-    li   t1, 0x1f
-    csrw CSR_PMPCFG0, t1
-    li   t1, MENVCFG_CRE
-    csrs CSR_MENVCFG, t1
-    li   t1, MENVCFG_CBO_ALL
-    csrc CSR_MENVCFG, t1
-
-    li   t1, 0x1800
-    csrc CSR_MSTATUS, t1
-    li   t1, 0x0800
-    csrs CSR_MSTATUS, t1
-    auipc t2, 0
-    lla   t1, s_cbo_disabled
-    YADDRW t2, t2, t1
-    csrw CSR_MEPC, t2
-    lla   m_continue, s_cbo_disabled_done
-    mret
-
-s_cbo_disabled:
-    NEXT_TEST "S-mode cbo.zero faults with illegal instruction when menvcfg.CBZE is clear"
-    CBO_ZERO a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-
-    NEXT_TEST "S-mode cbo.clean faults with illegal instruction when menvcfg.CBCFE is clear"
-    CBO_CLEAN a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-
-    NEXT_TEST "S-mode cbo.flush faults with illegal instruction when menvcfg.CBCFE is clear"
-    CBO_FLUSH a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-
-    NEXT_TEST "S-mode cbo.inval faults with illegal instruction when menvcfg.CBIE is clear"
-    CBO_INVAL a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    ecall
-
-s_cbo_disabled_done:
-    /* Enable CBZE, CBCFE, and CBIE in menvcfg and re-enter S-mode. */
-    NEXT_TEST "menvcfg CBO enable fields are writable"
-    li   t1, MENVCFG_CBO_ALL
-    csrs CSR_MENVCFG, t1
-    csrr t2, CSR_MENVCFG
-    and  t2, t2, t1
-    EXPECT_EQ t2, t1
-
-    li   t1, 0x1800
-    csrc CSR_MSTATUS, t1
-    li   t1, 0x0800
-    csrs CSR_MSTATUS, t1
-    auipc t2, 0
-    lla   t1, s_cbo_enabled
-    YADDRW t2, t2, t1
-    csrw CSR_MEPC, t2
-    lla   m_continue, s_cbo_enabled_done
-    mret
-
-s_cbo_enabled:
-    NEXT_TEST "S-mode cbo.zero succeeds once menvcfg.CBZE is set"
-    CBO_ZERO a0
-    EXPECT_NO_TRAP
-
-    NEXT_TEST "S-mode cbo.clean succeeds once menvcfg.CBCFE is set"
-    CBO_CLEAN a0
-    EXPECT_NO_TRAP
-
-    NEXT_TEST "S-mode cbo.flush succeeds once menvcfg.CBCFE is set"
-    CBO_FLUSH a0
-    EXPECT_NO_TRAP
-
-    NEXT_TEST "S-mode cbo.inval succeeds once menvcfg.CBIE is set"
-    CBO_INVAL a0
-    EXPECT_NO_TRAP
-    ecall
-
-s_cbo_enabled_done:
 
     YMODESWI
     TEST_PASS

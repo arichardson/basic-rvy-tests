@@ -1,49 +1,24 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Happy-path tests for the capability manipulation and inspection
- * instructions (negative, malformed-metadata, and reserved-encoding cases
- * live in test-cap-ops-failures.S):
+ * Happy-path tests for capability comparison, metadata inspection, tag
+ * reconstruction, and subset testing (bounds, cursor addition, sealing,
+ * permission/mode manipulation, and negative/malformed-metadata cases live in
+ * their own test files):
  *
- *  - YBNDSWI encodes lengths across four regions (page-sized, byte granular,
- *    8-byte granular, and 16-byte granular).
- *  - YBNDSRW rounds inexact lengths up to a representable superset while
- *    keeping the tag, including lengths that overflow the internal-exponent
- *    mantissa and increment E.
- *  - YBASER, YLENR, and (on RVY) YTOPR report the decoded bounds, clamping
- *    2^XLEN to ~0.
- *  - YADD and (on RVY) the YSH1ADD through YSH4ADD and YSH1ADD.UW through
- *    YSH4ADD.UW instructions increment capability cursors by register or
- *    shifted-register offsets.
  *  - YEQ compares full capability state (tag, cursor, and metadata).
  *  - YHIR reads the capability metadata half.
- *  - YSEALE, YUNSEALS, YBLD, YSS, and YTYPER seal, unseal, rebuild, compare
- *    subsets, and inspect capability types.
- *  - YPERMC / ACPERM restricts permissions, and clearing PERM_X on an
- *    integer-mode capability forces its execution mode to capability mode.
+ *  - YBLD reconstructs a tagged capability from an untagged capability under
+ *    an authorizing superset capability.
+ *  - YSS tests whether cs2's bounds and permissions are a subset of cs1's.
  */
 #define TEST_NAME "cap-ops"
 #include "testmacros.h"
 #include "exceptions.h"
 
-#if __riscv_xlen == 64
-#define PESBT_RESERVED0_BIT (1 << 28)
-#else
-#define PESBT_RESERVED0_BIT (1 << 21)
-#endif
-
 .macro EXPECT_LEN reg, len
     YLENR t3, \reg
     li   t4, \len
     EXPECT_EQ t4, t3
-.endm
-
-/* Bound a copy of the authorizing capability and check the decoded length. */
-.macro EXPECT_YBNDSWI_LEN len
-    NEXT_TEST "ybndswi encodes a length of \len exactly"
-    YMV  a2, a0
-    YBNDSWI a2, a2, \len
-    EXPECT_TAG a2, 1             /* the length must be exactly encodable */
-    EXPECT_LEN a2, \len
 .endm
 
 .option norvc
@@ -52,157 +27,15 @@
 _start:
     SETUP_TRAPS
 
-    /*
-     * ddc is the only root data capability a bare-metal test has. Save it in
-     * s0 and bound a copy in a0 to the (page-aligned) buffer so that every
-     * length below is a valid subset.
-     */
     csrrs s0, CSR_DDC, x0
     lla    t1, buf
     YADDRW a0, s0, t1
     li    t2, 4096
     YBNDSW a0, a0, t2            /* a0 = [buf, buf + 4096) */
+    li    t2, 16
+    YBNDSW a1, a0, t2            /* a1 = [buf, buf + 16), a subset of a0 */
 
     YMODESWY                     /* capability mode */
-
-#ifndef CHERI_093
-    /*
-     * YBNDSWI: one length from each region, plus both ends of each. 0.9.3
-     * spells the same operation scbndsi but encodes the immediate as a scale
-     * and a 5-bit value, so the regions below do not exist there.
-     */
-    EXPECT_YBNDSWI_LEN 4096      /* imm9 == 0 is the page-sized encoding */
-    EXPECT_YBNDSWI_LEN 1         /* byte granular lower bound */
-    EXPECT_YBNDSWI_LEN 7
-    EXPECT_YBNDSWI_LEN 255       /* byte granular upper bound */
-    EXPECT_YBNDSWI_LEN 256       /* 8-byte granular lower bound */
-    EXPECT_YBNDSWI_LEN 264
-    EXPECT_YBNDSWI_LEN 504       /* 8-byte granular upper bound */
-    EXPECT_YBNDSWI_LEN 512       /* 16-byte granular lower bound */
-    EXPECT_YBNDSWI_LEN 1024
-#if __riscv_xlen == 64
-    EXPECT_YBNDSWI_LEN 4080      /* 16-byte granular upper bound */
-#endif
-    EXPECT_NO_TRAP               /* none of the above may fault */
-#endif
-
-    /*
-     * YBNDSRW rounds an exact length without expanding it, and rounds an
-     * inexact length up to a representable superset while keeping the tag.
-     * Requesting 0xfff9 (just below 0x10000 with low bits set) also exercises
-     * the internal-exponent mantissa overflow path (incE = true) in both
-     * YBNDSRW and YAMASK.
-     */
-    NEXT_TEST "ybndsrw preserves exact bounds"
-    li   t2, 64
-    YBNDSRW a2, a0, t2
-    EXPECT_TAG a2, 1
-    EXPECT_LEN a2, 64
-    YBASER t3, a2
-    lla   t4, buf
-    EXPECT_EQ t4, t3
-    EXPECT_NO_TRAP
-
-    NEXT_TEST "ybndsrw rounds inexact bounds outward and keeps the tag"
-    lla   t1, buf
-    addi t1, t1, 1
-    YADDRW a2, s0, t1
-    li   t2, 0xfff9
-    YBNDSRW a2, a2, t2
-    EXPECT_TAG a2, 1
-    YBASER t3, a2
-    sltu t3, t1, t3              /* 1 if rounded base > requested base */
-    EXPECT_ZERO t3
-    YLENR t4, a2
-    sltu t4, t4, t2              /* 1 if rounded length < requested length */
-    EXPECT_ZERO t4
-    YAMASK t3, t2
-    EXPECT_NONZERO t3
-    EXPECT_NO_TRAP
-
-    /* YBASER, YLENR, and (on RVY) YTOPR report bounds and clamp 2^XLEN to ~0. */
-    NEXT_TEST "ybaser, ylenr, and ytopr report bounded and root bounds"
-    YBASER t1, s0
-    EXPECT_ZERO t1
-    YLENR t1, s0
-    li   t2, -1
-    EXPECT_EQ t2, t1
-#ifndef CHERI_093
-    YTOPR t1, s0
-    EXPECT_EQ t2, t1
-    YTOPR t1, x0
-    EXPECT_EQ t2, t1
-    YTOPR t1, a0
-    lla   t2, buf + 4096
-    EXPECT_EQ t2, t1
-#endif
-    EXPECT_NO_TRAP
-
-    /* YADD increments the cursor by rs2 and preserves the tag in bounds. */
-    NEXT_TEST "yadd increments the cursor by a register offset"
-    li   t1, 24
-    YADD a2, a0, t1
-    EXPECT_TAG a2, 1
-    lla   t2, buf
-    addi t2, t2, 24
-    EXPECT_EQ a2, t2
-    li   t1, -8
-    YADD a2, a2, t1
-    EXPECT_TAG a2, 1
-    addi t2, t2, -8
-    EXPECT_EQ a2, t2
-    YADD a3, x0, t2              /* cs1 = x0 produces an untagged capability at rs2 */
-    EXPECT_TAG a3, 0
-    EXPECT_EQ a3, t2
-    EXPECT_NO_TRAP
-
-#ifndef CHERI_093
-    /* YSH1ADD through YSH3ADD (and YSH4ADD / .UW on RV64) shift rs1 and add to cs2. */
-    NEXT_TEST "ysh1add, ysh2add, and ysh3add shift rs1 before adding to cs2"
-    li   t1, 5
-    YSH1ADD a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 10
-    EXPECT_EQ a2, t2
-    YSH2ADD a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 20
-    EXPECT_EQ a2, t2
-    YSH3ADD a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 40
-    EXPECT_EQ a2, t2
-    YSH1ADD x0, t1, a0           /* cd = x0 discards the result */
-    EXPECT_NO_TRAP
-
-#if __riscv_xlen == 64
-    NEXT_TEST "ysh4add and unsigned-word shifted adds zero-extend 32-bit offsets on RV64"
-    li   t1, 5
-    YSH4ADD a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 80
-    EXPECT_EQ a2, t2
-    /* Set bits [63:32] all-ones and low 32 bits = 6 so .uw strips the upper half. */
-    li   t1, -0x100000000 + 6
-    YSH1ADD_UW a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 12
-    EXPECT_EQ a2, t2
-    YSH2ADD_UW a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 24
-    EXPECT_EQ a2, t2
-    YSH3ADD_UW a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 48
-    EXPECT_EQ a2, t2
-    YSH4ADD_UW a2, t1, a0
-    EXPECT_TAG a2, 1
-    lla   t2, buf + 96
-    EXPECT_EQ a2, t2
-    EXPECT_NO_TRAP
-#endif
-#endif /* !CHERI_093 */
 
     /* YEQ tests exact equality across tag, cursor, and metadata. */
     NEXT_TEST "yeq compares tag, cursor, bounds, permissions, and seal state"
@@ -237,38 +70,6 @@ _start:
     EXPECT_NONZERO t1
     EXPECT_NO_TRAP
 
-    /* a1 is a subset of a0, which the tag reconstruction below builds on. */
-    NEXT_TEST "a bounded subset of the authorizing capability keeps its tag"
-    YMV  a1, a0
-    li   t2, 16
-    YBNDSW a1, a1, t2            /* a1 = [buf, buf + 16), a subset of a0 */
-    EXPECT_TAG a1, 1
-
-#ifndef CHERI_093
-    /*
-     * YUNSEALS, which 0.9.3 does not have: sealing a1 as a sentry and then
-     * unsealing it under a0 is allowed, and the result comes back unsealed
-     * and tagged. cs1 = x0 copies, untags, and unseals.
-     */
-    NEXT_TEST "yunseals of a sentry under a superset returns it unsealed"
-    YSEALE a2, a1                /* a2 = a1 sealed as a sentry */
-    EXPECT_TAG a2, 1
-    YTYPER t3, a2
-    EXPECT_NONZERO t3            /* it really is sealed */
-    YUNSEALS a3, a0, a2
-    EXPECT_TAG a3, 1
-    YTYPER t3, a3
-    EXPECT_ZERO t3               /* comes back unsealed */
-    EXPECT_NO_TRAP
-
-    NEXT_TEST "yunseals with cs1=x0 copies untags and unseals"
-    YUNSEALS a3, x0, a2
-    EXPECT_TAG a3, 0
-    YTYPER t3, a3
-    EXPECT_ZERO t3
-    EXPECT_NO_TRAP
-#endif /* !CHERI_093 */
-
     /* YBLD restores a tag from an authorizing capability, and YSS confirms subset. */
     NEXT_TEST "ybld restores a tag from an authorizing capability and yss confirms subset"
     YMV  a3, a1
@@ -293,51 +94,6 @@ _start:
     EXPECT_NONZERO t3
     EXPECT_NO_TRAP
 
-    /*
-     * YTYPER returns 0 for unsealed capabilities (including c0) and 1 for
-     * sentries, even if the sentry is untagged and has corrupted reserved
-     * metadata bits.
-     */
-    NEXT_TEST "ytyper returns 0 for unsealed capabilities and 1 for sentries"
-    YTYPER t3, x0
-    EXPECT_ZERO t3
-    YTYPER t3, a0
-    EXPECT_ZERO t3
-    YSEALE a2, a1
-    YTYPER t3, a2
-    li   t4, 1
-    EXPECT_EQ t4, t3
-    SY   a2, 0(a0)
-    LX   t1, XBYTES(a0)
-    li   t2, PESBT_RESERVED0_BIT
-    or   t1, t1, t2
-    SX   t1, XBYTES(a0)
-    LY   a3, 0(a0)
-    EXPECT_TAG a3, 0
-    YTYPER t3, a3
-    li   t4, 1
-    EXPECT_EQ t4, t3
-    EXPECT_NO_TRAP
-
-    /*
-     * Dropping PERM_X on an executable capability whose mode bit is
-     * CHERI_MODE_INT (1) forces the mode bit to CHERI_MODE_CAP (0), because
-     * non-executable capabilities cannot encode integer execution mode.
-     */
-    NEXT_TEST "dropping PERM_X on an integer-mode capability forces capability mode"
-    auipc a2, 0
-    li   t1, CHERI_MODE_INT
-    YMODEW a2, a2, t1
-    EXPECT_TAG a2, 1
-    YMODER t3, a2
-    EXPECT_EQ t3, t1
-    li   t2, DROP_MASK(PERM_X)
-    DROP_PERMS a2, a2, t2
-    EXPECT_TAG a2, 1
-    YMODER t3, a2
-    EXPECT_ZERO t3               /* forced back to CHERI_MODE_CAP (0) */
-    EXPECT_NO_TRAP
-
     YMODESWI
     TEST_PASS
 fail:
@@ -350,4 +106,4 @@ TRAP_HANDLER
 .section .bss
 .balign 4096
 buf:
-    .space 8192
+    .space 4096

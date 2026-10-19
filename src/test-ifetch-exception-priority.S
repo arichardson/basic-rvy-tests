@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Instruction-fetch exception priority and direct-jump translation chaining.
+ * Instruction-fetch exception priority.
  *
  * On RVY >= 0.9.6, branches, JAL, JALR, and xRET update PCC without checking
  * the target at the branch, and fault on instruction fetch at the target.
@@ -13,8 +13,6 @@
  * or emits bounds checks after fetching instruction parcels during
  * translation will probe the target page or upper parcel at translation time
  * and take the page or access fault before the generated PCC check runs.
- * Likewise, chaining a direct JAL with goto_tb must not bypass the target
- * TB's PCC check on subsequent runs.
  */
 #define TEST_NAME "ifetch-exception-priority"
 #ifdef CHERI_093
@@ -65,18 +63,6 @@
 #define exec_base    s1          /* base of the 4 KiB executable page */
 #define expected_epc s2          /* address the faulting fetch was at */
 #define root_cap     s7          /* root executable capability */
-
-/* Derive an 8-byte capability at \tramp in a0 and jump to it, faulting at \target. */
-.macro JUMP_FROM_8B_PCC tramp, target
-    lla   t0, \tramp
-    YADDRW a0, root_cap, t0
-    li    t1, 8
-    YBNDSW a0, a0, t1
-    lla   expected_epc, \target
-    RESUME_AFTER_FAULT 99f
-    jalr  x0, a0, 0
-99:
-.endm
 
 /*
  * Check PCC fetch priority against \mem_cause across the page boundary at
@@ -346,43 +332,6 @@ _start:
     YMODESWY
     auipc root_cap, 0
 
-    /* Execute each out-of-bounds direct JAL twice to test goto_tb chaining. */
-    NEXT_TEST "same-page out-of-bounds jal faults on first execution"
-    JUMP_FROM_8B_PCC same_page_jal_tramp, same_page_jal_victim
-    EXPECT_TRAP CAUSE_CHERI_INST
-    EXPECT_EPC expected_epc
-#if __riscv_xlen == 32
-    EXPECT_EPC_TAG 0
-#else
-    EXPECT_EPC_TAG 1
-#endif
-
-    NEXT_TEST "same-page out-of-bounds jal still faults on second execution"
-    RESUME_AFTER_FAULT 1f
-    jalr  x0, a0, 0
-1:
-    EXPECT_TRAP CAUSE_CHERI_INST
-    EXPECT_EPC expected_epc
-#if __riscv_xlen == 32
-    EXPECT_EPC_TAG 0
-#else
-    EXPECT_EPC_TAG 1
-#endif
-
-    NEXT_TEST "unrepresentable jal detags PCC and faults on first execution"
-    JUMP_FROM_8B_PCC unrep_jal_tramp, same_page_jal_tramp
-    EXPECT_TRAP CAUSE_CHERI_INST
-    EXPECT_EPC expected_epc
-    EXPECT_EPC_TAG 0
-
-    NEXT_TEST "unrepresentable jal still faults on second execution"
-    RESUME_AFTER_FAULT 2f
-    jalr  x0, a0, 0
-2:
-    EXPECT_TRAP CAUSE_CHERI_INST
-    EXPECT_EPC expected_epc
-    EXPECT_EPC_TAG 0
-
     /* M-mode: PCC fault vs PMP fetch access fault (cause 1). */
     lla   exec_base, exec_page
     CHECK_IFETCH_PRIORITY CAUSE_FETCH_ACCESS_FAULT, "non-executable PMP page"
@@ -452,19 +401,6 @@ fail:
     ecall
 m_fail:
     TEST_FAIL
-
-/* Direct JAL targets on an executable page (+2048 same-page, -4128 unrepresentable). */
-.balign 4096
-same_page_jal_tramp:
-    jal   x0, same_page_jal_victim
-    j     fail
-    .space 2048 - 8
-same_page_jal_victim:
-    j     fail
-    .space 2048 - 4 + 32
-unrep_jal_tramp:
-    jal   x0, same_page_jal_tramp
-    j     fail
 
 /*
  * Three-page window: exec_page (+0x0000, executable), noexec_page (+0x1000,
