@@ -26,13 +26,16 @@
 #include "target-info.h"
 
 /*
- * If the caller was in integer mode, ra holds an untagged address; wrap it in
- * the caller's PCC with integer execution mode so returning resumes in the
- * caller's mode.
+ * If the caller was in integer mode, ra holds an untagged address; switch to
+ * capability mode and wrap ra in the caller's PCC with integer execution mode
+ * so returning resumes in the caller's mode. Skipping YMODESWY and YMODEW when
+ * ra is already a tagged sentry lets console helpers run on harts without
+ * Zyhybrid, which are always in capability mode.
  */
 .macro WRAP_INT_RA tmp_reg
     YTAGR  \tmp_reg, ra
     bnez   \tmp_reg, .Lwrap_ra_done_\@ /* cap-mode calls already leave a sentry in ra */
+    YMODESWY
     auipc  \tmp_reg, 0
     YADDRW ra, \tmp_reg, ra
     li     \tmp_reg, CHERI_MODE_INT
@@ -48,7 +51,6 @@
 .macro CONSOLE_ENTRY name
 .globl \name
 \name:
-    YMODESWY
     WRAP_INT_RA t0
 1:  auipc  t0, %pcrel_hi(.L\name\()_sentry)
     LY     t0, %pcrel_lo(1b)(t0)
@@ -78,7 +80,6 @@
  */
 .globl console_init
 console_init:
-    YMODESWY
     WRAP_INT_RA t0
     auipc  t0, 0
     YMV    a1, ra                /* kept across the probe */

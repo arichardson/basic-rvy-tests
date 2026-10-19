@@ -57,6 +57,7 @@
 #define CAUSE_ILLEGAL_INSN         2
 #define CAUSE_LOAD_ACCESS_FAULT    5
 #define CAUSE_STORE_ACCESS_FAULT   7
+#define CAUSE_U_ECALL              8
 #define CAUSE_S_ECALL              9
 #define CAUSE_LOAD_PAGE_FAULT     13
 #define CAUSE_STORE_PAGE_FAULT    15
@@ -121,8 +122,10 @@
 .macro SETUP_TRAPS
     ENABLE_CHERI
     call console_init            /* probes UART and target_info; needs its own handler */
-    lla   t0, trap_handler
-    csrw CSR_MTVEC, t0
+    lla    t0, trap_handler
+    auipc  t5, 0
+    YADDRW t0, t5, t0
+    csrw   CSR_MTVEC, t0
     li   trap_cause, 0
     li   trap_epc, 0
     li   trap_epc_tag, 0
@@ -473,13 +476,23 @@ __rvy_used_resume_after_fault = 1
     EXPECT_CAP_EQ \reg, t6
 .endm
 
-/* Shared prologue: record the trap, letting an S-mode ecall back to M-mode. */
+/* Shared prologue: record the trap, letting a U- or S-mode ecall back to M-mode. */
 .macro TRAP_RECORD_AND_LET_ECALL_THROUGH
     csrr t6, CSR_MCAUSE
+    li   t5, CAUSE_U_ECALL
+    beq  t6, t5, 7f
     li   t5, CAUSE_S_ECALL
-    bne  t5, t6, 8f
-    li   t5, 0x1800              /* mstatus.MPP = M */
+    bne  t6, t5, 8f
+7:  li   t5, 0x1800              /* mstatus.MPP = M */
     csrs CSR_MSTATUS, t5
+#ifndef CHERI_093
+    csrr t5, CSR_MISA
+    slli t5, t5, (XLEN - 1 - 24)
+    bgez t5, 6f
+    auipc  t5, 0
+    YADDRW m_continue, t5, m_continue
+6:
+#endif
     csrw CSR_MEPC, m_continue
     mret
 8:
@@ -494,9 +507,9 @@ __rvy_used_resume_after_fault = 1
 .endm
 
 /*
- * Plain handler: no RVY instructions, so it keeps working for tests that
- * clear misa.Y. Writing an address to mepc leaves the rest of the capability
- * alone, so execution resumes in the mode that faulted.
+ * Plain handler: uses no RVY instructions when misa.Y is clear, and YADDI when
+ * misa.Y is set so it works both when misa.Y is 0 and on purecap-only harts
+ * without Zyhybrid (where mtvecc is in capability mode).
  */
 .macro TRAP_HANDLER
     .ifdef __rvy_used_resume_after_fault
@@ -505,6 +518,15 @@ __rvy_used_resume_after_fault = 1
     .balign 4
 trap_handler:
     TRAP_RECORD_AND_LET_ECALL_THROUGH
+#ifndef CHERI_093
+    csrr  t5, CSR_MISA
+    slli  t5, t5, (XLEN - 1 - 24)
+    bgez  t5, 9f
+    YADDI t6, trap_epc, 4
+    csrw  CSR_MEPC, t6
+    mret
+9:
+#endif
     addi t6, trap_epc, 4         /* step over the faulting instruction */
     csrw CSR_MEPC, t6
     mret

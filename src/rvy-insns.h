@@ -52,10 +52,12 @@
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
 #define CSR_STVEC   0x105
+#define CSR_SENVCFG 0x10A
 #define CSR_SSCRATCH 0x140
 #define CSR_SEPC    0x141
 #define CSR_SCAUSE  0x142
 #define CSR_STVAL   0x143
+#define CSR_HENVCFG 0x60A
 #define CSR_VSTVEC  0x205
 #define CSR_VSSCRATCH 0x240
 #define CSR_VSEPC   0x241
@@ -94,11 +96,12 @@
 #define MISA_Y      (1 << 24)
 #define MISA_C      (1 << 2)
 #ifdef CHERI_093
-/* 0.9.3 put the S-mode CHERI enable at bit 28 rather than bit 9. */
-#define MENVCFG_CRE (1 << 28)
+/* 0.9.3 called the envcfg CHERI enable CRE and put it at bit 28 rather than bit 9. */
+#define ENVCFG_Y    (1 << 28)
 #else
-#define MENVCFG_CRE (1 << 9)
+#define ENVCFG_Y    (1 << 9)
 #endif
+#define MENVCFG_CRE ENVCFG_Y
 
 /* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */
 #define PERM_W      (1 << 0)

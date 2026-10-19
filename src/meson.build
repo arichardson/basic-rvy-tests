@@ -104,8 +104,17 @@ if rvy_test_cc_found
     {'name': 'test-translation-priority', 'min_version': '0.9.7',
      'xlens': [64], 'qemu_args': ['-cpu', 'rv64,Svyrg=on']},
     # 0.9.9 made misa.Y reset to 1, gated clearing misa.Y on pc/ddc/xtvec/xepc
-    # holding root capabilities, and moved menvcfg.CRE from bit 28 to bit 9.
-    {'name': 'test-misa-y', 'min_version': '0.9.9'},
+    # holding root capabilities, and moved menvcfg.Y from bit 28 (0.9.3 CRE) to
+    # bit 9. Without Zyhybrid the hart resets into capability mode, where
+    # QEMU's integer MROM reset stub (ld/lw t0, 24(t0); jr t0) faults on the
+    # untagged jump target; set the reset PC directly to the ELF entry point
+    # instead.
+    {'name': 'test-misa-y', 'min_version': '0.9.9',
+     'qemu_variants': {
+       '': ['-global', 'riscv-cpu.Zyhybrid=true'],
+       '-no-zyhybrid': ['-global', 'riscv-cpu.Zyhybrid=false',
+                        '-device', 'loader,addr=0x80000000,cpu-num=0'],
+     }},
     # BEQ/BNE with rs1 <= rs2 in capability mode was reserved in 0.9.6-0.9.9 and
     # removed in 0.9.10.
     {'name': 'test-reserved-branches', 'cheri_versions': ['0.9.9']},
@@ -438,17 +447,20 @@ if rvy_test_cc_found
                protocol: 'tap',
                suite: ['rvy'])
         else
-          qemu_args = emulator.get('qemu_args', []) + t.get('qemu_args', [])
-          foreach machine : rvy_machines
-            info_elf = rvy_target_info_elfs['qemu_@0@_@1@'.format(emulator['label'], machine).underscorify()]
-            run_args = no_info ? [] : ['--extra-elf', info_elf]
-            deps = no_info ? emulator['depends'] : emulator['depends'] + [info_elf]
-            test(test_id + suffix + '-' + machine, rvy_run_test,
-                 args: run_args + ['qemu', emulator['path'], elf, machine] + qemu_args,
-                 depends: deps,
-                 timeout: get_option('rvy_test_timeout'),
-                 protocol: 'tap',
-                 suite: ['rvy'])
+          qemu_variants = t.get('qemu_variants', {'': t.get('qemu_args', [])})
+          foreach variant_suffix, variant_args : qemu_variants
+            qemu_args = emulator.get('qemu_args', []) + variant_args
+            foreach machine : rvy_machines
+              info_elf = rvy_target_info_elfs['qemu_@0@_@1@'.format(emulator['label'], machine).underscorify()]
+              run_args = no_info ? [] : ['--extra-elf', info_elf]
+              deps = no_info ? emulator['depends'] : emulator['depends'] + [info_elf]
+              test(test_id + variant_suffix + suffix + '-' + machine, rvy_run_test,
+                   args: run_args + ['qemu', emulator['path'], elf, machine] + qemu_args,
+                   depends: deps,
+                   timeout: get_option('rvy_test_timeout'),
+                   protocol: 'tap',
+                   suite: ['rvy'])
+            endforeach
           endforeach
         endif
       endforeach
