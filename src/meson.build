@@ -103,6 +103,7 @@ if rvy_test_cc_found
      'qemu_args': ['-global', 'riscv-cpu.Zylg=true']},
     {'name': 'test-rvc'},
     {'name': 'test-fp-loadstore'},
+    {'name': 'test-hints'},
     # 0.9.6 removed capability checks from branches, jumps, and xRET so target
     # faults are taken on instruction fetch, split CHERI fault causes into
     # mcause 24-28 and 33-36, and defined the synchronous exception priority
