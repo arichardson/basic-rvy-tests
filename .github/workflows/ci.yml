@@ -211,11 +211,11 @@ jobs:
           path: build/meson-logs/testlog.json
 
       - name: Download baseline testlog.json from main
-        if: always() && hashFiles('build/meson-logs/testlog.json') != ''
+        if: always() && github.event_name == 'pull_request' && hashFiles('build/meson-logs/testlog.json') != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
           RUN_ID=""
           if [ -n "$BASE_SHA" ]; then
             RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow ci.yml \
@@ -236,10 +236,16 @@ jobs:
       - name: Summarize test results
         if: always() && hashFiles('build/meson-logs/testlog.json') != ''
         run: |
-          python3 .github/summarize-test-results.py \
-            build/meson-logs/testlog.json \
-            base-artifact/testlog.json \
-            | tee test-summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 .github/summarize-test-results.py \
+              --markdown test-summary.md \
+              build/meson-logs/testlog.json \
+              base-artifact/testlog.json
+          else
+            python3 .github/summarize-test-results.py \
+              --markdown test-summary.md \
+              build/meson-logs/testlog.json
+          fi
 
       - name: Post test results comment on PR
         if: always() && github.event_name == 'pull_request' && hashFiles('test-summary.md') != ''
