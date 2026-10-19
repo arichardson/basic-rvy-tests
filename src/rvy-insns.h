@@ -431,3 +431,95 @@
     .insn i CBO_OPC, 2, x0, \cs1, 4
 .endm
 
+/*
+ * 16-bit compressed instructions (Zca). Each macro pairs the 16-bit
+ * instruction with a c.nop so a 4-byte trap-return PC step lands on the next
+ * instruction boundary while keeping the rest of the file in .option norvc
+ * mode.
+ */
+.macro INSN16 enc
+    .option push
+    .option rvc
+    .2byte \enc
+    c.nop
+    .option pop
+.endm
+
+.macro C_YADDI16SP imm
+    .option push
+    .option rvc
+    c.addi16sp sp, \imm
+    c.nop
+    .option pop
+.endm
+
+.macro C_YADDI4SPN cd, uimm
+    .option push
+    .option rvc
+    c.addi4spn \cd, sp, \uimm
+    c.nop
+    .option pop
+.endm
+
+.macro C_YMV cd, cs2
+    .option push
+    .option rvc
+    c.mv \cd, \cs2
+    c.nop
+    .option pop
+.endm
+
+.macro C_ADD rd, rs2
+    .option push
+    .option rvc
+    c.add \rd, \rs2
+    c.nop
+    .option pop
+.endm
+
+#if __riscv_xlen == 64
+#define C_LYSP_FUNCT3   1
+#define C_SYSP_FUNCT3   5
+#define C_LYSP_IMM(off) ((((off) >> 4) & 3) << 4 | (((off) >> 6) & 0xf))
+#define C_LY_IMM(off)   ((((off) >> 4) & 3) << 3 | \
+                         ((((off) >> 8) & 1) << 2) | (((off) >> 6) & 3))
+#else
+#define C_LYSP_FUNCT3   3
+#define C_SYSP_FUNCT3   7
+#define C_LYSP_IMM(off) ((((off) >> 3) & 7) << 3 | (((off) >> 6) & 7))
+#define C_LY_IMM(off)   ((((off) >> 3) & 7) << 2 | (((off) >> 6) & 3))
+#endif
+
+.macro C_LYSP cd, off
+    .option push
+    .option rvc
+    .insn ci 2, C_LYSP_FUNCT3, \cd, ((C_LYSP_IMM(\off) ^ 0x20) - 0x20)
+    c.nop
+    .option pop
+.endm
+
+.macro C_SYSP cs2, off
+    .option push
+    .option rvc
+    .insn css 2, C_SYSP_FUNCT3, \cs2, C_LYSP_IMM(\off)
+    c.nop
+    .option pop
+.endm
+
+.macro C_LY cd, off, cs1
+    .option push
+    .option rvc
+    .insn cl 0, C_LYSP_FUNCT3, \cd, C_LY_IMM(\off)(\cs1)
+    c.nop
+    .option pop
+.endm
+
+.macro C_SY cs2, off, cs1
+    .option push
+    .option rvc
+    .insn cs 0, C_SYSP_FUNCT3, \cs2, C_LY_IMM(\off)(\cs1)
+    c.nop
+    .option pop
+.endm
+
+
