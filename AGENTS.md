@@ -26,7 +26,11 @@ change makes it wrong, the comment is part of the change.
 Number cases with `NEXT_TEST` rather than literals, so inserting one does not
 renumber the rest, and give each one a description: it is what the TAP stream
 calls the case, and is the first thing anyone reads when it fails. Say what
-the case establishes rather than what it does, and keep it to one line.
+the case establishes rather than what it does, and keep it to one line. A
+`NEXT_TEST` case may contain multiple `EXPECT_*` checks when testing the same
+overall property (such as checking several input values or verifying multiple
+fields of a result), whereas distinct rules or unrelated scenarios belong in
+separate `NEXT_TEST` cases.
 
 Use `EXPECT_*` macros (`EXPECT_TRAP`, `EXPECT_NO_TRAP`, `EXPECT_EQ`,
 `EXPECT_ZERO`, `EXPECT_NONZERO`, `EXPECT_TAG`, etc.) for case checks so a

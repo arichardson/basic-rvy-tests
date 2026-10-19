@@ -18,20 +18,23 @@
 _start:
     SETUP_TRAPS
 
-    csrrs t0, CSR_DDC, x0
+    csrrs s0, CSR_DDC, x0
 
     /* YMODEW sets the execution mode of an unsealed executable capability when cd != x0. */
-    NEXT_TEST "ymodew updates the execution mode in integer and capability mode"
-    li   t2, 1
-    YMODEW t1, t0, t2
-    EXPECT_TAG t1, 1
-    YMODER t3, t1
+    NEXT_TEST "ymodew sets CHERI_MODE_INT on an executable capability"
+    li   t2, CHERI_MODE_INT
+    YMODEW a1, s0, t2
+    EXPECT_TAG a1, 1
+    YMODER t3, a1
     EXPECT_EQ t3, t2
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "ymodew sets CHERI_MODE_CAP on an executable capability"
     YMODESWY
-    YMODEW t1, t1, x0
+    YMODEW a1, a1, x0
     YMODESWI
-    EXPECT_TAG t1, 1
-    YMODER t3, t1
+    EXPECT_TAG a1, 1
+    YMODER t3, a1
     EXPECT_ZERO t3
     EXPECT_NO_TRAP
 
