@@ -235,6 +235,8 @@ jobs:
 
       - name: Summarize test results
         if: always() && hashFiles('build/meson-logs/testlog.json') != ''
+        env:
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             python3 .github/summarize-test-results.py \

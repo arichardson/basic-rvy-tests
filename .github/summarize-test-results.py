@@ -14,6 +14,19 @@ import sys
 TAP_LINE_RE = re.compile(
     r"^(ok|not ok)\s+(\d+)(?:\s*-\s*(.*?))?(?:\s*#\s*(SKIP|TODO)\b\s*(.*))?$"
 )
+FAIL_COMMENT_RE = re.compile(r"^#\s*FAIL:\s+\S+\s+test\s+(\d+)\b", re.MULTILINE)
+TARGET_MACHINE_RE = re.compile(r"^(.+) \((spike|virt)\)$")
+# GitHub Actions caps error/warning annotations at 10 per step (including the
+# runner's own "Process completed with exit code 1" annotation on failure).
+MAX_GHA_ANNOTATIONS = 9
+CATEGORY_ORDER = (
+    "QEMU 0.9.10",
+    "QEMU 0.9.9",
+    "QEMU 0.9.3",
+    "Sail 0.9.10",
+    "Sail 0.9.9",
+    "Sail 0.9.3",
+)
 
 
 def parse_entry(raw: dict) -> dict:
@@ -130,23 +143,66 @@ def format_cell(r: dict | None, b: dict | None, has_target_base: bool = False) -
     return f"{icon} {r['passed']}/{r['total']}{suffix}"
 
 
+def target_category(target: str) -> str:
+    base = re.sub(r" \([^)]+\)$", "", target)
+    if base in ("riscv64y", "riscv32y"):
+        return "QEMU 0.9.10"
+    if base.endswith("-0.9.9") and base.startswith("riscv"):
+        return "QEMU 0.9.9"
+    if base.endswith("cheristd"):
+        return "QEMU 0.9.3"
+    if base.startswith("sail-0.9.10"):
+        return "Sail 0.9.10"
+    if base.startswith("sail-0.9.9"):
+        return "Sail 0.9.9"
+    if base.startswith("sail-0.9.3"):
+        return "Sail 0.9.3"
+    return target
+
+
+def compact_targets(targets: list[str]) -> list[str]:
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for t in targets:
+        m = TARGET_MACHINE_RE.match(t)
+        if m:
+            emu, machine = m.groups()
+            if emu not in grouped:
+                grouped[emu] = []
+                order.append(emu)
+            if machine not in grouped[emu]:
+                grouped[emu].append(machine)
+        else:
+            grouped[t] = []
+            order.append(t)
+    result = []
+    for key in order:
+        machines = sorted(grouped[key])
+        if machines:
+            result.append(f"{key} ({', '.join(machines)})")
+        else:
+            result.append(key)
+    return result
+
+
 def group_failures(failures: list[dict]) -> list[tuple[dict, list[str]]]:
     groups: dict[tuple, tuple[dict, list[str]]] = {}
     for f in sorted(failures, key=lambda x: x["test"]):
         stdout_tail = "" if f["bad_lines"] else f["stdout"][-2000:]
+        norm_stderr = re.sub(r"qemu-system-\S+:", "qemu:", f["stderr"][-2000:])
         key = (
             f["test"],
             f["result"],
             f["failed"],
             f["total"],
             tuple(f["bad_lines"]),
-            f["stderr"][-2000:],
+            norm_stderr,
             stdout_tail,
         )
         if key not in groups:
             groups[key] = (f, [])
         groups[key][1].append(f["target"])
-    return list(groups.values())
+    return [(f, compact_targets(targets)) for f, targets in groups.values()]
 
 
 def failure_status(f: dict) -> str:
@@ -155,49 +211,207 @@ def failure_status(f: dict) -> str:
     return f["result"]
 
 
-def print_markdown_failure(
-    out: io.TextIOBase, f: dict, targets: list[str], icon: str
-) -> None:
-    targets_html = ", ".join(f"<code>{t}</code>" for t in targets)
-    status = failure_status(f)
-    out.write(
-        f"<details><summary>{icon} <code>{f['test']}</code> "
-        f"({status}): {targets_html}</summary>\n\n"
-    )
+def failure_lines(f: dict) -> list[str]:
+    lines: list[str] = []
     if f["bad_lines"]:
-        out.write("```tap\n")
-        out.write("\n".join(f["bad_lines"]) + "\n")
-        out.write("```\n")
+        lines.extend(f["bad_lines"])
     elif f["stdout"]:
-        out.write("```\n")
-        out.write(f["stdout"][-2000:] + "\n")
-        out.write("```\n")
+        lines.extend(f["stdout"][-2000:].splitlines())
     if f["stderr"]:
-        out.write("```\n")
-        out.write(f["stderr"][-2000:] + "\n")
-        out.write("```\n")
-    out.write("</details>\n")
+        lines.extend(f["stderr"][-2000:].splitlines())
+    return lines
+
+
+def summarize_test_failure_header(test_name: str, test_entries: list[dict]) -> str:
+    cat_failed: dict[str, int] = {}
+    cat_status: dict[str, str] = {}
+    all_norm_bad: set[str] = set()
+    max_total = max((e["total"] for e in test_entries), default=0)
+    has_bad_lines = any(e["bad_lines"] for e in test_entries)
+
+    for e in test_entries:
+        cat = target_category(e["target"])
+        cat_failed[cat] = max(cat_failed.get(cat, 0), e["failed"])
+        cat_status[cat] = e["result"]
+        all_norm_bad.update(e["norm_bad"])
+
+    ordered_cats = [c for c in CATEGORY_ORDER if c in cat_failed] + [
+        c for c in cat_failed if c not in CATEGORY_ORDER
+    ]
+    if has_bad_lines and max_total:
+        total_failed = len(all_norm_bad) or max(cat_failed.values())
+        cat_parts = [f"{cat_failed[c]} {c}" for c in ordered_cats]
+        return f"{test_name}: {total_failed}/{max_total} tests failed ({', '.join(cat_parts)})"
+
+    cat_parts = [f"{cat_status[c]} on {c}" for c in ordered_cats]
+    return f"{test_name}: {', '.join(cat_parts)}"
+
+
+def find_test_source(
+    test_name: str, test_entries: list[dict]
+) -> tuple[str | None, int | None]:
+    candidates = [
+        f"src/{test_name}.S",
+        f"src/{test_name.removesuffix('-no-zyhybrid')}.S",
+        f"src/{test_name.removesuffix('-no-target-info')}.S",
+    ]
+    src_path = next((Path(c) for c in candidates if Path(c).is_file()), None)
+    if src_path is None:
+        return None, None
+
+    src_lines = src_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    for e in test_entries:
+        for bad in e["bad_lines"]:
+            m = TAP_LINE_RE.match(bad)
+            if m and m.group(3):
+                needle = f'NEXT_TEST "{m.group(3).strip()}"'
+                for idx, sline in enumerate(src_lines, start=1):
+                    if needle in sline:
+                        return str(src_path), idx
+        m_fail = FAIL_COMMENT_RE.search(e["stdout"])
+        if m_fail:
+            target_idx = int(m_fail.group(1))
+            seen = 0
+            for idx, sline in enumerate(src_lines, start=1):
+                if "NEXT_TEST" in sline and not sline.lstrip().startswith(("/*", "*")):
+                    seen += 1
+                    if seen == target_idx:
+                        return str(src_path), idx
+    return str(src_path), 1
+
+
+def gha_escape_data(s: str) -> str:
+    return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def gha_escape_property(s: str) -> str:
+    return gha_escape_data(s).replace(":", "%3A").replace(",", "%2C")
+
+
+def build_test_annotations(
+    failures: list[dict],
+) -> list[tuple[str | None, int | None, str, str]]:
+    entries_by_test: dict[str, list[dict]] = collections.defaultdict(list)
+    for f in sorted(failures, key=lambda x: x["test"]):
+        entries_by_test[f["test"]].append(f)
+
+    subgroups_by_test: dict[str, list[tuple[dict, list[str]]]] = collections.defaultdict(
+        list
+    )
+    for f, targets in group_failures(failures):
+        subgroups_by_test[f["test"]].append((f, targets))
+
+    annotations: list[tuple[str | None, int | None, str, str]] = []
+    for test_name, subgroups in subgroups_by_test.items():
+        test_entries = entries_by_test[test_name]
+        file_prop, line_prop = find_test_source(test_name, test_entries)
+        title = summarize_test_failure_header(test_name, test_entries)
+        if len(subgroups) == 1:
+            f, _ = subgroups[0]
+            body_lines = [f"  {line}" for line in failure_lines(f)]
+            body = "\n".join([title, *body_lines])
+        else:
+            sections = [title]
+            for f, targets in subgroups:
+                cats = list(dict.fromkeys(target_category(t) for t in targets))
+                header = f"  [{', '.join(cats)}] ({failure_status(f)}):"
+                body_lines = [f"    {line}" for line in failure_lines(f)]
+                sections.append("\n".join([header, *body_lines]))
+            body = "\n".join(sections)
+        annotations.append((file_prop, line_prop, title, body))
+
+    if len(annotations) <= MAX_GHA_ANNOTATIONS:
+        return annotations
+
+    kept = annotations[: MAX_GHA_ANNOTATIONS - 1]
+    rest = annotations[MAX_GHA_ANNOTATIONS - 1 :]
+    overflow_title = f"{len(rest)} more failing tests: " + ", ".join(
+        t.split(":", 1)[0] for _, _, t, _ in rest
+    )
+    overflow_body = "\n\n".join(b for _, _, _, b in rest)
+    kept.append((None, None, overflow_title, overflow_body))
+    return kept
+
+
+def blob_url_for_source(file_prop: str | None, line_prop: int | None) -> str | None:
+    if not file_prop:
+        return None
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    sha = os.environ.get("GITHUB_HEAD_SHA") or os.environ.get("GITHUB_SHA")
+    if not repo or not sha:
+        return None
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
+    anchor = f"#L{line_prop}" if line_prop else ""
+    return f"{server}/{repo}/blob/{sha}/{file_prop}{anchor}"
+
+
+def print_markdown_test_failures(
+    out: io.TextIOBase, failures: list[dict], icon: str
+) -> None:
+    entries_by_test: dict[str, list[dict]] = collections.defaultdict(list)
+    for f in sorted(failures, key=lambda x: x["test"]):
+        entries_by_test[f["test"]].append(f)
+
+    subgroups_by_test: dict[str, list[tuple[dict, list[str]]]] = collections.defaultdict(
+        list
+    )
+    for f, targets in group_failures(failures):
+        subgroups_by_test[f["test"]].append((f, targets))
+
+    for test_name, subgroups in subgroups_by_test.items():
+        test_entries = entries_by_test[test_name]
+        header = summarize_test_failure_header(test_name, test_entries)
+        _, summary_rest = header.split(": ", 1)
+        file_prop, line_prop = find_test_source(test_name, test_entries)
+        url = blob_url_for_source(file_prop, line_prop)
+        loc_label = f"{file_prop}#L{line_prop}" if file_prop and line_prop else test_name
+        if url:
+            name_html = f'<a href="{url}"><code>{test_name}</code></a> (<code>{loc_label}</code>)'
+        else:
+            name_html = f"<code>{test_name}</code>"
+        out.write(
+            f"<details><summary>{icon} {name_html}: "
+            f"{summary_rest}</summary>\n\n"
+        )
+        for f, targets in subgroups:
+            if len(subgroups) > 1:
+                cats = list(dict.fromkeys(target_category(t) for t in targets))
+                out.write(f"**{', '.join(cats)}** ({failure_status(f)}):\n")
+            if f["bad_lines"]:
+                out.write("```tap\n")
+                out.write("\n".join(f["bad_lines"]) + "\n")
+                out.write("```\n")
+            elif f["stdout"]:
+                out.write("```\n")
+                out.write(f["stdout"][-2000:] + "\n")
+                out.write("```\n")
+            if f["stderr"]:
+                out.write("```\n")
+                out.write(f["stderr"][-2000:] + "\n")
+                out.write("```\n")
+        out.write("</details>\n")
 
 
 def print_console_failures(
-    heading: str, failures: list[dict], prefix: str
+    heading: str, failures: list[dict], prefix: str, gha_level: str
 ) -> None:
     if not failures:
         return
     print(f"\n=== {heading} ===")
-    for f, targets in group_failures(failures):
-        status = failure_status(f)
-        target_str = ", ".join(targets)
-        print(f"\n{prefix} {f['test']} ({status}) [{target_str}]")
-        if f["bad_lines"]:
-            for line in f["bad_lines"]:
-                print(f"  {line}")
-        elif f["stdout"]:
-            for line in f["stdout"][-2000:].splitlines():
-                print(f"  {line}")
-        if f["stderr"]:
-            for line in f["stderr"][-2000:].splitlines():
-                print(f"  {line}")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for file_prop, line_prop, title, body in build_test_annotations(failures):
+            props = [f"title={gha_escape_property(title)}"]
+            if line_prop is not None:
+                props.insert(0, f"line={line_prop}")
+            if file_prop:
+                props.insert(0, f"file={gha_escape_property(file_prop)}")
+            print(f"::{gha_level} {','.join(props)}::{gha_escape_data(body)}")
+    else:
+        for _, _, _, body in build_test_annotations(failures):
+            first, *rest = body.splitlines()
+            print(f"\n{prefix} {first}")
+            for line in rest:
+                print(line)
 
 
 def render_markdown(
@@ -252,12 +466,10 @@ def render_markdown(
     if new_failures:
         heading = "New Failures (relative to `main`)" if base_entries else "Failures"
         out.write(f"\n#### {heading}\n\n")
-        for f, group_targets in group_failures(new_failures):
-            print_markdown_failure(out, f, group_targets, "❌")
+        print_markdown_test_failures(out, new_failures, "❌")
     if known_failures:
         out.write("\n#### Pre-existing Failures on `main`\n\n")
-        for f, group_targets in group_failures(known_failures):
-            print_markdown_failure(out, f, group_targets, "⚠️")
+        print_markdown_test_failures(out, known_failures, "⚠️")
 
     cols = " | ".join(f"`{t}`" for t in targets)
     sep = " | ".join("---:" for _ in targets)
@@ -348,9 +560,11 @@ def print_console_summary(
 
     if new_failures:
         heading = "New Failures (relative to main)" if base_entries else "Failures"
-        print_console_failures(heading, new_failures, "FAIL")
+        print_console_failures(heading, new_failures, "FAIL", "error")
     if known_failures:
-        print_console_failures("Pre-existing Failures on main", known_failures, "WARN")
+        print_console_failures(
+            "Pre-existing Failures on main", known_failures, "WARN", "warning"
+        )
 
 
 def main() -> None:
