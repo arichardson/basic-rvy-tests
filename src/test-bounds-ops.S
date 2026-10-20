@@ -68,40 +68,6 @@ _start:
     li    t2, 4096
     YBNDSW a0, a0, t2            /* a0 = [buf, buf + 4096) */
 
-#ifndef CHERI_093
-    /*
-     * YBNDSWI, one length per representable region. The root
-     * capability keeps its tag for exact bounds. 0.9.3 spells the same
-     * operation scbndsi with a scale and a 5-bit immediate, so these regions
-     * are specific to the v0.9.9 encoding.
-     */
-    NEXT_TEST "ybndswi encodes one length from each representable region"
-
-.macro CHECK_YBNDSWI length
-    YBNDSWI t1, s0, \length
-    EXPECT_TAG t1, 1
-    YLENR t2, t1
-    li   t3, \length
-    EXPECT_EQ t3, t2
-.endm
-
-    CHECK_YBNDSWI 4096           /* page-sized */
-    CHECK_YBNDSWI 1              /* byte granular */
-    CHECK_YBNDSWI 16
-    CHECK_YBNDSWI 255
-    CHECK_YBNDSWI 256            /* 8-byte granular */
-    CHECK_YBNDSWI 504
-    CHECK_YBNDSWI 512            /* 16-byte granular */
-#if __riscv_xlen == 64
-    CHECK_YBNDSWI 4080
-#else
-    /* 4080 is not exactly representable in the RV32 capability format, so
-     * the exact bounds request must clear the tag */
-    YBNDSWI t1, s0, 4080
-    EXPECT_TAG t1, 0
-#endif
-#endif /* !CHERI_093 */
-
     YMODESWY                     /* capability mode */
 
 #ifndef CHERI_093
@@ -113,6 +79,7 @@ _start:
     EXPECT_YBNDSWI_LEN 4096      /* imm9 == 0 is the page-sized encoding */
     EXPECT_YBNDSWI_LEN 1         /* byte granular lower bound */
     EXPECT_YBNDSWI_LEN 7
+    EXPECT_YBNDSWI_LEN 16
     EXPECT_YBNDSWI_LEN 255       /* byte granular upper bound */
     EXPECT_YBNDSWI_LEN 256       /* 8-byte granular lower bound */
     EXPECT_YBNDSWI_LEN 264
