@@ -243,7 +243,8 @@ _start:
 
     /*
      * Sealed sentry cursor updates: YMV preserves the tag, while YADDRW,
-     * YADD, YADDI (even with imm == 0), and YSH1ADD clear the tag.
+     * YADD, YADDI (even with imm == 0), and YSH1ADD..YSH4ADD[.UW] clear the
+     * tag while still updating the cursor address.
      */
     NEXT_TEST "cursor updates on a sealed sentry clear the tag while ymv preserves it"
     YSEALE a2, a0
@@ -261,6 +262,22 @@ _start:
 #ifndef CHERI_093
     YSH1ADD a3, x0, a2
     EXPECT_TAG a3, 0
+    EXPECT_EQ a3, s1
+    li   t0, 3
+    YSH1ADD a3, t0, a2
+    EXPECT_TAG a3, 0
+    addi t1, s1, 6
+    EXPECT_EQ a3, t1
+    YSH2ADD a3, t0, a2
+    EXPECT_TAG a3, 0
+    addi t1, s1, 12
+    EXPECT_EQ a3, t1
+#if __riscv_xlen == 64
+    YSH4ADD_UW a3, t0, a2
+    EXPECT_TAG a3, 0
+    addi t1, s1, 48
+    EXPECT_EQ a3, t1
+#endif
 #endif
     EXPECT_NO_TRAP
 
