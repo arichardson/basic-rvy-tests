@@ -9,8 +9,8 @@
  *    bounds cannot be encoded exactly, and both YBNDSW and YBNDSRW clear the
  *    tag when the requested bounds exceed the parent capability or the input
  *    capability is sealed.
- *  - YTOPR returns 0 on capabilities with malformed EBT bounds (matching
- *    YBASER and YLENR).
+ *  - YTOPR returns 0 and YBLD refuses to tag on capabilities with malformed
+ *    EBT bounds (matching YBASER and YLENR).
  *  - YUNSEALS, YBLD, and YSS reject untagged, sealed, malformed, or
  *    non-superset operands.
  *  - YMODEW clears the tag on sealed inputs and leaves the mode bit
@@ -19,7 +19,8 @@
  *    sealing, and preserves the tag when clearing only permissions that were
  *    already zero.
  *  - YPERMR, YPERMC, YSEALE, YBLD, and YSS enforce metadata integrity on
- *    non-zero RESERVED0/1 bits and (on RV32) reserved AP Quadrant 0 encodings.
+ *    non-zero RESERVED0/1 bits, RV64 reserved AP_P bit combinations, and
+ *    (on RV32) reserved AP Quadrant 0 encodings.
  */
 #define TEST_NAME "cap-ops-failures"
 #include "testmacros.h"
@@ -29,10 +30,12 @@
 #define PESBT_RESERVED0_BIT    (1 << 28)
 #define PESBT_SDP_AP_MASK      ((0xf << 60) | (0xff << 44))
 #define EBT_MALFORMED_E_GT_MAX 0x000000000001c007
+#define EBT_BMSB_BIT           (1 << 13)
 #else
 #define PESBT_RESERVED0_BIT    (1 << 21)
 #define PESBT_SDP_AP_MASK      (0x7f << 25)
 #define EBT_MALFORMED_E_GT_MAX 0x00040c03
+#define EBT_BMSB_BIT           (1 << 9)
 #endif
 
 .option norvc
@@ -92,17 +95,46 @@ _start:
     EXPECT_TAG a2, 0
     EXPECT_NO_TRAP
 
-    /* YBASER, YLENR, and (on RVY) YTOPR all return 0 when EBT bounds are malformed. */
-    NEXT_TEST "ytopr, ybaser, and ylenr return 0 on malformed bounds"
+    /*
+     * YBASER, YLENR, and (on RVY) YTOPR all return 0 and YBLD refuses to tag
+     * when EBT bounds are malformed: E < 0 (encoded E > CAP_MAX_E), E ==
+     * CAP_MAX_E with B != 0, or E == CAP_MAX_E - 1 with B[MW - 1] != 0.
+     */
+    NEXT_TEST "ytopr, ybaser, and ylenr return 0 and ybld detags on malformed bounds"
     li   t1, EBT_MALFORMED_E_GT_MAX
     YHIW a2, x0, t1
     YBASER t2, a2
     EXPECT_ZERO t2
     YLENR t2, a2
     EXPECT_ZERO t2
+    YBLD a4, s0, a2
+    EXPECT_TAG a4, 0
 #ifndef CHERI_093
     YTOPR t2, a2
     EXPECT_ZERO t2
+    /* Root metadata has EF=0, TE=0, BE=0 (E = CAP_MAX_E) and B=0. */
+    YHIR t3, s0
+    ori  t1, t3, (1 << 3)        /* E = CAP_MAX_E with B != 0 */
+    YHIW a2, x0, t1
+    YBASER t2, a2
+    EXPECT_ZERO t2
+    YLENR t2, a2
+    EXPECT_ZERO t2
+    YTOPR t2, a2
+    EXPECT_ZERO t2
+    YBLD a4, s0, a2
+    EXPECT_TAG a4, 0
+    li   t1, EBT_BMSB_BIT | 1    /* BE = 1 (E = CAP_MAX_E - 1) with B[MW-1] = 1 */
+    or   t1, t3, t1
+    YHIW a2, x0, t1
+    YBASER t2, a2
+    EXPECT_ZERO t2
+    YLENR t2, a2
+    EXPECT_ZERO t2
+    YTOPR t2, a2
+    EXPECT_ZERO t2
+    YBLD a4, s0, a2
+    EXPECT_TAG a4, 0
 #endif
     EXPECT_NO_TRAP
 
@@ -345,6 +377,53 @@ _start:
     EXPECT_TAG a5, 1
 #endif
     EXPECT_NO_TRAP
+#ifndef CHERI_093
+    /*
+     * On RV64, AP_P (pesbt[52:44]) encodes one bit per permission, so setting
+     * a dependent permission without its prerequisite (such as ASR without X,
+     * C without R or W, integer mode M=1 without X, or LM without C) is a
+     * reserved AP_P pattern: YBLD refuses to tag, YPERMR reports no
+     * architectural permissions, and YPERMC zeroes AP_P while preserving SDP
+     * and bounds.
+     */
+    NEXT_TEST "rv64 reserved ap_p combinations fail ybld and ypermr and are zeroed by ypermc"
+    YHIR t1, a1
+    li   t2, (0x1ff << 44)
+    not  t2, t2
+    and  t1, t1, t2              /* t1 = a1 metadata with AP_P cleared */
+    /* ASR (bit 49) without X (bit 48), with M=1 (bit 44) */
+    li   t2, ((1 << 5) | 1) << 44
+    or   t2, t1, t2
+    lla  t3, buf
+    YHIW a3, t3, t2
+    YBLD a4, a0, a3
+    EXPECT_TAG a4, 0
+    YPERMR t3, a3
+    YPERMR t4, x0
+    EXPECT_EQ t4, t3
+    YPERMC a4, a3, x0
+    EXPECT_TAG a4, 0
+    YMODER t3, a4
+    EXPECT_ZERO t3
+    YLENR t3, a4
+    li   t4, 16
+    EXPECT_EQ t4, t3
+    /* C (bit 45) without R or W */
+    li   t2, (1 << 1) << 44
+    or   t2, t1, t2
+    lla  t3, buf
+    YHIW a3, t3, t2
+    YBLD a4, a0, a3
+    EXPECT_TAG a4, 0
+    /* LM (bit 50) + R (bit 47) without C (bit 45) */
+    li   t2, ((1 << 6) | (1 << 3)) << 44
+    or   t2, t1, t2
+    lla  t3, buf
+    YHIW a3, t3, t2
+    YBLD a4, a0, a3
+    EXPECT_TAG a4, 0
+    EXPECT_NO_TRAP
+#endif
 #else /* __riscv_xlen == 32 */
     /*
      * On RV32, Quadrant 0 (Q=0) encodings with bit 1 set (such as
