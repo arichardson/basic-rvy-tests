@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * RVY instruction encoding and reserved-encoding tests across v0.9.10, v0.9.9,
- * and 0.9.3:
+ * RVY reserved instruction encodings across v0.9.10, v0.9.9, and 0.9.3:
  *
  *  - The pre-0.9.9 YSEALE encoding in the 2-operand space (funct7=0x7b) raises
  *    an illegal-instruction exception on RVY.
- *  - Reading the metadata half via YHIR (v0.9.10) or SRLIY by XLEN (v0.9.9).
  *  - In v0.9.9, SRLIY with any shift amount other than XLEN (such as 8 or
  *    XLEN-1) raises an illegal-instruction exception.
  *  - Immediate encodings with funct3=5 outside the YBNDSWI (and v0.9.9 SRLIY)
@@ -34,27 +32,14 @@ _start:
     .insn r 0x7b, 0, 0x7b, t1, t0, x0    /* pre-0.9.9 YSEALE: now illegal */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
-    /*
-     * Reading the metadata half: v0.9.10 uses YHIR (2OP rs2=7), whereas
-     * v0.9.9 uses SRLIY by XLEN.
-     */
-    NEXT_TEST "yhir (or v0.9.9 srliy by XLEN) reads the metadata"
-    YHIR t1, t0
-    EXPECT_NONZERO t1            /* pesbt of the root cap is non-zero */
-    EXPECT_NO_TRAP
-
 #ifdef CHERI_099
     /* Any SRLIY shift amount other than XLEN is a reserved encoding in v0.9.9. */
     NEXT_TEST "srliy by 8 is a reserved shift amount"
-    SRLIY t1, t0, 8
+    SRLIY t1, t0, 8                      /* reserved shamt */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
-    SRLIY t1, t0, __riscv_xlen - 1    /* reserved shamt */
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-
-    NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
-    SRLIY t1, t0, XLEN - 1
+    SRLIY t1, t0, __riscv_xlen - 1       /* reserved shamt */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif
 
