@@ -160,7 +160,7 @@ _start:
     EXPECT_NO_TRAP
 
     /* YBASER, YLENR, and (on RVY) YTOPR report bounds and clamp 2^XLEN to ~0. */
-    NEXT_TEST "ybaser, ylenr, and ytopr report bounded and root bounds"
+    NEXT_TEST "ybaser, ylenr, and ytopr report root capability bounds"
     YBASER t1, s0
     EXPECT_ZERO t1
     YLENR t1, s0
@@ -171,6 +171,15 @@ _start:
     EXPECT_EQ t2, t1
     YTOPR t1, x0
     EXPECT_EQ t2, t1
+#endif
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "ybaser, ylenr, and ytopr report bounded capability bounds"
+    lla   t2, buf
+    YBASER t1, a0
+    EXPECT_EQ t2, t1
+    EXPECT_LEN a0, 4096
+#ifndef CHERI_093
     YTOPR t1, a0
     lla   t2, buf + 4096
     EXPECT_EQ t2, t1
@@ -182,6 +191,8 @@ _start:
     li   t2, 16
     YBNDSW a1, a1, t2            /* a1 = [buf, buf + 16), a subset of a0 */
     EXPECT_TAG a1, 1
+    EXPECT_LEN a1, 16
+    EXPECT_NO_TRAP
 
     YMODESWI
     TEST_PASS

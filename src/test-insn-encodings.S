@@ -65,15 +65,23 @@ _start:
 
 #if __riscv_xlen == 32
     /* YSH4ADD and the .UW shifted-add forms are RV64-only. */
-    NEXT_TEST "ysh4add and unsigned-word shifted adds are illegal on RV32"
+    NEXT_TEST "ysh4add is illegal on RV32"
     YSH4ADD t1, t2, t0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "ysh1add.uw is illegal on RV32"
     YSH1ADD_UW t1, t2, t0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "ysh2add.uw is illegal on RV32"
     YSH2ADD_UW t1, t2, t0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "ysh3add.uw is illegal on RV32"
     YSH3ADD_UW t1, t2, t0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
+
+    NEXT_TEST "ysh4add.uw is illegal on RV32"
     YSH4ADD_UW t1, t2, t0
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 #endif

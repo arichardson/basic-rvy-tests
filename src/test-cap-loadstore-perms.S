@@ -34,17 +34,30 @@ _start:
      * Capability-mode PERM_C tag filtering across SY, SC.Y, AMOSWAP.Y, LY,
      * and LR.Y through a data-only capability (a5: R=1, W=1, C=0).
      */
-    NEXT_TEST "capability-mode sy through a capability without PERM_C strips the tag"
+    NEXT_TEST "capability-mode sy without PERM_C strips the stored tag"
     SY   a3, 0(a5)
     EXPECT_NO_TRAP
     LY   t1, 0(a3)
     EXPECT_TAG t1, 0
     EXPECT_EQ a0, t1
 
-    NEXT_TEST "capability-mode lr.y and sc.y without PERM_C strip loaded and stored tags"
+    NEXT_TEST "capability-mode ly without PERM_C strips the loaded tag"
+    SY   a3, 0(a3)
+    LY   t1, 0(a5)
+    EXPECT_NO_TRAP
+    EXPECT_TAG t1, 0
+    EXPECT_EQ a0, t1
+
+    NEXT_TEST "capability-mode lr.y without PERM_C strips the loaded tag"
     SY   a3, 0(a3)
     LR_Y t1, a5
+    EXPECT_NO_TRAP
     EXPECT_TAG t1, 0
+    EXPECT_EQ a0, t1
+
+    NEXT_TEST "capability-mode sc.y without PERM_C strips the stored tag"
+    SY   a3, 0(a3)
+    LR_Y t1, a5
     SC_Y t3, a5, a3
     EXPECT_NO_TRAP
     EXPECT_ZERO t3
@@ -59,43 +72,46 @@ _start:
     LY   t3, 0(a3)
     EXPECT_TAG t3, 0
 
-    NEXT_TEST "capability-mode ly without PERM_C strips the loaded tag"
-    SY   a3, 0(a3)
-    LY   t1, 0(a5)
-    EXPECT_NO_TRAP
-    EXPECT_TAG t1, 0
-    EXPECT_EQ a0, t1
-
     /*
      * Capability-mode PERM_LM permission filtering on LY and LR.Y when
      * PERM_C is set and PERM_W | PERM_LM are cleared.
      */
-    NEXT_TEST "capability-mode ly and lr.y without PERM_LM strip W and LM from an unsealed capability"
+    NEXT_TEST "capability-mode ly without PERM_LM strips W and LM from an unsealed capability"
     SY   a3, 0(a3)
     LY   t1, 0(s2)
-    LR_Y t2, s2
     EXPECT_NO_TRAP
     EXPECT_TAG t1, 1
     YPERMR t3, t1
     andi t4, t3, (PERM_W | PERM_LM)
     EXPECT_ZERO t4
+
+    NEXT_TEST "capability-mode lr.y without PERM_LM strips W and LM from an unsealed capability"
+    SY   a3, 0(a3)
+    LR_Y t2, s2
+    EXPECT_NO_TRAP
     EXPECT_TAG t2, 1
     YPERMR t3, t2
     andi t4, t3, (PERM_W | PERM_LM)
     EXPECT_ZERO t4
 
-    NEXT_TEST "capability-mode ly and lr.y without PERM_LM preserve W and LM on a sealed sentry"
+    NEXT_TEST "capability-mode ly without PERM_LM preserves W and LM on a sealed sentry"
     SY   s1, 0(a3)
     LY   t1, 0(s2)
-    LR_Y t2, s2
     EXPECT_NO_TRAP
     EXPECT_TAG t1, 1
     YPERMR t3, t1
     andi t4, t3, (PERM_W | PERM_LM)
     li   t0, (PERM_W | PERM_LM)
     EXPECT_EQ t4, t0
+
+    NEXT_TEST "capability-mode lr.y without PERM_LM preserves W and LM on a sealed sentry"
+    SY   s1, 0(a3)
+    LR_Y t2, s2
+    EXPECT_NO_TRAP
+    EXPECT_TAG t2, 1
     YPERMR t3, t2
     andi t4, t3, (PERM_W | PERM_LM)
+    li   t0, (PERM_W | PERM_LM)
     EXPECT_EQ t4, t0
 
     YMODESWI

@@ -36,15 +36,19 @@ _start:
     YBNDSW a1, a0, t2            /* a1 = [buf, buf + 16), a subset of a0 */
 
     /* YSEALE (the macro picks each version's encoding) */
-    NEXT_TEST "yseale seals as a sentry and sealing again detags"
+    NEXT_TEST "yseale seals an unsealed capability as a sentry"
     YSEALE t1, s0
     EXPECT_TAG t1, 1
     YTYPER t2, t1                /* ytyper = 1 (sentry) */
     li   t3, 1
     EXPECT_EQ t3, t2
+    EXPECT_NO_TRAP
+
     /* sealing an already sealed capability clears the tag */
+    NEXT_TEST "yseale on an already sealed sentry clears the tag"
     YSEALE t4, t1
     EXPECT_TAG t4, 0
+    EXPECT_NO_TRAP
 
     YMODESWY
 
@@ -78,15 +82,21 @@ _start:
      * sentries, even if the sentry is untagged and has corrupted reserved
      * metadata bits.
      */
-    NEXT_TEST "ytyper returns 0 for unsealed capabilities and 1 for sentries"
+    NEXT_TEST "ytyper returns 0 for unsealed capabilities"
     YTYPER t3, x0
     EXPECT_ZERO t3
     YTYPER t3, a0
     EXPECT_ZERO t3
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "ytyper returns 1 for a tagged sentry"
     YSEALE a2, a1
     YTYPER t3, a2
     li   t4, 1
     EXPECT_EQ t4, t3
+    EXPECT_NO_TRAP
+
+    NEXT_TEST "ytyper returns 1 for an untagged sentry with corrupted reserved metadata"
     SY   a2, 0(a0)
     LX   t1, XBYTES(a0)
     li   t2, PESBT_RESERVED0_BIT
