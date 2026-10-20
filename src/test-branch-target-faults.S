@@ -162,6 +162,63 @@ _start:
     jalr ra, a0, 0
     EXPECT_NO_TRAP
 
+    /*
+     * Execute out-of-bounds and unrepresentable direct JALs twice so a binary
+     * translator that chains direct jumps with goto_tb still runs the target
+     * TB's PCC check on subsequent executions.
+     */
+    NEXT_TEST "same-page out-of-bounds jal faults on first execution"
+    auipc a0, 0
+    lla   t0, same_page_jal_tramp
+    YADDRW a0, a0, t0
+    li    t1, 8
+    YBNDSW a0, a0, t1
+    lla   expected_epc, same_page_jal_victim
+    RESUME_AFTER_FAULT 3f
+    jalr  x0, a0, 0
+3:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC expected_epc
+#if __riscv_xlen == 32
+    EXPECT_EPC_TAG 0
+#else
+    EXPECT_EPC_TAG 1
+#endif
+
+    NEXT_TEST "same-page out-of-bounds jal still faults on second execution"
+    RESUME_AFTER_FAULT 4f
+    jalr  x0, a0, 0
+4:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC expected_epc
+#if __riscv_xlen == 32
+    EXPECT_EPC_TAG 0
+#else
+    EXPECT_EPC_TAG 1
+#endif
+
+    NEXT_TEST "unrepresentable jal detags PCC and faults on first execution"
+    auipc a0, 0
+    lla   t0, unrep_jal_tramp
+    YADDRW a0, a0, t0
+    li    t1, 8
+    YBNDSW a0, a0, t1
+    lla   expected_epc, same_page_jal_tramp
+    RESUME_AFTER_FAULT 5f
+    jalr  x0, a0, 0
+5:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC expected_epc
+    EXPECT_EPC_TAG 0
+
+    NEXT_TEST "unrepresentable jal still faults on second execution"
+    RESUME_AFTER_FAULT 6f
+    jalr  x0, a0, 0
+6:
+    EXPECT_TRAP CAUSE_CHERI_INST
+    EXPECT_EPC expected_epc
+    EXPECT_EPC_TAG 0
+
     YMODESWI
     TEST_PASS
 fail:
@@ -192,5 +249,18 @@ beq_trampoline:
 .balign 8
 good_target:
     ret
+
+/* Direct JAL targets on an executable page (+2048 same-page, -4128 unrepresentable). */
+.balign 4096
+same_page_jal_tramp:
+    jal   x0, same_page_jal_victim
+    j     fail
+    .space 2048 - 8
+same_page_jal_victim:
+    j     fail
+    .space 2048 - 4 + 32
+unrep_jal_tramp:
+    jal   x0, same_page_jal_tramp
+    j     fail
 
 TRAP_HANDLER_PCC

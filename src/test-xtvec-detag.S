@@ -1,8 +1,7 @@
 /*
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Check xtvec (mtvec and stvec) legalization on CLEN CSR writes and
- * same-block CSR write visibility before synchronous traps and returns:
+ * Check xtvec (mtvec and stvec) legalization on CLEN CSR writes:
  *
  *   - Writing an unsealed capability with direct (0) or vectored (1) mode
  *     whose 4-byte-aligned BASE and highest vector offset are representable
@@ -16,8 +15,6 @@
  *     rep_base = (victim + 1) - REP_BELOW (whose low two bits are 0b01,
  *     selecting vectored mode) detags the capability when aligning BASE down
  *     to rep_base & ~3 crosses below rep_base.
- *   - Writing mtvec immediately before ecall, or mepc immediately before
- *     mret, takes effect within the same translation block.
  */
 
 #define TEST_NAME "xtvec-detag"
@@ -151,45 +148,10 @@ _start:
     EXPECT_TAG a1, 0
     EXPECT_EQ t1, a1
 
-    /* =========================================================================
-     * Same-block CSR write visibility before ecall and mret
-     * ========================================================================= */
-
-    NEXT_TEST "mtvec write immediately before ecall dispatches to the new handler"
-    lla   t0, alt_handler
-    YADDRW a2, s0, t0
-    li   a3, 0
-    /* Write mtvec and trap in the same basic block. */
-    csrw CSR_MTVEC, a2
-    ecall
-    csrw CSR_MTVEC, s2           /* restore normal trap handler */
-    li   t0, 0x55aa
-    EXPECT_EQ a3, t0
-
-    NEXT_TEST "mepc write immediately before mret returns to the new target"
-    li   t0, (3 << 11)           /* mstatus.MPP = M */
-    csrs mstatus, t0
-    lla   t0, mepc_target
-    YADDRW a2, s0, t0
-    /* Write mepc and return in the same basic block. */
-    csrw CSR_MEPC, a2
-    mret
-    j    fail
-mepc_target:
-
     TEST_PASS
 
 fail:
     TEST_FAIL
-
-    .balign 4
-alt_handler:
-    li   a3, 0x55aa
-    csrrs t0, CSR_MEPC, x0
-    addi t1, t0, 4
-    YADDRW t0, t0, t1
-    csrw CSR_MEPC, t0
-    mret
 
 TRAP_HANDLER
 

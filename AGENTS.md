@@ -12,7 +12,9 @@ change makes it wrong, the comment is part of the change.
 ## Adding a test
 
 1. `test-<subject>.S`, with `#define TEST_NAME "<subject>"` before including
-   `testmacros.h` and `exceptions.h`.
+   `testmacros.h` and `exceptions.h`. Keep each file focused on one specific
+   architectural rule, instruction group, or extension rather than combining
+   unrelated subjects into a grab-bag file.
 2. Add it to `rvy_tests` in `src/meson.build`: no version key if all CHERI
    versions have the behaviour, `'min_version': '<ver>'` naming the spec
    version that introduced it (with a comment explaining the behaviour change),

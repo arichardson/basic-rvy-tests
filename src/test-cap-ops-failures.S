@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Negative, malformed-metadata, and reserved-encoding tests for the capability
- * manipulation and inspection instructions (happy-path cases live in
- * test-cap-ops.S):
+ * Negative and malformed-metadata tests for the capability manipulation and
+ * inspection instructions (happy-path cases live in test-bounds-ops.S,
+ * test-cap-add.S, test-cap-ops.S, test-seal-unseal.S, and test-cap-perms.S;
+ * reserved-encoding cases live in test-insn-encodings.S):
  *
  *  - YBNDSW (and YBNDSWI 4080 on RV32) clears the tag when the requested
  *    bounds cannot be encoded exactly, and both YBNDSW and YBNDSRW clear the
@@ -10,9 +11,6 @@
  *    capability is sealed.
  *  - YTOPR returns 0 on capabilities with malformed EBT bounds (matching
  *    YBASER and YLENR).
- *  - SRLIY (in v0.9.9) with any shift amount other than XLEN is a reserved
- *    encoding, as are YSH4ADD and the unsigned-word shifted-add instructions
- *    on RV32.
  *  - YUNSEALS, YBLD, and YSS reject untagged, sealed, malformed, or
  *    non-superset operands.
  *  - YMODEW clears the tag on sealed inputs and leaves the mode bit
@@ -109,32 +107,6 @@ _start:
     EXPECT_NO_TRAP
 
 #ifndef CHERI_093
-#ifdef CHERI_099
-    /* Any SRLIY shift amount other than XLEN is a reserved encoding in v0.9.9. */
-    NEXT_TEST "srliy by 8 is a reserved shift amount"
-    SRLIY t1, a0, 8
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-
-    NEXT_TEST "srliy by XLEN-1 is a reserved shift amount"
-    SRLIY t1, a0, XLEN - 1
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-#endif
-
-#if __riscv_xlen == 32
-    /* YSH4ADD and the .UW shifted-add forms are RV64-only. */
-    NEXT_TEST "ysh4add and unsigned-word shifted adds are illegal on RV32"
-    YSH4ADD a2, t1, a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    YSH1ADD_UW a2, t1, a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    YSH2ADD_UW a2, t1, a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    YSH3ADD_UW a2, t1, a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    YSH4ADD_UW a2, t1, a0
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-#endif
-
     /*
      * YUNSEALS refusal cases: non-superset authority, unsealed input,
      * untagged input, untagged authority (non-x0), and sealed authority.
