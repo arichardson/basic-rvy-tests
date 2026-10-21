@@ -363,6 +363,9 @@ if rvy_test_cc_found
               if cand != ''
                 sail_found += 1
                 sail_bins += [cand]
+                if bin_name == 'sail_riscv_sim'
+                  break
+                endif
               endif
             endforeach
             if sail_found == 0
@@ -379,25 +382,67 @@ if rvy_test_cc_found
           arch_str = arch_probe.stdout().strip()
           if arch_probe.returncode() == 0 and (arch_str == 'RV32' or arch_str == 'RV64')
             xlen = arch_str == 'RV32' ? 32 : 64
+            rvy_emulators_to_test += [{
+              'label': '@0@-rv@1@'.format(sail_opt['label'], xlen),
+              'path': sail_bin,
+              'depends': [],
+              'xlen': xlen,
+              'cheri_version': sail_opt['cheri_version'],
+              'harness': 'sail',
+              'svyrg_traps_conservatively': true,
+            }]
           else
             cfg_probe = run_command(sail_bin, '--print-default-config', check: false)
             if cfg_probe.returncode() == 0
-              xlen = cfg_probe.stdout().contains('"xlen": 32') ? 32 : 64
+              sail_bin_dir = fs.parent(sail_bin)
+              rv32_cfg = ''
+              foreach cfg_rel : ['../share/sail_riscv/config/rv32d.json',
+                                 '../config/rv32d.json',
+                                 '../../config/rv32d.json',
+                                 'config/rv32d.json']
+                if rv32_cfg == '' and fs.exists(sail_bin_dir / cfg_rel)
+                  rv32_cfg = sail_bin_dir / cfg_rel
+                endif
+              endforeach
+              if rv32_cfg == ''
+                error('could not find rv32d.json relative to ' + sail_bin)
+              endif
+              rvy_emulators_to_test += [
+                {
+                  'label': '@0@-rv64'.format(sail_opt['label']),
+                  'path': sail_bin,
+                  'depends': [],
+                  'xlen': 64,
+                  'cheri_version': sail_opt['cheri_version'],
+                  'harness': 'sail',
+                  'svyrg_traps_conservatively': true,
+                },
+                {
+                  'label': '@0@-rv32'.format(sail_opt['label']),
+                  'path': sail_bin,
+                  'depends': [],
+                  'xlen': 32,
+                  'cheri_version': sail_opt['cheri_version'],
+                  'harness': 'sail',
+                  'sail_args': ['--config', rv32_cfg],
+                  'svyrg_traps_conservatively': true,
+                },
+              ]
             else
               sail_name = fs.name(sail_bin)
               xlen = (sail_name.contains('riscv32') or sail_name.contains('rv32') or
                       sail_name.contains('RV32')) ? 32 : 64
+              rvy_emulators_to_test += [{
+                'label': '@0@-rv@1@'.format(sail_opt['label'], xlen),
+                'path': sail_bin,
+                'depends': [],
+                'xlen': xlen,
+                'cheri_version': sail_opt['cheri_version'],
+                'harness': 'sail',
+                'svyrg_traps_conservatively': true,
+              }]
             endif
           endif
-          rvy_emulators_to_test += [{
-            'label': '@0@-rv@1@'.format(sail_opt['label'], xlen),
-            'path': sail_bin,
-            'depends': [],
-            'xlen': xlen,
-            'cheri_version': sail_opt['cheri_version'],
-            'harness': 'sail',
-            'svyrg_traps_conservatively': true,
-          }]
         endforeach
       endforeach
 
@@ -464,7 +509,8 @@ if rvy_test_cc_found
           deps = no_info ? emulator['depends'] : emulator['depends'] + [info_elf]
           test(test_id + suffix, rvy_run_test,
                args: run_args + ['sail', emulator['path'], elf,
-                                 get_option('rvy_sail_insn_limit').to_string()],
+                                 get_option('rvy_sail_insn_limit').to_string()] +
+                     emulator.get('sail_args', []),
                depends: deps,
                timeout: get_option('rvy_test_timeout'),
                protocol: 'tap',

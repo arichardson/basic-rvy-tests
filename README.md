@@ -44,9 +44,9 @@ simulators explicitly:
 | `qemu-system-riscv32y` | 32 | v0.9.10 (`rvy_spec=0.9.10`) and v0.9.9 (`rvy_spec=0.9.9`) |
 | `qemu-system-riscv64cheristd` | 64 | 0.9.3 |
 | `qemu-system-riscv32cheristd` | 32 | 0.9.3 |
-| `-Dsail_0910` | 64 (or 32) | v0.9.10 |
-| `-Dsail_099` | 64 (or 32) | v0.9.9 |
-| `-Dsail_093` | 64 (or 32) | 0.9.3 |
+| `-Dsail_0910` | 64 and 32 | v0.9.10 |
+| `-Dsail_099` | 64 and 32 | v0.9.9 |
+| `-Dsail_093` | 64 and 32 | 0.9.3 |
 
 0.9.3 builds get `-DCHERI_093`, v0.9.9 builds get `-DCHERI_099`, and v0.9.10
 builds get `-DCHERI_0910`; tests whose subject only exists in RVY (or only in

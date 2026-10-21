@@ -105,6 +105,8 @@ def is_new_failure(e: dict, b: dict | None) -> bool:
         return False
     if b is None or b["ok"]:
         return True
+    if b["target"] != e["target"]:
+        return False
     if e["total"] == 0 and b["total"] == 0:
         return False
     return e["failed"] > b["failed"] or not (e["norm_bad"] <= b["norm_bad"])
@@ -129,7 +131,7 @@ def format_cell(r: dict | None, b: dict | None, has_target_base: bool = False) -
         notes.append(f"{r['skipped']} skip")
     if r["failed"]:
         notes.append(f"{r['failed']} fail" if r["total"] else r["result"])
-    if r["ok"] and b is not None and not b["ok"]:
+    if r["ok"] and b is not None and not b["ok"] and has_target_base:
         notes.append("fixed")
     elif r["ok"] and has_target_base and b is None:
         notes.append("new")
@@ -439,7 +441,7 @@ def render_markdown(
     out.write("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
     for t in targets:
         items = by_target[t]
-        b_items = base_by_target.get(t, []) if base_entries else None
+        b_items = base_by_target.get(t) if base_entries else None
         suites_ok = sum(1 for i in items if i["ok"])
         b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
         b_len = len(b_items) if b_items is not None else None
@@ -502,7 +504,7 @@ def print_console_summary(
     rows = []
     for t in targets:
         items = by_target[t]
-        b_items = base_by_target.get(t, []) if base_entries else None
+        b_items = base_by_target.get(t) if base_entries else None
         suites_ok = sum(1 for i in items if i["ok"])
         b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
         b_len = len(b_items) if b_items is not None else None
@@ -599,6 +601,14 @@ def main() -> None:
     for b in base_entries:
         base_by_target[b["target"]].append(b)
         base_by_test[b["test"]][b["target"]] = b
+    for t in by_target:
+        if t not in base_by_target:
+            cat = target_category(t)
+            for test_entries in base_by_test.values():
+                for bt, b in list(test_entries.items()):
+                    if target_category(bt) == cat:
+                        test_entries.setdefault(t, b)
+                        break
 
     targets = list(by_target.keys())
     new_failures = [
