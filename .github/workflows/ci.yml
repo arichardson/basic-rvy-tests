@@ -84,7 +84,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/sail-093
-          key: sail-093-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
+          key: sail-093-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
 
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
@@ -111,8 +111,9 @@ jobs:
           cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
           ninja -C sail-build sail_riscv_sim
           strip sail-build/c_emulator/sail_riscv_sim
-          mkdir -p "${{ runner.temp }}/sail-093/bin"
+          mkdir -p "${{ runner.temp }}/sail-093/bin" "${{ runner.temp }}/sail-093/share/sail_riscv/config"
           cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-093/bin/"
+          cp sail-src/config/*.json "${{ runner.temp }}/sail-093/share/sail_riscv/config/"
 
   build-sail-099:
     name: Build Sail 0.9.9
@@ -123,7 +124,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/sail-099
-          key: sail-099-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
+          key: sail-099-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
 
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
@@ -150,8 +151,9 @@ jobs:
           cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
           ninja -C sail-build sail_riscv_sim
           strip sail-build/c_emulator/sail_riscv_sim
-          mkdir -p "${{ runner.temp }}/sail-099/bin"
+          mkdir -p "${{ runner.temp }}/sail-099/bin" "${{ runner.temp }}/sail-099/share/sail_riscv/config"
           cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-099/bin/"
+          cp sail-src/config/*.json "${{ runner.temp }}/sail-099/share/sail_riscv/config/"
 
   test:
     name: Run tests
@@ -176,14 +178,14 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sail-093
-          key: sail-093-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
+          key: sail-093-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
           fail-on-cache-miss: true
 
       - name: Restore Sail 0.9.9 binary
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sail-099
-          key: sail-099-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
+          key: sail-099-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
           fail-on-cache-miss: true
 
       - name: Install test dependencies

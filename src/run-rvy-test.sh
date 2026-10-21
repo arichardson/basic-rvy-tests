@@ -8,7 +8,7 @@
 #
 # Usage:
 #   run-rvy-test.sh [--extra-elf <elf>] qemu <emulator> <elf> <machine> [extra qemu args...]
-#   run-rvy-test.sh [--extra-elf <elf>] sail <emulator> <elf> <insn-limit>
+#   run-rvy-test.sh [--extra-elf <elf>] sail <emulator> <elf> <insn-limit> [extra sail args...]
 set -eu
 
 EXTRA_ELF=
@@ -43,13 +43,14 @@ qemu)
     ;;
 sail)
     INSN_LIMIT=$1
+    shift
     # The model writes the guest console to the file -t names rather than to
     # its own stdout, so that file is where the TAP stream comes from.
     LOGDIR=$(mktemp -d)
     trap 'rm -rf "$LOGDIR"' EXIT
-    set -- "$ELF"
+    set -- "$@" "$ELF"
     if [ -n "$EXTRA_ELF" ]; then
-        set -- "$ELF" "$EXTRA_ELF"
+        set -- "$@" "$EXTRA_ELF"
     fi
     status=0
     "$EMULATOR" --inst-limit "$INSN_LIMIT" --terminal-log "$LOGDIR/term" "$@" \
@@ -58,7 +59,9 @@ sail)
     # model's own chatter stays out of it, and is only worth showing when
     # nothing reached the console at all -- a trap loop or an unimplemented
     # CSR looks like that. Prefix it so it stays a TAP comment.
-    cat "$LOGDIR/term"
+    if [ -f "$LOGDIR/term" ]; then
+        cat "$LOGDIR/term"
+    fi
     if [ "$status" != 0 ] && [ ! -s "$LOGDIR/term" ]; then
         sed -e 's/^/# /' "$LOGDIR/log" | tail -5
     fi
