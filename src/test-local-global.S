@@ -177,6 +177,19 @@ _start:
     LY   a3, 0(a4)
     EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, PERM_LG|PERM_LM|PERM_W
 
+    NEXT_TEST "a global authority without LG makes a sealed capability local on RVY, keeping LG and the seal"
+    li   t1, DROP_MASK(PERM_LG)
+    DROP_PERMS a4, auth, t1
+    LY   a3, 0(a4)
+#ifdef CHERI_093
+    /* 0.9.3 restricts G to auth.G & loaded.G, so a global authority keeps G. */
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, PERM_G|PERM_LG|PERM_LM|PERM_W
+#else
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, PERM_LG|PERM_LM|PERM_W
+#endif
+    YTYPER t3, a3
+    EXPECT_NONZERO t3
+
     NEXT_TEST "clearing G on a sealed sentry preserves its tag and seal on RVY (detags on 0.9.3)"
     li   t1, DROP_MASK(PERM_G)
     DROP_PERMS a3, a5, t1
