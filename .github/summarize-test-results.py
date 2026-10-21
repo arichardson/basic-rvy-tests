@@ -20,12 +20,12 @@ TARGET_MACHINE_RE = re.compile(r"^(.+) \((spike|virt)\)$")
 # runner's own "Process completed with exit code 1" annotation on failure).
 MAX_GHA_ANNOTATIONS = 9
 CATEGORY_ORDER = (
-    "QEMU 0.9.10",
-    "QEMU 0.9.9",
-    "QEMU 0.9.3",
     "Sail 0.9.10",
     "Sail 0.9.9",
     "Sail 0.9.3",
+    "QEMU 0.9.10",
+    "QEMU 0.9.9",
+    "QEMU 0.9.3",
 )
 
 
@@ -160,6 +160,14 @@ def target_category(target: str) -> str:
     return target
 
 
+def target_sort_key(target: str) -> tuple[int, int, int, str]:
+    cat = target_category(target)
+    cat_idx = CATEGORY_ORDER.index(cat) if cat in CATEGORY_ORDER else len(CATEGORY_ORDER)
+    xlen_idx = 0 if "64" in target else (1 if "32" in target else 2)
+    machine_idx = 0 if target.endswith(" (virt)") else (1 if target.endswith(" (spike)") else 2)
+    return (cat_idx, xlen_idx, machine_idx, target)
+
+
 def compact_targets(targets: list[str]) -> list[str]:
     grouped: dict[str, list[str]] = {}
     order: list[str] = []
@@ -187,7 +195,7 @@ def compact_targets(targets: list[str]) -> list[str]:
 
 def group_failures(failures: list[dict]) -> list[tuple[dict, list[str]]]:
     groups: dict[tuple, tuple[dict, list[str]]] = {}
-    for f in sorted(failures, key=lambda x: x["test"]):
+    for f in sorted(failures, key=lambda x: (x["test"], target_sort_key(x["target"]))):
         stdout_tail = "" if f["bad_lines"] else f["stdout"][-2000:]
         norm_stderr = re.sub(r"qemu-system-\S+:", "qemu:", f["stderr"][-2000:])
         key = (
@@ -600,7 +608,7 @@ def main() -> None:
         base_by_target[b["target"]].append(b)
         base_by_test[b["test"]][b["target"]] = b
 
-    targets = list(by_target.keys())
+    targets = sorted(by_target, key=target_sort_key)
     new_failures = [
         e for e in entries if is_new_failure(e, base_by_test.get(e["test"], {}).get(e["target"]))
     ]
