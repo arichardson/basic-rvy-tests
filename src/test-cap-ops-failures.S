@@ -435,8 +435,8 @@ _start:
     NEXT_TEST "rv32 reserved ap quadrant 0 encoding is rejected"
     SY   a1, 0(a0)
     LX   t1, XBYTES(a0)
-    slli t1, t1, 7
-    srli t1, t1, 7               /* clear pesbt[31:25] (SDP and AP_M) */
+    slli t1, t1, 8
+    srli t1, t1, 8               /* clear pesbt[31:24] (SDP, AP_M, and GL) */
     li   t2, (0x02 << 30) | (0x02 << 25)
     or   t1, t1, t2
     SX   t1, XBYTES(a0)
