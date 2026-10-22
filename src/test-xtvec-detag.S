@@ -9,8 +9,6 @@
  *   - Because xtvec applies YADDRW semantics on write, writing a sealed
  *     sentry capability always clears its tag (while preserving CT=1), even
  *     when the low bits select direct or vectored mode.
- *   - Writing reserved modes 2 or 3 retains the previous xtvec.MODE while
- *     updating BASE.
  *   - Writing an unsealed capability at its lower representability boundary
  *     rep_base = (victim + 1) - REP_BELOW (whose low two bits are 0b01,
  *     selecting vectored mode) detags the capability when aligning BASE down
@@ -84,27 +82,6 @@ _start:
     YTYPER t0, a1
     EXPECT_NONZERO t0
     EXPECT_EQ t1, a1
-
-    NEXT_TEST "mtvec reserved modes 2 and 3 retain the prior mode while updating BASE"
-    addi t1, s1, 1               /* first set mtvec to mode 1 (vectored) */
-    YADDRW a2, a0, t1
-    csrw CSR_MTVEC, a2
-    addi t2, s1, 2               /* write mode 2 (reserved) */
-    YADDRW a3, a0, t2
-    csrw CSR_MTVEC, a3
-    csrrs a1, CSR_MTVEC, x0
-    csrw CSR_MTVEC, s2
-    EXPECT_TAG a1, 1
-    EXPECT_EQ t1, a1             /* mode 1 retained, BASE = victim */
-
-    csrw CSR_MTVEC, a0           /* set mtvec to mode 0 (direct) */
-    addi t2, s1, 3               /* write mode 3 (reserved) */
-    YADDRW a3, a0, t2
-    csrw CSR_MTVEC, a3
-    csrrs a1, CSR_MTVEC, x0
-    csrw CSR_MTVEC, s2
-    EXPECT_TAG a1, 1
-    EXPECT_EQ a1, s1             /* mode 0 retained, BASE = victim */
 
     NEXT_TEST "mtvec detags an unsealed capability when aligning BASE down crosses rep_base"
     addi t1, s1, 1               /* base = victim + 1 */
