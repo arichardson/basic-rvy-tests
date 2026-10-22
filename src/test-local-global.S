@@ -10,16 +10,20 @@
  *    is unsealed, its LG permission is cleared as well; if it is sealed, LG is
  *    preserved. On 0.9.3 (Zcherilevels EL), G is instead restricted to
  *    auth.G & loaded.G, so a global authority without EL preserves G=1.
+ *    Untagged capabilities, including those whose tag is stripped by an
+ *    authority without C, keep G and LG ("All other cases" in the table).
  *  - Loading an unsealed capability through an authority without LM clears W
  *    and LM, which on RVY transitively legalizes SL (dependent on C and W per
- *    rule Zylevels1-2) to 0.
+ *    rule Zylevels1-2) to 0. Sealed capabilities keep W, LM, and SL.
  *  - On RVY, clearing G via YPERMC is permitted even on a sealed sentry
  *    capability without clearing its tag (zylevels1.adoc #zylevels1_acperm_bit_field
  *    and acperm_32bit.adoc); on 0.9.3 ACPERM detags any sealed capability.
  *  - Storing a local capability (G = 0) through an authority without SL strips
- *    its tag in memory, whereas storing a local capability with SL or storing
- *    a global capability (G = 1) without SL preserves the tag
- *    (zylevels1.adoc #zylevels1_sl_perm and Table zylevels1_store_summary).
+ *    its tag in memory, whether or not it is sealed, whereas storing a local
+ *    capability with SL or storing a global capability (G = 1) without SL
+ *    preserves the tag (zylevels1.adoc #zylevels1_sl_perm and Table
+ *    zylevels1_store_summary). Untagged capabilities are stored unchanged, and
+ *    an authority without C stores any capability untagged.
  *  - Capability subset checks (YSS and YBLD) require cs2.G == 0 || cs1.G == 1
  *    (zylevels1.adoc "Interaction with Capability Subsets"): a local
  *    capability is a subset of an otherwise-equal global capability, while a
@@ -54,9 +58,9 @@
 #define META_G_SHIFT 24
 #endif
 
-/* YPERMR of \reg has the bits in \mask set to \val, and \reg is tagged. */
-.macro EXPECT_PERMS reg, mask, val
-    EXPECT_TAG \reg, 1
+/* YPERMR of \reg has the bits in \mask set to \val, and \reg has tag \tag. */
+.macro EXPECT_PERMS reg, mask, val, tag=1
+    EXPECT_TAG \reg, \tag
     YPERMR t3, \reg
     li   t4, \mask
     and  t3, t3, t4
@@ -129,6 +133,7 @@ _start:
 #endif
 
     NEXT_TEST "a local authority without LG makes the loaded capability local"
+    /* Also holds on 0.9.3, where G is restricted to auth.G = 0. */
     li   t1, DROP_MASK(PERM_LG | PERM_G)
     DROP_PERMS a4, auth, t1
     LY   a3, 0(a4)
@@ -172,6 +177,7 @@ _start:
     auipc a5, 0
     YSEALE a5, a5
     SY   a5, 0(auth)
+    /* Also holds on 0.9.3, where G is restricted to auth.G = 0. */
     li   t1, DROP_MASK(PERM_LG | PERM_G)
     DROP_PERMS a4, auth, t1
     LY   a3, 0(a4)
@@ -189,6 +195,64 @@ _start:
 #endif
     YTYPER t3, a3
     EXPECT_NONZERO t3
+
+    NEXT_TEST "control: an authority with LG leaves a sealed capability's level alone"
+    li   t1, DROP_MASK(PERM_G)
+    DROP_PERMS a4, auth, t1
+    LY   a3, 0(a4)
+    EXPECT_PERMS a3, PERM_G|PERM_LG, PERM_G|PERM_LG
+    YEQ  t3, a3, a5
+    EXPECT_NONZERO t3
+
+    NEXT_TEST "an authority without LM leaves W, LM, and SL of a sealed capability alone"
+    li   t1, DROP_MASK(PERM_LM)
+    DROP_PERMS a4, auth, t1
+    LY   a3, 0(a4)
+    /* Not compared with YEQ: on RV32, dropping LM also drops LG, clearing G. */
+    EXPECT_PERMS a3, PERM_LM|PERM_W|PERM_SL, PERM_LM|PERM_W|PERM_SL
+    YTYPER t3, a3
+    EXPECT_NONZERO t3
+
+    /* Slot 48 holds untagged copies: a partial SX clears the tag. */
+    NEXT_TEST "an authority without LG leaves G and LG of an untagged capability alone"
+    SY   global_cap, 48(auth)
+    LX   t1, 48(auth)
+    SX   t1, 48(auth)
+    li   t1, DROP_MASK(PERM_LG | PERM_G)
+    DROP_PERMS a4, auth, t1
+    LY   a3, 48(a4)
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, \
+                     PERM_G|PERM_LG|PERM_LM|PERM_W, 0
+
+    NEXT_TEST "an authority without LG leaves G and LG of an untagged sealed capability alone"
+    SY   a5, 48(auth)
+    LX   t1, 48(auth)
+    SX   t1, 48(auth)
+    LY   a3, 48(a4)
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, \
+                     PERM_G|PERM_LG|PERM_LM|PERM_W, 0
+    YTYPER t3, a3
+    EXPECT_NONZERO t3
+
+    /* Dropping C also legalizes LG and LM to 0, but G and W are kept. */
+    NEXT_TEST "an authority without C strips the tag but leaves G, LG, W, and LM alone"
+    SY   global_cap, 32(auth)
+    li   t1, DROP_MASK(PERM_C | PERM_G)
+    DROP_PERMS a4, auth, t1
+    LY   a3, 32(a4)
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, \
+                     PERM_G|PERM_LG|PERM_LM|PERM_W, 0
+
+    NEXT_TEST "a local authority without LG and LM clears G, LG, W, LM, and SL on RVY"
+    li   t1, DROP_MASK(PERM_LG | PERM_LM | PERM_G)
+    DROP_PERMS a4, auth, t1
+    LY   a3, 32(a4)
+#ifdef CHERI_093
+    /* 0.9.3 SL does not depend on W, so losing W does not clear it. */
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W, 0
+#else
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_LM|PERM_W|PERM_SL, 0
+#endif
 
     NEXT_TEST "clearing G on a sealed sentry preserves its tag and seal on RVY (detags on 0.9.3)"
     li   t1, DROP_MASK(PERM_G)
@@ -221,6 +285,51 @@ _start:
     EXPECT_TAG a3, 1
     YEQ  t3, a3, global_cap
     EXPECT_NONZERO t3
+
+    /* A local sentry, made by clearing G before sealing so 0.9.3 can too. */
+    auipc a6, 0
+    li   t1, DROP_MASK(PERM_G)
+    DROP_PERMS a6, a6, t1
+    YSEALE a6, a6
+
+    NEXT_TEST "a sealed local capability stored without SL is stored untagged"
+    SY   a6, 16(a4)
+    EXPECT_NO_TRAP
+    LY   a3, 16(auth)
+    EXPECT_TAG a3, 0
+
+    NEXT_TEST "control: a sealed local capability stored with SL keeps its tag"
+    SY   a6, 16(auth)
+    LY   a3, 16(auth)
+    EXPECT_TAG a3, 1
+    YEQ  t3, a3, a6
+    EXPECT_NONZERO t3
+
+    NEXT_TEST "control: a sealed global capability stored without SL keeps its tag"
+    SY   a5, 16(a4)
+    LY   a3, 16(auth)
+    EXPECT_TAG a3, 1
+    YEQ  t3, a3, a5
+    EXPECT_NONZERO t3
+
+    NEXT_TEST "an untagged local capability stored without SL is stored unchanged"
+    SY   local_cap, 48(auth)
+    LX   t1, 48(auth)
+    SX   t1, 48(auth)
+    LY   a3, 48(auth)
+    SY   a3, 16(a4)
+    EXPECT_NO_TRAP
+    LY   a0, 16(auth)
+    YEQ  t3, a0, a3
+    EXPECT_NONZERO t3
+
+    NEXT_TEST "an authority without C stores a global capability untagged"
+    li   t1, DROP_MASK(PERM_C)
+    DROP_PERMS a0, auth, t1
+    SY   global_cap, 16(a0)
+    EXPECT_NO_TRAP
+    LY   a3, 16(auth)
+    EXPECT_TAG a3, 0
 
     NEXT_TEST "yss and ybld treat local as a subset of global and reject global under local"
     YSS  t3, global_cap, local_cap
