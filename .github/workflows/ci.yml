@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
 
 env:
-  # arichardson/qemu (wip-qemu-rvy99: CHERI 0.9.3, RVY 0.9.9, and RVY 0.9.10)
-  QEMU_REPO: arichardson/qemu
-  QEMU_SHA: 0b70242e889bfc853b966514a77ce4a8970f2e95
+  # CHERI-Alliance/qemu (CHERI 0.9.3, RVY 0.9.9, and RVY 0.9.10)
+  QEMU_REPO: CHERI-Alliance/qemu
+  QEMU_SHA: 937b306b8b1288d0dd16e04be85ffa29ceb0c6d3
   # CHERI-Alliance/sail-riscv (CHERI 0.9.3)
   SAIL_093_REPO: CHERI-Alliance/sail-riscv
   SAIL_093_SHA: 7726ab7586de0ef4a4a23e2d37fd4310fd43bedd
@@ -52,6 +52,7 @@ jobs:
       - name: Build QEMU
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
+          git -C qemu-src rm --cached tests/rvy
           mkdir -p qemu-build "${{ runner.temp }}/qemu/bin" qemu-src/tests/rvy/src
           touch qemu-src/tests/rvy/src/meson.build
           cd qemu-build
@@ -68,6 +69,7 @@ jobs:
             --disable-docs \
             --disable-linux-user \
             --disable-tools \
+            --rvy-test-cc=false \
             --target-list=riscv64y-softmmu,riscv32y-softmmu,riscv64cheristd-softmmu,riscv32cheristd-softmmu
           ninja qemu-system-riscv64y qemu-system-riscv32y \
             qemu-system-riscv64cheristd qemu-system-riscv32cheristd

@@ -19,7 +19,10 @@
 
 fs = import('fs')
 rvy_test_cc_path = get_option('rvy_test_cc')
-if rvy_test_cc_path != ''
+if rvy_test_cc_path in ['false', 'disabled', 'no']
+  rvy_candidates = []
+  rvy_test_cc_required = false
+elif rvy_test_cc_path != ''
   rvy_candidates = [rvy_test_cc_path]
   rvy_test_cc_required = true
 else
