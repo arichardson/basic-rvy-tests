@@ -24,6 +24,10 @@
  *    preserves the tag (zylevels1.adoc #zylevels1_sl_perm and Table
  *    zylevels1_store_summary). Untagged capabilities are stored unchanged, and
  *    an authority without C stores any capability untagged.
+ *  - The load and store rules also apply to the capabilities read and written
+ *    by LR.Y, SC.Y, and AMOSWAP.Y ("all other instructions that can load
+ *    valid capabilities" and "all instructions which can store valid
+ *    capabilities").
  *  - Capability subset checks (YSS and YBLD) require cs2.G == 0 || cs1.G == 1
  *    (zylevels1.adoc "Interaction with Capability Subsets"): a local
  *    capability is a subset of an otherwise-equal global capability, while a
@@ -352,6 +356,69 @@ _start:
     YBLD a5, local_cap, a3
     EXPECT_TAG a5, 0
     EXPECT_NO_TRAP
+
+    /* LR.Y, SC.Y, and AMOSWAP.Y follow the same LG and SL rules as LY/SY. */
+    NEXT_TEST "lr.y through a local authority without LG makes the loaded capability local"
+    SY   global_cap, 0(auth)
+    li   t1, DROP_MASK(PERM_LG | PERM_G)
+    DROP_PERMS a4, auth, t1
+    LR_Y a3, a4
+    EXPECT_NO_TRAP
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_W, \
+                     PERM_SL|PERM_LM|PERM_W
+
+    NEXT_TEST "amoswap.y through a local authority without LG makes the old capability local"
+    AMOSWAP_Y a3, a4, global_cap
+    EXPECT_NO_TRAP
+    EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_W, \
+                     PERM_SL|PERM_LM|PERM_W
+
+    NEXT_TEST "control: lr.y and amoswap.y through an authority with LG leave the level alone"
+    li   t1, DROP_MASK(PERM_G)
+    DROP_PERMS a4, auth, t1
+    LR_Y a3, a4
+    EXPECT_PERMS a3, PERM_G|PERM_LG, PERM_G|PERM_LG
+    AMOSWAP_Y a3, a4, global_cap
+    EXPECT_NO_TRAP
+    EXPECT_PERMS a3, PERM_G|PERM_LG, PERM_G|PERM_LG
+
+    li   t1, DROP_MASK(PERM_SL)
+    DROP_PERMS a4, auth, t1      /* a4 = auth without SL */
+
+    NEXT_TEST "sc.y through an authority without SL stores a local capability untagged"
+    SY   global_cap, 0(auth)
+    LR_Y a3, a4
+    SC_Y t2, a4, local_cap
+    EXPECT_NO_TRAP
+    EXPECT_ZERO t2
+    LY   a3, 0(auth)
+    EXPECT_TAG a3, 0
+
+    NEXT_TEST "control: sc.y through an authority without SL keeps a global capability's tag"
+    LR_Y a3, a4
+    SC_Y t2, a4, global_cap
+    EXPECT_NO_TRAP
+    EXPECT_ZERO t2
+    LY   a3, 0(auth)
+    EXPECT_TAG a3, 1
+    YEQ  t3, a3, global_cap
+    EXPECT_NONZERO t3
+
+    NEXT_TEST "amoswap.y through an authority without SL stores a local capability untagged"
+    AMOSWAP_Y a3, a4, local_cap
+    EXPECT_NO_TRAP
+    YEQ  t3, a3, global_cap
+    EXPECT_NONZERO t3
+    LY   a3, 0(auth)
+    EXPECT_TAG a3, 0
+
+    NEXT_TEST "control: amoswap.y through an authority without SL keeps a global capability's tag"
+    AMOSWAP_Y a3, a4, global_cap
+    EXPECT_NO_TRAP
+    LY   a3, 0(auth)
+    EXPECT_TAG a3, 1
+    YEQ  t3, a3, global_cap
+    EXPECT_NONZERO t3
 
     j    zylg_enabled_done
 skip_zylg_enabled:
