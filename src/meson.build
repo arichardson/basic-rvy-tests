@@ -47,7 +47,8 @@ foreach candidate : rvy_candidates
   cand_prog = find_program(candidate, required: false)
   if cand_prog.found()
     probe = run_command(cand_prog, '--target=riscv64', '-march=rv64g',
-                        '-c', '-o', '/dev/null', rvy_probe_src, check: false)
+                        '-mno-relax', '-c', '-o', '/dev/null', rvy_probe_src,
+                        check: false)
     if probe.returncode() == 0
       rvy_test_cc = cand_prog
       rvy_test_cc_found = true
@@ -183,7 +184,7 @@ if rvy_test_cc_found
           output: elf_name,
           build_subdir: rvy_cheri_ver, # requires Meson >= 1.10.0
           command: [rvy_test_cc, '--target=riscv' + xlen.to_string(),
-                    '-march=' + march] + rvy_cflags_cheri +
+                    '-march=' + march, '-mno-relax'] + rvy_cflags_cheri +
                    ['-nostdlib', '-static', '-fuse-ld=lld',
                     '-Wl,-T,' + (rvy_src_dir / 'link.ld'),
                     '@INPUT@', '-o', '@OUTPUT@'],
@@ -482,8 +483,9 @@ if rvy_test_cc_found
             input: target_info_c,
             output: 'target_info_' + info_slug + '.elf',
             command: [rvy_test_cc, '--target=riscv' + emulator['xlen'].to_string(),
-                      '-march=' + march, '-std=c11', '-I' + rvy_src_dir,
-                      '-ffreestanding', '-nostdlib', '-static', '-fuse-ld=lld',
+                      '-march=' + march, '-mno-relax', '-std=c11',
+                      '-I' + rvy_src_dir, '-ffreestanding', '-nostdlib',
+                      '-static', '-fuse-ld=lld',
                       '-Wl,-T,' + (rvy_src_dir / 'target-info.ld'),
                       '@INPUT@', '-o', '@OUTPUT@'],
             depend_files: files('target-info.h', 'target-info.ld'),
