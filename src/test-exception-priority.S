@@ -163,7 +163,10 @@ fail:
 /* Reached only if a fetch that must fault did not; running it fails. */
 .balign 8
 illegal_target:
+    .2byte 0xffff
+illegal_unaligned_target:
     .word 0xffffffff
+    .2byte 0xffff
     j    fail
 
 .balign 8
@@ -173,12 +176,12 @@ ialign_ctrl_tramp:
 
 .balign 8
 ialign_jal_tramp:
-    jal  ra, illegal_target + 2
+    jal  ra, illegal_unaligned_target
     j    fail
 
 .balign 8
 ialign_beq_tramp:
-    beq  t0, x0, illegal_target + 2
+    beq  t0, x0, illegal_unaligned_target
     j    fail
 
 TRAP_HANDLER_PCC
