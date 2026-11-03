@@ -51,6 +51,7 @@
 #define CSR_MTVAL2  0x34B
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
+#define CSR_PMPADDR1 0x3B1
 #define CSR_STVEC   0x105
 #define CSR_SENVCFG 0x10A
 #define CSR_SSCRATCH 0x140

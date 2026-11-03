@@ -13,6 +13,10 @@
  * or emits bounds checks after fetching instruction parcels during
  * translation will probe the target page or upper parcel at translation time
  * and take the page or access fault before the generated PCC check runs.
+ *
+ * The M-mode access-fault cases lock PMP0 as R|W (X=0) over noexec_page
+ * paired with an R|W|X catch-all in PMP1 for S-mode, and are skipped when
+ * the hart does not implement two 4 KiB NAPOT PMP entries.
  */
 #define TEST_NAME "ifetch-exception-priority"
 #ifdef CHERI_093
@@ -23,6 +27,9 @@
 
 #define CAUSE_FETCH_ACCESS_FAULT 1
 #define CAUSE_FETCH_PAGE_FAULT   12
+
+#define PMP0_RW_UNLOCKED (PMP_NAPOT | PMP_R | PMP_W)
+#define PMP0_RW_LOCKED   (PMP_L | PMP0_RW_UNLOCKED)
 
 #define PTE_V 0x01
 #define PTE_R 0x02
@@ -256,19 +263,6 @@
 _start:
     SETUP_TRAPS
 
-    /*
-     * PMP0: locked R|W (X=0) over noexec_page so M-mode fetch faults with
-     * CAUSE_FETCH_ACCESS_FAULT. PMP1: R|W|X catch-all for S-mode.
-     */
-    lla   t0, noexec_page
-    addi  t0, t0, 2047
-    srli  t0, t0, 2
-    csrw  CSR_PMPADDR0, t0
-    li    t0, -1
-    csrw  CSR_PMPADDR0 + 1, t0
-    li    t0, 0x1f9b
-    csrw  CSR_PMPCFG0, t0
-
     li    t0, MENVCFG_CRE
     csrs  CSR_MENVCFG, t0
 
@@ -332,7 +326,33 @@ _start:
     YMODESWY
     auipc root_cap, 0
 
-    /* M-mode: PCC fault vs PMP fetch access fault (cause 1). */
+    /*
+     * M-mode: PCC fault vs PMP fetch access fault (cause 1). Configure PMP0
+     * (4 KiB NAPOT R|W over noexec_page) and PMP1 (all-memory R|W|X for
+     * S-mode) unlocked first to check that both entries took before locking
+     * PMP0.
+     */
+    SKIPPABLE_BLOCK_BEGIN
+    lla   t0, noexec_page
+    addi  t0, t0, 2047
+    srli  t0, t0, 2
+    csrw  CSR_PMPADDR0, t0
+    li    t1, -1
+    csrw  CSR_PMPADDR1, t1
+    li    t1, PMP0_RW_UNLOCKED | (PMP_RWX_ALL << 8)
+    csrw  CSR_PMPCFG0, t1
+    bnez  trap_count, skip_pmp
+    csrr  t2, CSR_PMPADDR0
+    bne   t2, t0, skip_pmp
+    csrr  t2, CSR_PMPADDR1
+    beqz  t2, skip_pmp
+    csrr  t2, CSR_PMPCFG0
+    bne   t2, t1, skip_pmp
+    li    t1, PMP0_RW_LOCKED | (PMP_RWX_ALL << 8)
+    csrw  CSR_PMPCFG0, t1
+    csrr  t2, CSR_PMPCFG0
+    bne   t2, t1, skip_pmp
+
     lla   exec_base, exec_page
     CHECK_IFETCH_PRIORITY CAUSE_FETCH_ACCESS_FAULT, "non-executable PMP page"
 
@@ -365,6 +385,17 @@ _start:
     EXPECT_TRAP CAUSE_CHERI_INST
     EXPECT_EPC expected_epc
     EXPECT_EPC_TAG 1
+    j     pmp_done
+skip_pmp:
+    beqz  trap_count, 5f
+    li    t2, CAUSE_ILLEGAL_INSN
+    ASSERT_EQ trap_cause, t2
+    CLEAR_TRAPS
+    j     6f
+5:  csrw  CSR_PMPCFG0, x0
+    PMP_ALLOW_ALL
+6:  SKIPPABLE_BLOCK_SKIPPED "hart does not support two 4 KiB PMP entries"
+pmp_done:
 
     /* S-mode: PCC fault vs fetch page fault (cause 12) for PTE.V=0 and PTE.X=0. */
     YMODESWI
