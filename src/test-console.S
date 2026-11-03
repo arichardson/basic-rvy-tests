@@ -283,22 +283,39 @@ _start:
 
     /*
      * console_fail records the failing case in tap_failed and records the
-     * first failing id in tap_fail_first; EXPECT_FAIL preserves ra, a0, and
-     * t0-t4.
+     * first failing id in tap_fail_first; EXPECT_FAIL preserves caller
+     * capabilities in ra, a0, and t0-t4 without capability stores to memory.
      */
     NEXT_TEST "console_fail records non-fatal failures and preserves caller state"
     mv    s1, test_id
     li    a0, 5
     call  console_fail
     YMODESWY
-    li    ra, 0x1111
-    li    a0, 0x2222
-    li    t0, 0x3333
-    li    t1, 0x4444
+    csrrs s2, CSR_DDC, x0
+    li    t4, 0x1111
+    YADDRW ra, s2, t4
+    li    t4, 0x2222
+    YADDRW a0, s2, t4
+    li    t4, 0x3333
+    YADDRW t0, s2, t4
+    li    t4, 0x4444
+    YADDRW t1, s2, t4
     li    test_id, 9
     EXPECT_FAIL
-    YMODESWI
     mv    test_id, s1
+    li    t4, 0x1111
+    YADDRW s7, s2, t4
+    EXPECT_CAP_EQ ra, s7
+    li    t4, 0x2222
+    YADDRW s7, s2, t4
+    EXPECT_CAP_EQ a0, s7
+    li    t4, 0x3333
+    YADDRW s7, s2, t4
+    EXPECT_CAP_EQ t0, s7
+    li    t4, 0x4444
+    YADDRW s7, s2, t4
+    EXPECT_CAP_EQ t1, s7
+    YMODESWI
     lla   a1, tap_fail_first
     LOAD_X a2, 0(a1)
     STORE_X x0, 0(a1)
@@ -312,14 +329,6 @@ _start:
     li    a5, 1
     EXPECT_EQ a3, a5
     EXPECT_EQ a4, a5
-    li    a5, 0x1111
-    EXPECT_EQ ra, a5
-    li    a5, 0x2222
-    EXPECT_EQ a0, a5
-    li    a5, 0x3333
-    EXPECT_EQ t0, a5
-    li    a5, 0x4444
-    EXPECT_EQ t1, a5
 
     RESTORE_CONSOLE
 

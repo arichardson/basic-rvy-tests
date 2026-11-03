@@ -324,27 +324,25 @@ CONSOLE_ENTRY console_xfail
     ret
 
 /*
- * Record that case a0 failed a non-fatal EXPECT_* check. Clobbers only t0
- * so EXPECT_FAIL can preserve all caller registers around the call.
+ * Record that case a0 failed a non-fatal EXPECT_* check. Clobbers only a0
+ * and t0 so EXPECT_FAIL can preserve all caller registers around the call
+ * without spilling capabilities to memory.
  */
 CONSOLE_ENTRY console_fail
 .Lconsole_fail_impl:
-1:  auipc  t0, %pcrel_hi(fail_save_t1)
-    SY     t1, %pcrel_lo(1b)(t0)
+1:  auipc  t0, %pcrel_hi(tap_fail_first)
+    LOAD_X t0, %pcrel_lo(1b)(t0)
+    bnez   t0, 3f
 2:  auipc  t0, %pcrel_hi(tap_fail_first)
-    LOAD_X t1, %pcrel_lo(2b)(t0)
-    bnez   t1, 3f
     STORE_X a0, %pcrel_lo(2b)(t0)
-3:  li     t1, TAP_MAX_CASES
-    bgeu   a0, t1, 4f
-    lla    t1, tap_failed
-    add    t1, t1, a0
-    YADDRW t0, t0, t1
-    li     t1, 1
-    sb     t1, 0(t0)
-4:  auipc  t0, %pcrel_hi(fail_save_t1)
-    LY     t1, %pcrel_lo(4b)(t0)
-    ret
+3:  sltiu  t0, a0, TAP_MAX_CASES
+    beqz   t0, 5f
+4:  auipc  t0, %pcrel_hi(tap_failed)
+    addi   a0, a0, %pcrel_lo(4b)
+    YADD   t0, t0, a0
+    li     a0, 1
+    sb     a0, 0(t0)
+5:  ret
 
 /*
  * Emit the whole TAP stream: a0 = how many cases ran, a1 = which one failed
@@ -608,9 +606,6 @@ target_info:
     .space TARGET_INFO_SIZE
 
 .section .bss
-.balign YLEN_BYTES
-fail_save_t1:
-    .space YLEN_BYTES
 .balign 8
 dec_buf:
     .space DEC_BUF_LEN
