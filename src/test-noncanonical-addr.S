@@ -139,21 +139,21 @@ s_entry:
     /*
      * The capability allows the access, so what remains is the walk, which
      * rejects the address before reading any pte. mtval cannot be read from
-     * S-mode, but the handler records it in trap_tval2 on RVY.
+     * S-mode, but the handler records it in trap_tval on RVY.
      */
     NEXT_TEST "an S-mode load from the non-canonical address page-faults"
     li   t2, NONCANON
     ld   t1, 0(a0)
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 #ifndef CHERI_093
-    EXPECT_EQ trap_tval2, t2
+    EXPECT_EQ trap_tval, t2
 #endif
 
     NEXT_TEST "an S-mode store to the non-canonical address page-faults"
     sd   x0, 0(a0)
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 #ifndef CHERI_093
-    EXPECT_EQ trap_tval2, t2
+    EXPECT_EQ trap_tval, t2
 #endif
 
     YMODESWI

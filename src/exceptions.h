@@ -33,9 +33,9 @@
  *
  * Two handlers are provided, and a test places exactly one of them:
  *
- *   TRAP_HANDLER      records the cause (and mtval2 on 0.9.3), then steps
- *                     over the faulting four-byte instruction. Uses no RVY
- *                     instructions, so it also works for tests that turn
+ *   TRAP_HANDLER      records the cause and mtval (or mtval2 on 0.9.3), then
+ *                     steps over the faulting four-byte instruction. Uses no
+ *                     RVY instructions, so it also works for tests that turn
  *                     CHERI off.
  *   TRAP_HANDLER_PCC  additionally records the tag of the capability left in
  *                     mepc and supports RESUME_AFTER_FAULT, for tests where
@@ -113,7 +113,7 @@
 #define trap_cause    s4         /* mcause of the most recent trap */
 #define trap_epc_tag  s5         /* tag of the capability left in mepc */
 #define trap_epc      s6         /* mepc of the most recent trap */
-#define trap_tval2    s3         /* mtval2 of the most recent trap (0.9.3) */
+#define trap_tval     s3         /* mtval (RVY) or mtval2 (0.9.3) of the most recent trap */
 #define resume_at     s8         /* recovery point, see RESUME_AFTER_FAULT */
 #define m_continue    s9         /* where an ecall from S-mode returns to */
 
@@ -129,7 +129,7 @@
     li   trap_cause, 0
     li   trap_epc, 0
     li   trap_epc_tag, 0
-    li   trap_tval2, 0
+    li   trap_tval, 0
     li   resume_at, 0
     li   m_continue, 0
     li   trap_count, 0
@@ -227,10 +227,10 @@ __rvy_used_resume_after_fault = 1
 .macro EXPECT_FAIL
     YMV  t5, ra
     YMV  t6, a0
-    YMV  trap_tval2, t0
+    YMV  trap_tval, t0
     mv   a0, test_id
     call console_fail
-    YMV  t0, trap_tval2
+    YMV  t0, trap_tval
     YMV  a0, t6
     YMV  ra, t5
 .endm
@@ -262,7 +262,7 @@ __rvy_used_resume_after_fault = 1
     bne  t5, trap_cause, .Lexpect_fail_\@
 #ifdef CHERI_093
     li   t5, \tval2
-    bne  t5, trap_tval2, .Lexpect_fail_\@
+    bne  t5, trap_tval, .Lexpect_fail_\@
 #endif
     j    .Lexpect_ok_\@
 .Lexpect_fail_\@:
@@ -278,7 +278,7 @@ __rvy_used_resume_after_fault = 1
     bne  t5, trap_cause, fail
 #ifdef CHERI_093
     li   t5, \tval2
-    bne  t5, trap_tval2, fail
+    bne  t5, trap_tval, fail
 #endif
     CLEAR_TRAPS
 .endm
@@ -498,9 +498,9 @@ __rvy_used_resume_after_fault = 1
 8:
     mv   trap_cause, t6
 #ifdef CHERI_093
-    csrr trap_tval2, CSR_MTVAL2
+    csrr trap_tval, CSR_MTVAL2
 #else
-    csrr trap_tval2, CSR_MTVAL
+    csrr trap_tval, CSR_MTVAL
 #endif
     addi trap_count, trap_count, 1
     csrr trap_epc, CSR_MEPC
