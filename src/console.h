@@ -21,7 +21,7 @@
  * SKIPPABLE_BLOCK_SKIPPED, MARK_XFAIL, EXPECT_* and TEST_PASS/TEST_FAIL:
  *
  *   console_init()                                    clobbers a0-a5, t0-t4
- *   console_fail(a0 = case)                           clobbers t0
+ *   console_fail(a0 = case)                           clobbers a0, t0
  *   console_skip(a0 = reason, a1 = first, a2 = last)  clobbers t0-t4
  *   console_xfail(a0 = reason, a1 = case)             clobbers t0-t4
  *   console_tap(a0 = cases, a1 = failing, a2 = name)  clobbers a0-a7, t0-t6; returns exit code in a0
