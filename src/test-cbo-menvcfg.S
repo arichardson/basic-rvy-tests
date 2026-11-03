@@ -35,10 +35,7 @@ _start:
      * CBOs raise illegal instruction; once set in menvcfg, S-mode CBOs
      * execute normally.
      */
-    li   t1, -1
-    csrw CSR_PMPADDR0, t1
-    li   t1, 0x1f
-    csrw CSR_PMPCFG0, t1
+    PMP_ALLOW_ALL
     li   t1, MENVCFG_CRE
     csrs CSR_MENVCFG, t1
     li   t1, MENVCFG_CBO_ALL

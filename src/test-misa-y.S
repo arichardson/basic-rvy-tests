@@ -60,12 +60,7 @@
 .globl _start
 _start:
     SETUP_TRAPS
-
-    /* Configure PMP entry 0 as NAPOT RWX over the entire address space. */
-    li   t0, -1
-    csrw CSR_PMPADDR0, t0
-    li   t0, 0x1f
-    csrw CSR_PMPCFG0, t0
+    PMP_ALLOW_ALL
 
     csrr has_h, CSR_MISA
     andi has_h, has_h, (1 << 7)  /* misa.H */

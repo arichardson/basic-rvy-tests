@@ -283,10 +283,7 @@ _start:
     /* =====================================================================
      * S-mode capability CSR privilege checks (with ASR granted and CRE=1)
      * ===================================================================== */
-    li    t0, -1                 /* PMP entry 0: allow all physical memory in S-mode */
-    csrw  CSR_PMPADDR0, t0
-    li    t0, 0x1f               /* NAPOT, RWX */
-    csrw  CSR_PMPCFG0, t0
+    PMP_ALLOW_ALL
     li    t0, MENVCFG_CRE
     csrs  CSR_MENVCFG, t0        /* enable S-mode CHERI */
 
