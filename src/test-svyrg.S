@@ -255,14 +255,14 @@ s_entry:
     and  t1, t1, t0
     EXPECT_NONZERO t1
     /*
-     * Under Svyrg, yr=0/yrg=0 strips loaded tags whereas yr=0/yrg=1 preserves
-     * them; update the code/data gigapage (index 2) to yrg=1 now that YRGE is
-     * set so capability loads from .data (such as console_fail's sentry) keep
-     * their tags.
+     * Under Svyrg, yr=0/yrg=1 with yw=1/yd=1 is the normal capability R/W
+     * encoding; update the code/data gigapage (index 2) from yd alone to
+     * yrg|yw|yd now that YRGE is set so capability loads and stores on the
+     * image mapping work normally.
      */
     lla  t0, pagetable
     ld   t1, 16(t0)
-    li   t2, PTE_YRG_BIT
+    li   t2, PTE_YRG_BIT | PTE_YW_BIT
     or   t1, t1, t2
     sd   t1, 16(t0)
     sfence.vma
