@@ -339,6 +339,18 @@ _start:
 
     RESTORE_CONSOLE
 
+    /*
+     * CLEAR_TRAPS and EXPECT_NO_TRAP clear an unconsumed resume_at target so
+     * an expected fault that fails to fire cannot redirect a later case's trap.
+     */
+    NEXT_TEST "CLEAR_TRAPS and EXPECT_NO_TRAP clear an unconsumed resume_at"
+    li    resume_at, 0x1234
+    CLEAR_TRAPS
+    EXPECT_ZERO resume_at
+    li    resume_at, 0x5678
+    EXPECT_NO_TRAP
+    EXPECT_ZERO resume_at
+
     /* From integer pointer mode: the call comes back in integer mode. */
     NEXT_TEST "a call made in integer mode returns in integer mode"
     lla   a0, msg_int
