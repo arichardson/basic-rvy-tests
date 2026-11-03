@@ -79,6 +79,14 @@
 
 #define MSECCFG_CRE (1 << 3)
 
+/* pmpcfg entry bits. */
+#define PMP_R       (1 << 0)
+#define PMP_W       (1 << 1)
+#define PMP_X       (1 << 2)
+#define PMP_NAPOT   (3 << 3)
+#define PMP_L       (1 << 7)
+#define PMP_RWX_ALL (PMP_NAPOT | PMP_R | PMP_W | PMP_X)
+
 /*
  * Dropping permissions: RVY has ypermc, which clears the bits in the mask,
  * while 0.9.3 only has acperm, which keeps them, so the mask is complemented

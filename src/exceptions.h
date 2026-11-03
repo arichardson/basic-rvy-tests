@@ -339,6 +339,24 @@ __rvy_used_resume_after_fault = 1
     bnez t5, \label
 .endm
 
+/*
+ * Grant S- and U-mode RWX access to all physical memory via PMP0. Harts
+ * without PMP CSRs grant S/U-mode access by default and may trap on the
+ * CSR writes with illegal instruction, so consume those traps here.
+ */
+.macro PMP_ALLOW_ALL
+    ASSERT_NO_TRAP
+    li   t5, -1
+    csrw CSR_PMPADDR0, t5
+    li   t5, PMP_RWX_ALL
+    csrw CSR_PMPCFG0, t5
+    beqz trap_count, .Lpmp_ok_\@
+    li   t5, CAUSE_ILLEGAL_INSN
+    bne  t5, trap_cause, fail
+    CLEAR_TRAPS
+.Lpmp_ok_\@:
+.endm
+
 /* The trap was reported against the address in \reg. */
 .macro EXPECT_EPC reg
     sub  t5, trap_epc, \reg

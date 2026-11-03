@@ -86,11 +86,7 @@ _start:
     li   t0, 0xdeadbeef
     YADDRW s1, s2, t0
 
-    /* PMP entry 0: allow everything (required for S-mode accesses). */
-    li   t0, -1
-    csrw CSR_PMPADDR0, t0
-    li   t0, 0x1f
-    csrw CSR_PMPCFG0, t0
+    PMP_ALLOW_ALL
 
     /* Enable CHERI and U-page access for S-mode. */
     li   t0, MENVCFG_CRE

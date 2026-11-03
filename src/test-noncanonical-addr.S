@@ -51,12 +51,7 @@
 .globl _start
 _start:
     SETUP_TRAPS
-
-    /* PMP entry 0: allow everything (required for S-mode accesses). */
-    li   t0, -1
-    csrw CSR_PMPADDR0, t0
-    li   t0, 0x1f
-    csrw CSR_PMPCFG0, t0
+    PMP_ALLOW_ALL
 
     li   t0, MENVCFG_CRE
     csrs CSR_MENVCFG, t0
