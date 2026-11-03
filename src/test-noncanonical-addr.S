@@ -122,55 +122,63 @@ _start:
     csrrs x0, CSR_DDC, t0
     EXPECT_KEPT CSR_DDC, root_ddc, NONCANON + MOVE
 
-    /* Enter S-mode, still in capability mode, with mepc a full capability. */
+    /*
+     * Run \label in S-mode capability mode and return to M-mode via ecall
+     * before checking trap state, because the Sv39 mapping deliberately omits
+     * capability load/store PTE permissions so it works identically on 0.9.3
+     * targets without Zcheripte and on RVY.
+     */
+.macro RUN_S_CAP label
     YMODESWI
     li   t0, 0x1800
     csrc CSR_MSTATUS, t0
     li   t0, 0x0800              /* mstatus.MPP = S */
     csrs CSR_MSTATUS, t0
+    lla  m_continue, .Lm_ret_\@
     YMODESWY
-    lla  t0, s_entry
+    lla  t0, \label
     auipc t1, 0
     YADDRW t1, t1, t0
     csrw CSR_MEPC, t1
     mret
+.Lm_ret_\@:
+.endm
 
-s_entry:
     /*
      * The capability allows the access, so what remains is the walk, which
-     * rejects the address before reading any pte. mtval cannot be read from
-     * S-mode, but the handler records it in trap_tval on RVY.
+     * rejects the address before reading any pte. The handler records the
+     * faulting mtval in trap_tval on RVY before the ecall back to M-mode
+     * overwrites mtval.
      */
     NEXT_TEST "an S-mode load from the non-canonical address page-faults"
     li   t2, NONCANON
-    ld   t1, 0(a0)
+    RUN_S_CAP s_load
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 #ifndef CHERI_093
     EXPECT_EQ trap_tval, t2
 #endif
 
     NEXT_TEST "an S-mode store to the non-canonical address page-faults"
-    sd   x0, 0(a0)
+    li   t2, NONCANON
+    RUN_S_CAP s_store
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 #ifndef CHERI_093
     EXPECT_EQ trap_tval, t2
 #endif
 
-    YMODESWI
-    lla  m_continue, m_done
-    ecall
-m_done:
     TEST_PASS
 fail:
-    /*
-     * S-mode with paging on cannot reach the finisher device, so report from
-     * M-mode. From M-mode the ecall is just stepped over.
-     */
-    YMODESWI
-    lla  m_continue, m_fail
-    ecall
-m_fail:
     TEST_FAIL
+
+s_load:
+    ld   t1, 0(a0)
+    YMODESWI
+    ecall
+
+s_store:
+    sd   x0, 0(a0)
+    YMODESWI
+    ecall
 
 TRAP_HANDLER
 
