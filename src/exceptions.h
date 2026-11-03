@@ -116,6 +116,7 @@
 #define trap_tval     s3         /* mtval (RVY) or mtval2 (0.9.3) of the most recent trap */
 #define resume_at     s8         /* recovery point, see RESUME_AFTER_FAULT */
 #define m_continue    s9         /* where an ecall from S-mode returns to */
+#define fail_save_t0  gp         /* saves t0 across console_fail */
 
 #include "target-info.h"
 
@@ -227,10 +228,10 @@ __rvy_used_resume_after_fault = 1
 .macro EXPECT_FAIL
     YMV  t5, ra
     YMV  t6, a0
-    YMV  trap_tval, t0
+    YMV  fail_save_t0, t0
     mv   a0, test_id
     call console_fail
-    YMV  t0, trap_tval
+    YMV  t0, fail_save_t0
     YMV  a0, t6
     YMV  ra, t5
 .endm
@@ -564,4 +565,4 @@ trap_handler:
  * the raw names are errors: a test that wants a scratch register has to pick
  * one that is not spoken for.
  */
-#pragma GCC poison s3 s4 s5 s6 s8 s9 s10 s11 t5 t6
+#pragma GCC poison gp s3 s4 s5 s6 s8 s9 s10 s11 t5 t6
