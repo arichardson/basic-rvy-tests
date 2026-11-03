@@ -284,7 +284,8 @@ _start:
     /*
      * console_fail records the failing case in tap_failed and records the
      * first failing id in tap_fail_first; EXPECT_FAIL preserves caller
-     * capabilities in ra, a0, and t0-t4 without capability stores to memory.
+     * capabilities in ra, a0, t0-t4, and trap_tval without capability stores
+     * to memory.
      */
     NEXT_TEST "console_fail records non-fatal failures and preserves caller state"
     mv    s1, test_id
@@ -300,6 +301,8 @@ _start:
     YADDRW t0, s2, t4
     li    t4, 0x4444
     YADDRW t1, s2, t4
+    li    t4, 0x5555
+    YADDRW trap_tval, s2, t4
     li    test_id, 9
     EXPECT_FAIL
     mv    test_id, s1
@@ -315,6 +318,10 @@ _start:
     li    t4, 0x4444
     YADDRW s7, s2, t4
     EXPECT_CAP_EQ t1, s7
+    li    t4, 0x5555
+    YADDRW s7, s2, t4
+    EXPECT_CAP_EQ trap_tval, s7
+    li    trap_tval, 0
     YMODESWI
     lla   a1, tap_fail_first
     LOAD_X a2, 0(a1)
