@@ -210,9 +210,13 @@
     call console_xfail
 .endm
 
-/* Forget any traps taken so far; the next EXPECT_TRAP starts from zero. */
+/*
+ * Forget any traps taken so far and any unconsumed RESUME_AFTER_FAULT target;
+ * the next EXPECT_TRAP starts from zero.
+ */
 .macro CLEAR_TRAPS
     li   trap_count, 0
+    li   resume_at, 0
 .endm
 
 /*
@@ -243,12 +247,13 @@ __rvy_used_resume_after_fault = 1
 .macro EXPECT_NO_TRAP
     beqz trap_count, .Lexpect_ok_\@
     EXPECT_FAIL
-    CLEAR_TRAPS
 .Lexpect_ok_\@:
+    CLEAR_TRAPS
 .endm
 
 .macro ASSERT_NO_TRAP
     bnez trap_count, fail
+    CLEAR_TRAPS
 .endm
 
 /*

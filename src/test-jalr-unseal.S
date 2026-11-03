@@ -66,7 +66,6 @@ _start:
      * RVY >= 0.9.6.
      */
     EXPECT_NO_TRAP
-    li      resume_at, 0
     MARK_XFAIL "0.9.3 Sail unseals sentries with address[0] == 1"
     j       89f
 #endif
