@@ -17,7 +17,7 @@ env:
   SAIL_093_SHA: 7726ab7586de0ef4a4a23e2d37fd4310fd43bedd
   # CHERI-Alliance/sail-riscv (RVY 0.9.9)
   SAIL_099_REPO: CHERI-Alliance/sail-riscv
-  SAIL_099_SHA: 9fd0e97c1d353d96feadee5a6f80b4f1141f2772
+  SAIL_099_SHA: d445eb71ded3d5e9c9bde0b00f81a6a4bb0a613b
   SAIL_COMPILER_VERSION: 0.20.3
   ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1
   UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1
