@@ -18,6 +18,9 @@ env:
   # CHERI-Alliance/sail-riscv (RVY 0.9.9)
   SAIL_099_REPO: CHERI-Alliance/sail-riscv
   SAIL_099_SHA: 9fd0e97c1d353d96feadee5a6f80b4f1141f2772
+  # CHERI-Alliance/sail-riscv#55 (RVY 0.9.10)
+  SAIL_0910_REPO: Capabilities-Limited/cheri-alliance-sail-riscv
+  SAIL_0910_SHA: 0149e6f2e811e8a260a7498b7d24f8659b6153d8
   SAIL_COMPILER_VERSION: 0.20.3
   ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1
   UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1
@@ -157,10 +160,50 @@ jobs:
           cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-099/bin/"
           cp sail-src/config/*.json "${{ runner.temp }}/sail-099/share/sail_riscv/config/"
 
+  build-sail-0910:
+    name: Build Sail 0.9.10
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cache Sail 0.9.10 binary
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/sail-0910
+          key: sail-0910-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_0910_SHA }}
+
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            cmake curl g++ libgmp-dev ninja-build pkgconf
+          sudo mkdir -p /usr/local
+          curl --fail --location \
+            "https://github.com/rems-project/sail/releases/download/${SAIL_COMPILER_VERSION}-binary/sail-Linux-x86_64.tar.gz" \
+            | sudo tar xvz --directory=/usr/local --strip-components=1
+
+      - name: Checkout Sail 0.9.10
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SAIL_0910_REPO }}
+          ref: ${{ env.SAIL_0910_SHA }}
+          path: sail-src
+
+      - name: Build Sail 0.9.10
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
+          ninja -C sail-build sail_riscv_sim
+          strip sail-build/c_emulator/sail_riscv_sim
+          mkdir -p "${{ runner.temp }}/sail-0910/bin" "${{ runner.temp }}/sail-0910/share/sail_riscv/config"
+          cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-0910/bin/"
+          cp sail-src/config/*.json "${{ runner.temp }}/sail-0910/share/sail_riscv/config/"
+
   test:
     name: Run tests
     runs-on: ubuntu-24.04
-    needs: [build-qemu, build-sail-093, build-sail-099]
+    needs: [build-qemu, build-sail-093, build-sail-099, build-sail-0910]
     permissions:
       actions: read
       contents: read
@@ -190,6 +233,13 @@ jobs:
           key: sail-099-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_099_SHA }}
           fail-on-cache-miss: true
 
+      - name: Restore Sail 0.9.10 binary
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/sail-0910
+          key: sail-0910-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_0910_SHA }}
+          fail-on-cache-miss: true
+
       - name: Install test dependencies
         run: |
           sudo sysctl -w kernel.core_pattern=core
@@ -203,7 +253,8 @@ jobs:
           meson setup build \
             -Dqemu="${{ runner.temp }}/qemu" \
             -Dsail_093="${{ runner.temp }}/sail-093" \
-            -Dsail_099="${{ runner.temp }}/sail-099"
+            -Dsail_099="${{ runner.temp }}/sail-099" \
+            -Dsail_0910="${{ runner.temp }}/sail-0910"
           ninja -C build
           meson test -C build --print-errorlogs || true
 
