@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: BSD-2-Clause
+
+name: Build Sail RISC-V simulator
+description: Resolve, cache, and build a Sail RISC-V simulator binary and config files.
+
+inputs:
+  name:
+    description: Short identifier used for the output directory and cache key prefix (e.g. sail-093)
+    required: true
+  repo:
+    description: GitHub repository in owner/repo form
+    required: true
+  sha:
+    description: Pinned commit SHA to build (mutually exclusive with branch)
+    required: false
+    default: ''
+  branch:
+    description: Branch name to resolve via git ls-remote when sha is not given
+    required: false
+    default: ''
+  sail-compiler-version:
+    description: Release version of the Sail compiler binary tarball
+    required: true
+
+outputs:
+  sha:
+    description: Resolved commit SHA
+    value: ${{ steps.resolve.outputs.sha }}
+  cache-key:
+    description: Actions cache key for the built Sail binary directory
+    value: ${{ steps.resolve.outputs.cache-key }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Sail commit
+      id: resolve
+      shell: bash
+      env:
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_SHA: ${{ inputs.sha }}
+        INPUT_BRANCH: ${{ inputs.branch }}
+        SAIL_COMPILER_VERSION: ${{ inputs.sail-compiler-version }}
+      run: |
+        if [ -n "$INPUT_SHA" ]; then
+          SHA="$INPUT_SHA"
+        elif [ -n "$INPUT_BRANCH" ]; then
+          SHA=$(git ls-remote "https://github.com/${INPUT_REPO}.git" "refs/heads/${INPUT_BRANCH}" | cut -f1)
+          if [ -z "$SHA" ]; then
+            echo "::error::Failed to resolve ${INPUT_REPO}@${INPUT_BRANCH}"
+            exit 1
+          fi
+          echo "Resolved ${INPUT_REPO}@${INPUT_BRANCH} to ${SHA}"
+        else
+          echo "::error::Either sha or branch input must be provided"
+          exit 1
+        fi
+        echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+        echo "cache-key=${INPUT_NAME}-cfg-ubuntu-24.04-sail-${SAIL_COMPILER_VERSION}-${SHA}" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Sail binary
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/${{ inputs.name }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+
+    - name: Install build dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        SAIL_COMPILER_VERSION: ${{ inputs.sail-compiler-version }}
+      run: |
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          cmake curl g++ libgmp-dev ninja-build pkgconf
+        sudo mkdir -p /usr/local
+        curl --fail --location \
+          "https://github.com/rems-project/sail/releases/download/${SAIL_COMPILER_VERSION}-binary/sail-Linux-x86_64.tar.gz" \
+          | sudo tar xvz --directory=/usr/local --strip-components=1
+
+    - name: Checkout Sail
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.repo }}
+        ref: ${{ steps.resolve.outputs.sha }}
+        path: sail-src
+
+    - name: Build Sail
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        OUT_DIR: ${{ runner.temp }}/${{ inputs.name }}
+      run: |
+        cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
+        ninja -C sail-build sail_riscv_sim
+        strip sail-build/c_emulator/sail_riscv_sim
+        mkdir -p "${OUT_DIR}/bin" "${OUT_DIR}/share/sail_riscv/config"
+        cp sail-build/c_emulator/sail_riscv_sim "${OUT_DIR}/bin/"
+        cp sail-src/config/*.json "${OUT_DIR}/share/sail_riscv/config/"

@@ -80,95 +80,38 @@ jobs:
   build-sail-093:
     name: Build Sail 0.9.3
     runs-on: ubuntu-24.04
+    outputs:
+      cache-key: ${{ steps.build.outputs.cache-key }}
     steps:
-      - name: Cache Sail 0.9.3 binary
-        id: cache
-        uses: actions/cache@v6
+      - uses: actions/checkout@v7
         with:
-          path: ${{ runner.temp }}/sail-093
-          key: sail-093-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
+          sparse-checkout: .github/actions
 
-      - name: Install build dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            cmake curl g++ libgmp-dev ninja-build pkgconf
-          sudo mkdir -p /usr/local
-          curl --fail --location \
-            "https://github.com/rems-project/sail/releases/download/${SAIL_COMPILER_VERSION}-binary/sail-Linux-x86_64.tar.gz" \
-            | sudo tar xvz --directory=/usr/local --strip-components=1
-
-      - name: Checkout Sail 0.9.3
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v7
+      - id: build
+        uses: ./.github/actions/build-sail
         with:
-          repository: ${{ env.SAIL_093_REPO }}
-          ref: ${{ env.SAIL_093_SHA }}
-          path: sail-src
-
-      - name: Build Sail 0.9.3
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
-          ninja -C sail-build sail_riscv_sim
-          strip sail-build/c_emulator/sail_riscv_sim
-          mkdir -p "${{ runner.temp }}/sail-093/bin" "${{ runner.temp }}/sail-093/share/sail_riscv/config"
-          cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-093/bin/"
-          cp sail-src/config/*.json "${{ runner.temp }}/sail-093/share/sail_riscv/config/"
+          name: sail-093
+          repo: ${{ env.SAIL_093_REPO }}
+          sha: ${{ env.SAIL_093_SHA }}
+          sail-compiler-version: ${{ env.SAIL_COMPILER_VERSION }}
 
   build-sail-099:
     name: Build Sail 0.9.9
     runs-on: ubuntu-24.04
     outputs:
-      sha: ${{ steps.resolve.outputs.sha }}
+      cache-key: ${{ steps.build.outputs.cache-key }}
     steps:
-      - name: Resolve Sail 0.9.9 commit
-        id: resolve
-        run: |
-          SHA=$(git ls-remote "https://github.com/${SAIL_099_REPO}.git" "refs/heads/${SAIL_099_BRANCH}" | cut -f1)
-          if [ -z "$SHA" ]; then
-            echo "::error::Failed to resolve ${SAIL_099_REPO}@${SAIL_099_BRANCH}"
-            exit 1
-          fi
-          echo "Resolved ${SAIL_099_REPO}@${SAIL_099_BRANCH} to ${SHA}"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Sail 0.9.9 binary
-        id: cache
-        uses: actions/cache@v6
+      - uses: actions/checkout@v7
         with:
-          path: ${{ runner.temp }}/sail-099
-          key: sail-099-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ steps.resolve.outputs.sha }}
+          sparse-checkout: .github/actions
 
-      - name: Install build dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            cmake curl g++ libgmp-dev ninja-build pkgconf
-          sudo mkdir -p /usr/local
-          curl --fail --location \
-            "https://github.com/rems-project/sail/releases/download/${SAIL_COMPILER_VERSION}-binary/sail-Linux-x86_64.tar.gz" \
-            | sudo tar xvz --directory=/usr/local --strip-components=1
-
-      - name: Checkout Sail 0.9.9
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v7
+      - id: build
+        uses: ./.github/actions/build-sail
         with:
-          repository: ${{ env.SAIL_099_REPO }}
-          ref: ${{ steps.resolve.outputs.sha }}
-          path: sail-src
-
-      - name: Build Sail 0.9.9
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          cmake -S sail-src -B sail-build -GNinja -DCMAKE_BUILD_TYPE=Release
-          ninja -C sail-build sail_riscv_sim
-          strip sail-build/c_emulator/sail_riscv_sim
-          mkdir -p "${{ runner.temp }}/sail-099/bin" "${{ runner.temp }}/sail-099/share/sail_riscv/config"
-          cp sail-build/c_emulator/sail_riscv_sim "${{ runner.temp }}/sail-099/bin/"
-          cp sail-src/config/*.json "${{ runner.temp }}/sail-099/share/sail_riscv/config/"
+          name: sail-099
+          repo: ${{ env.SAIL_099_REPO }}
+          branch: ${{ env.SAIL_099_BRANCH }}
+          sail-compiler-version: ${{ env.SAIL_COMPILER_VERSION }}
 
   test:
     name: Run tests
@@ -193,14 +136,14 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sail-093
-          key: sail-093-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ env.SAIL_093_SHA }}
+          key: ${{ needs.build-sail-093.outputs.cache-key }}
           fail-on-cache-miss: true
 
       - name: Restore Sail 0.9.9 binary
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sail-099
-          key: sail-099-cfg-ubuntu-24.04-sail-${{ env.SAIL_COMPILER_VERSION }}-${{ needs.build-sail-099.outputs.sha }}
+          key: ${{ needs.build-sail-099.outputs.cache-key }}
           fail-on-cache-miss: true
 
       - name: Install test dependencies
