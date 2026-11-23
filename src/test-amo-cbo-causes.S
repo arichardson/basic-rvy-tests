@@ -296,11 +296,8 @@ _start:
     CHECK_POISON_REG t1
     CHECK_BUF a3
 
-    YMODESWI                     /* back to int mode */
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

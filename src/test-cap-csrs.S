@@ -377,12 +377,8 @@ s_deleg_done:
     csrw  CSR_MEDELEGH, x0
 #endif
 
-    YMODESWI
-    csrrw x0, CSR_DDC, s0
     TEST_PASS
 fail:
-    YMODESWI
-    csrrw x0, CSR_DDC, s0
     TEST_FAIL
 
 /*

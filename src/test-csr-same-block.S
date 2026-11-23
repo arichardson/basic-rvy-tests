@@ -46,11 +46,9 @@ _start:
     j    fail
 mepc_target:
 
-    YMODESWI
     TEST_PASS
 
 fail:
-    YMODESWI
     TEST_FAIL
 
     .balign 4

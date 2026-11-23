@@ -84,11 +84,8 @@ good_target:
     EXPECT_EPC expected_epc
     EXPECT_EPC_TAG 1               /* tagged but unusable: a permission fault */
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 /* Reached only if the missing-execute-permission capability ran anyway. */

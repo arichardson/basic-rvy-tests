@@ -136,8 +136,6 @@ ialign32_done:
 
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 .balign 8

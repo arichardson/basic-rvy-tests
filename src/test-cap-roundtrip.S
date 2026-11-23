@@ -224,11 +224,8 @@ _start:
     EXPECT_YHIW_YHIR_ROUNDTRIP "distinct byte pattern", PAT_SEQ_LO, PAT_SEQ_HI
     EXPECT_YHIW_YHIR_ROUNDTRIP "malformed E>maxE bits", PAT_SEQ_LO, EBT_MALFORMED_E_GT_MAX
 
-    YMODESWI
-
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

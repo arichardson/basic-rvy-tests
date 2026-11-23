@@ -117,10 +117,8 @@ _start:
     EXPECT_NO_TRAP
 #endif
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

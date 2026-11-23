@@ -90,7 +90,6 @@ s_cbo_enabled:
     ecall
 
 s_cbo_enabled_done:
-    YMODESWI
     TEST_PASS
 fail:
     YMODESWI

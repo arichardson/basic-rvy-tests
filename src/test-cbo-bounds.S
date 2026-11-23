@@ -124,11 +124,8 @@ _start:
     CBO_INVAL a0
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

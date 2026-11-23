@@ -119,10 +119,8 @@ _start:
     CHECK_POISON_REG t1
     CHECK_BUF a3
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

@@ -103,10 +103,8 @@ _start:
     EXPECT_EQ t4, t3
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

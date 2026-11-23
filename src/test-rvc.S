@@ -265,10 +265,8 @@ _start:
     C_LY a2, 0, a3
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

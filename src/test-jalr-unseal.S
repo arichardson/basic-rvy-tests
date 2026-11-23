@@ -178,11 +178,9 @@ _start:
 6:  jalr    ra, a0, 4
     EXPECT_JALR_SENTRY_FAULT 6b, t0, CAP_TAG, 1
 
-    YMODESWI
     TEST_PASS
 
 fail:
-    YMODESWI
     TEST_FAIL
 
 .balign 8

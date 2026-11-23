@@ -284,10 +284,8 @@ _start:
     EXPECT_TAG a6, 0             /* auipc -0x10000 < rep_base */
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 .balign 64

@@ -49,11 +49,8 @@ _start:
     csrr t0, CSR_MTVEC
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 /*

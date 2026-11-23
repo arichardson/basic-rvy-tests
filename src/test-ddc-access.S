@@ -44,17 +44,11 @@
 .macro CHECK_BUF
     csrrw t4, CSR_DDC, s0
     LY    t0, -YLEN_BYTES(s1)
-    csrrw x0, CSR_DDC, t4
     EXPECT_CAP_EQ t0, s7
-    csrrw t4, CSR_DDC, s0
     LY    t0, 0(s1)
-    csrrw x0, CSR_DDC, t4
     EXPECT_CAP_EQ t0, s7
-    csrrw t4, CSR_DDC, s0
     LY    t0, (64 - YLEN_BYTES)(s1)
-    csrrw x0, CSR_DDC, t4
     EXPECT_CAP_EQ t0, s7
-    csrrw t4, CSR_DDC, s0
     LY    t0, 64(s1)
     SY    s7, -YLEN_BYTES(s1)
     SY    s7, 0(s1)
@@ -70,10 +64,7 @@
 _start:
     SETUP_TRAPS
 
-    /*
-     * Save the root DDC in s0 so that console output in TEST_PASS / TEST_FAIL
-     * always has a valid authorizing capability for UART and HTIF stores.
-     */
+    /* Save the root DDC in s0 for INIT_BUF/CHECK_BUF and deriving test caps. */
     csrrs s0, CSR_DDC, x0
     lla    s1, buf
     addi  s2, s1, 64             /* top of the 64-byte bounded region */
@@ -713,10 +704,8 @@ _start:
     EXPECT_NO_TRAP
     EXPECT_PERMS t1, PERM_W | PERM_LM, PERM_W | PERM_LM
 
-    csrrw x0, CSR_DDC, s0
     TEST_PASS
 fail:
-    csrrw x0, CSR_DDC, s0
     TEST_FAIL
 
 TRAP_HANDLER

@@ -34,10 +34,8 @@ _start:
     LY   t3, 0(s7)
     EXPECT_TAG t3, 0
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

@@ -535,10 +535,8 @@ skip_zylg_disabled:
     SKIPPABLE_BLOCK_SKIPPED "Zylg is enabled"
 zylg_disabled_done:
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

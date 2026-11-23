@@ -208,15 +208,9 @@ _start:
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     flw  fa1, 0(a0)
     EXPECT_NO_TRAP
-    YMODESWY
-    csrw CSR_DDC, root
-    YMODESWI
 
     TEST_PASS
 fail:
-    YMODESWY
-    csrw CSR_DDC, root
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

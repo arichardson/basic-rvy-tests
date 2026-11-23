@@ -210,10 +210,8 @@ _start:
     EXPECT_TAG a0, 1
     EXPECT_CAP_EQ a0, cap
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

@@ -155,10 +155,8 @@ _start:
     EXPECT_LEN a1, 16
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

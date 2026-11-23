@@ -234,10 +234,8 @@ skip_ialign32:
     SKIPPABLE_BLOCK_SKIPPED "misa.C is hard-wired here so IALIGN=32 is unreachable"
 ialign32_done:
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER_PCC
