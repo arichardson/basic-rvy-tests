@@ -201,22 +201,22 @@ console_init:
  * byte, so console_putc_uart does not poll: spinning on the status register
  * would hang outright if the probe ever said yes where there is nothing.
  */
-.globl console_putc_htif
-console_putc_htif:
-    LX t1, console_target    /* where the writes go; &tohost in a real run */
+.macro WRITE_HTIF_CHAR
+    LX    t1, console_target     /* where the writes go; &tohost in a real run */
     YADDRW t2, t0, t1
     sw    a0, 0(t2)
     li    t1, HTIF_PUTCHAR
     sw    t1, 4(t2)
+.endm
+
+.globl console_putc_htif
+console_putc_htif:
+    WRITE_HTIF_CHAR
     ret
 
 .globl console_putc_both
 console_putc_both:
-    LX t1, console_target
-    YADDRW t2, t0, t1
-    sw    a0, 0(t2)
-    li    t1, HTIF_PUTCHAR
-    sw    t1, 4(t2)
+    WRITE_HTIF_CHAR
     /* fall through */
 .globl console_putc_uart
 console_putc_uart:
@@ -371,18 +371,8 @@ CONSOLE_ENTRY console_tap
     mv     a3, a2
 
     beqz   a1, 15f
-    li     t0, TAP_MAX_CASES
-    bgeu   a1, t0, 16f
-    lla    t0, tap_failed
-    add    t0, t0, a1
-    YADDRW t0, t6, t0
-    li     t1, 1
-    sb     t1, 0(t0)
-16: lla    t0, tap_fail_first
-    YADDRW t0, t6, t0
-    LX t1, 0(t0)
-    bnez   t1, 15f
-    SX a1, 0(t0)
+    mv     a0, a1
+    jal    ra, .Lconsole_fail_impl
 15:
     lla    t0, tap_fail_first
     YADDRW t0, t6, t0
@@ -439,18 +429,9 @@ CONSOLE_ENTRY console_tap
     beqz t1, 3f
 5:  lla   a0, .Ltap_notok
     j    4f
-3:  lla   t0, tap_xfail_count
-    YADDRW t0, t6, t0
-    LX t1, 0(t0)
-    lla   t2, tap_xfails
-    YADDRW t2, t6, t2
-10: beqz t1, 11f
-    LX t3, 0(t2)
-    beq  t3, a5, 5b
-    YADDI t2, t2, 2 * XBYTES
-    addi t1, t1, -1
-    j    10b
-11: lla   a0, .Ltap_ok
+3:  jal  ra, .Lfind_xfail
+    bnez a3, 5b
+    lla  a0, .Ltap_ok
 4:  jal  ra, .Lconsole_puts_impl
     mv   a0, a5
     jal  ra, .Lconsole_put_dec_impl
@@ -490,23 +471,12 @@ CONSOLE_ENTRY console_tap
     addi t1, t1, -1
     j    8b
     /* Was this case marked as an expected failure? */
-12: lla   t0, tap_xfail_count
-    YADDRW t0, t6, t0
-    LX t1, 0(t0)
-    lla   t2, tap_xfails
-    YADDRW t2, t6, t2
-13: beqz t1, 7f
-    LX t3, 0(t2)
-    bne  t3, a5, 14f
-    LX a3, XBYTES(t2)
-    lla   a0, .Ltap_todo
+12: jal  ra, .Lfind_xfail
+    beqz a3, 7f
+    lla  a0, .Ltap_todo
     jal  ra, .Lconsole_puts_impl
     mv   a0, a3
     jal  ra, .Lconsole_puts_impl
-    j    7f
-14: YADDI t2, t2, 2 * XBYTES
-    addi t1, t1, -1
-    j    13b
 7:  lla   a0, .Ltap_nl
     jal  ra, .Lconsole_puts_impl
     addi a5, a5, 1
@@ -521,6 +491,27 @@ CONSOLE_ENTRY console_tap
     mv   a0, a7
     YMV  ra, a4
     ret
+
+/*
+ * Look up case a5 in tap_xfails using PCC root t6. Returns the reason pointer
+ * in a3, or 0 if case a5 was not marked as an expected failure. Clobbers t0-t3.
+ */
+.Lfind_xfail:
+    lla    t0, tap_xfail_count
+    YADDRW t0, t6, t0
+    LX     t1, 0(t0)
+    lla    t2, tap_xfails
+    YADDRW t2, t6, t2
+    li     a3, 0
+1:  beqz   t1, 2f
+    LX     t3, 0(t2)
+    bne    t3, a5, 3f
+    LX     a3, XBYTES(t2)
+    ret
+3:  YADDI  t2, t2, 2 * XBYTES
+    addi   t1, t1, -1
+    j      1b
+2:  ret
 
 .section .rodata
 .Ltap_version: .asciz "TAP version 13\n"
