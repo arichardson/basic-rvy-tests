@@ -260,12 +260,16 @@ def summarize_test_failure_header(test_name: str, test_entries: list[dict]) -> s
 def find_test_source(
     test_name: str, test_entries: list[dict]
 ) -> tuple[str | None, int | None]:
-    candidates = [
-        f"src/{test_name}.S",
-        f"src/{test_name.removesuffix('-no-zyhybrid')}.S",
-        f"src/{test_name.removesuffix('-no-target-info')}.S",
-    ]
-    src_path = next((Path(c) for c in candidates if Path(c).is_file()), None)
+    src_path = None
+    stem = test_name
+    while stem:
+        candidate = Path(f"src/{stem}.S")
+        if candidate.is_file():
+            src_path = candidate
+            break
+        if "-" not in stem:
+            break
+        stem = stem.rsplit("-", 1)[0]
     if src_path is None:
         return None, None
 
