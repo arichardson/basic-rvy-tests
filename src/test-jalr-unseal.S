@@ -124,7 +124,7 @@ _start:
     YMV     a0, trap_epc
     RESUME_AFTER_FAULT 1f
     csrw    CSR_MEPC, a0
-    li      t3, 0x1800            /* mstatus.MPP = M */
+    li      t3, MSTATUS_MPP_M
     csrs    CSR_MSTATUS, t3
     mret
 1:
@@ -146,7 +146,7 @@ _start:
     YMV     a0, trap_epc
     RESUME_AFTER_FAULT 1f
     csrw    CSR_MEPC, a0
-    li      t3, 0x1800            /* mstatus.MPP = M */
+    li      t3, MSTATUS_MPP_M
     csrs    CSR_MSTATUS, t3
     mret
 1:

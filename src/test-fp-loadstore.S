@@ -17,8 +17,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define MSTATUS_FS_INITIAL (1 << 13)
-
 #define root  s0                 /* ddc */
 #define bufp  s1                 /* address of buf */
 #define cap   s2                 /* [buf, buf + 16), RW capability */

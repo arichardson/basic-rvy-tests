@@ -25,18 +25,9 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CAUSE_FETCH_ACCESS_FAULT 1
-#define CAUSE_FETCH_PAGE_FAULT   12
-
 #define PMP0_RW_UNLOCKED (PMP_NAPOT | PMP_R | PMP_W)
 #define PMP0_RW_LOCKED   (PMP_L | PMP0_RW_UNLOCKED)
 
-#define PTE_V 0x01
-#define PTE_R 0x02
-#define PTE_W 0x04
-#define PTE_X 0x08
-#define PTE_A 0x40
-#define PTE_D 0x80
 #define PTE_LEAF_RWX (PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D)
 #define PTE_LEAF_RW  (PTE_V | PTE_R | PTE_W | PTE_A | PTE_D)
 
@@ -50,13 +41,13 @@
 #if __riscv_xlen == 32
 #define ROOT_IDX_ALIAS 256
 #define ROOT_IDX_CODE  512
-#define SATP_MODE      (1 << 31)
+#define SATP_MODE      SATP_SV32
 #define PTE_CODE_CAP   0
 #else
 #define ROOT_IDX_ALIAS 1
 #define ROOT_IDX_CODE  2
-#define SATP_MODE      (8 << 60)
-#define PTE_CODE_CAP   (1 << 58) /* pte.y: allow S-mode capability accesses in console_fail */
+#define SATP_MODE      SATP_SV39
+#define PTE_CODE_CAP   PTE_YD_BIT /* pte.y: allow S-mode capability accesses in console_fail */
 #endif
 
 /* Offsets within the 3-page window [exec_base, exec_base + 0x3000). */
@@ -228,8 +219,8 @@
     add   expected_epc, exec_base, t0
     YHIW  a0, expected_epc, x0
     csrw  CSR_SEPC, a0
-    li    t0, 0x0100             /* sstatus.SPP = S */
-    csrs  0x100, t0
+    li    t0, SSTATUS_SPP
+    csrs  CSR_SSTATUS, t0
     RESUME_AFTER_FAULT 87f
     sret
 87:
@@ -247,8 +238,8 @@
     add   expected_epc, exec_base, t0
     YADDRW a0, a0, expected_epc
     csrw  CSR_SEPC, a0
-    li    t0, 0x0100             /* sstatus.SPP = S */
-    csrs  0x100, t0
+    li    t0, SSTATUS_SPP
+    csrs  CSR_SSTATUS, t0
     RESUME_AFTER_FAULT 88f
     sret
 88:
@@ -320,7 +311,7 @@ _start:
     srli  t0, t0, 12
     li    t1, SATP_MODE
     or    t0, t0, t1
-    csrw  0x180, t0              /* satp */
+    csrw  CSR_SATP, t0
     sfence.vma
 
     YMODESWY
@@ -360,7 +351,7 @@ _start:
     lla   expected_epc, noexec_target
     YHIW  a0, expected_epc, x0
     csrw  CSR_MEPC, a0
-    li    t0, 0x1800             /* mstatus.MPP = M */
+    li    t0, MSTATUS_MPP_M
     csrs  CSR_MSTATUS, t0
     RESUME_AFTER_FAULT 3f
     mret
@@ -377,7 +368,7 @@ _start:
     lla   expected_epc, noexec_target
     YADDRW a0, a0, expected_epc
     csrw  CSR_MEPC, a0
-    li    t0, 0x1800             /* mstatus.MPP = M */
+    li    t0, MSTATUS_MPP_M
     csrs  CSR_MSTATUS, t0
     RESUME_AFTER_FAULT 4f
     mret
@@ -400,9 +391,9 @@ pmp_done:
     /* S-mode: PCC fault vs fetch page fault (cause 12) for PTE.V=0 and PTE.X=0. */
     YMODESWI
     lla   m_continue, m_fail
-    li    t0, 0x1800
+    li    t0, MSTATUS_MPP_MASK
     csrc  CSR_MSTATUS, t0
-    li    t0, 0x0800             /* mstatus.MPP = S */
+    li    t0, MSTATUS_MPP_S
     csrs  CSR_MSTATUS, t0
     lla   t0, s_entry
     csrw  CSR_MEPC, t0

@@ -41,9 +41,9 @@ _start:
     li   t1, MENVCFG_CBO_ALL
     csrc CSR_MENVCFG, t1
 
-    li   t1, 0x1800
+    li   t1, MSTATUS_MPP_MASK
     csrc CSR_MSTATUS, t1
-    li   t1, 0x0800
+    li   t1, MSTATUS_MPP_S
     csrs CSR_MSTATUS, t1
     auipc t2, 0
     lla   t1, s_cbo_disabled
@@ -79,9 +79,9 @@ s_cbo_disabled_done:
     and  t2, t2, t1
     EXPECT_EQ t2, t1
 
-    li   t1, 0x1800
+    li   t1, MSTATUS_MPP_MASK
     csrc CSR_MSTATUS, t1
-    li   t1, 0x0800
+    li   t1, MSTATUS_MPP_S
     csrs CSR_MSTATUS, t1
     auipc t2, 0
     lla   t1, s_cbo_enabled

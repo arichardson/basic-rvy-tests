@@ -30,7 +30,7 @@
     mv   expected_epc, \target
     RESUME_AFTER_FAULT 88f
     csrw CSR_MEPC, \cap
-    li   t2, 0x1800               /* mstatus.MPP = M, so mret returns to M-mode */
+    li   t2, MSTATUS_MPP_M       /* mstatus.MPP = M, so mret returns to M-mode */
     csrs CSR_MSTATUS, t2
     mret
 88:
@@ -54,7 +54,7 @@ _start:
     YADDRW a0, a0, t0
     YSEALE a0, a0
     csrw CSR_MEPC, a0
-    li   t2, 0x1800
+    li   t2, MSTATUS_MPP_M
     csrs CSR_MSTATUS, t2
     mret
     /* Falling through here (rather than to good_target) fails the test. */

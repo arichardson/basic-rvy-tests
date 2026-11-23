@@ -263,9 +263,9 @@ _start:
     csrrw x0, CSR_MSCRATCH, a0
     csrrw x0, CSR_MTIDC, a0
 
-    li    t0, 0x1800             /* mstatus.MPP = S */
+    li    t0, MSTATUS_MPP_MASK
     csrc  CSR_MSTATUS, t0
-    li    t0, 0x0800
+    li    t0, MSTATUS_MPP_S
     csrs  CSR_MSTATUS, t0
     auipc t1, 0
     lla    t0, s_mode_csr_tests
@@ -350,9 +350,9 @@ s_mode_done:
     YADDRW t1, t1, t0
     csrw  CSR_STVEC, t1
 
-    li    t0, 0x1800
+    li    t0, MSTATUS_MPP_MASK
     csrc  CSR_MSTATUS, t0
-    li    t0, 0x0800
+    li    t0, MSTATUS_MPP_S
     csrs  CSR_MSTATUS, t0
     auipc t1, 0
     lla   t0, s_deleg_entry

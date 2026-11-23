@@ -14,17 +14,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CSR_SATP     0x180
-#define SATP_SV39    (8 << 60)
-
-/* Leaf PTE bits. */
-#define PTE_V 0x01
-#define PTE_R 0x02
-#define PTE_W 0x04
-#define PTE_X 0x08
-#define PTE_A 0x40
-#define PTE_D 0x80
-
 /* Not sign-extended from bit 38, so not a canonical Sv39 address. */
 #define NONCANON     (1 << 38)
 #define MOVE         0x40        /* address-only writes go here: in bounds */
@@ -125,9 +114,9 @@ _start:
      */
 .macro RUN_S_CAP label
     YMODESWI
-    li   t0, 0x1800
+    li   t0, MSTATUS_MPP_MASK
     csrc CSR_MSTATUS, t0
-    li   t0, 0x0800              /* mstatus.MPP = S */
+    li   t0, MSTATUS_MPP_S
     csrs CSR_MSTATUS, t0
     lla  m_continue, .Lm_ret_\@
     YMODESWY

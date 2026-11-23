@@ -57,11 +57,13 @@
 
 /* Standard RISC-V causes. */
 #define CAUSE_MISALIGNED_FETCH     0
+#define CAUSE_FETCH_ACCESS_FAULT   1
 #define CAUSE_ILLEGAL_INSN         2
 #define CAUSE_LOAD_ACCESS_FAULT    5
 #define CAUSE_STORE_ACCESS_FAULT   7
 #define CAUSE_U_ECALL              8
 #define CAUSE_S_ECALL              9
+#define CAUSE_FETCH_PAGE_FAULT    12
 #define CAUSE_LOAD_PAGE_FAULT     13
 #define CAUSE_STORE_PAGE_FAULT    15
 
@@ -496,7 +498,7 @@ DEFINE_CHECK_2(LEN, reg, len)
     beq  t6, t5, 7f
     li   t5, CAUSE_S_ECALL
     bne  t6, t5, 8f
-7:  li   t5, 0x1800              /* mstatus.MPP = M */
+7:  li   t5, MSTATUS_MPP_M
     csrs CSR_MSTATUS, t5
 #ifndef CHERI_093
     csrr t5, CSR_MISA

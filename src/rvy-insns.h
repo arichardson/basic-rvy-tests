@@ -50,12 +50,14 @@
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
 #define CSR_PMPADDR1 0x3B1
+#define CSR_SSTATUS 0x100
 #define CSR_STVEC   0x105
 #define CSR_SENVCFG 0x10A
 #define CSR_SSCRATCH 0x140
 #define CSR_SEPC    0x141
 #define CSR_SCAUSE  0x142
 #define CSR_STVAL   0x143
+#define CSR_SATP    0x180
 #define CSR_HENVCFG 0x60A
 #define CSR_VSTVEC  0x205
 #define CSR_VSSCRATCH 0x240
@@ -77,6 +79,36 @@
 #define CSR_MSECCFG 0x747
 
 #define MSECCFG_CRE (1 << 3)
+
+/* mstatus / sstatus bits. */
+#define MSTATUS_MPP_MASK   (3 << 11)
+#define MSTATUS_MPP_S      (1 << 11)
+#define MSTATUS_MPP_M      (3 << 11)
+#define MSTATUS_FS_INITIAL (1 << 13)
+#define MSTATUS_MPRV       (1 << 17)
+#define SSTATUS_SPP        (1 << 8)
+#define SSTATUS_SUM        (1 << 18)
+
+/* Page-table entry and satp bits. */
+#define PTE_V 0x01
+#define PTE_R 0x02
+#define PTE_W 0x04
+#define PTE_X 0x08
+#define PTE_U 0x10
+#define PTE_A 0x40
+#define PTE_D 0x80
+#if __riscv_xlen == 64
+#define SATP_SV39    (8 << 60)
+#define SSTATUS_YRGE (1 << 59)
+#define SSTATUS_SYRG (1 << 60)
+#define SSTATUS_UYRG (1 << 61)
+#define PTE_YR_BIT   (1 << 55)
+#define PTE_YRG_BIT  (1 << 56)
+#define PTE_YW_BIT   (1 << 57)
+#define PTE_YD_BIT   (1 << 58)
+#else
+#define SATP_SV32    (1 << 31)
+#endif
 
 /* pmpcfg entry bits. */
 #define PMP_R       (1 << 0)

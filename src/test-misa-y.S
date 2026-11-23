@@ -32,13 +32,13 @@
 #define has_h        s1
 
 /*
- * Enter privilege mode \mpp (0x0800 for S-mode, 0 for U-mode) at \target and
- * return to M-mode at \cont when \target executes ecall. Uses YADDRW when
- * misa.Y is set so CSR_MEPC receives a valid capability on purecap-only harts
- * without Zyhybrid as well as an address in integer mode.
+ * Enter privilege mode \mpp (MSTATUS_MPP_S for S-mode, 0 for U-mode) at
+ * \target and return to M-mode at \cont when \target executes ecall. Uses
+ * YADDRW when misa.Y is set so CSR_MEPC receives a valid capability on
+ * purecap-only harts without Zyhybrid as well as an address in integer mode.
  */
 .macro ENTER_PRIV mpp, target, cont
-    li     t0, 0x1800
+    li     t0, MSTATUS_MPP_MASK
     csrc   CSR_MSTATUS, t0
     .if (\mpp) != 0
     li     t0, \mpp
@@ -354,7 +354,7 @@ _start:
 
     /* Even if menvcfg.Y was set before clearing misa.Y, S-mode has CHERI disabled. */
     NEXT_TEST "with Y clear S-mode CHERI is disabled even after setting menvcfg.Y"
-    ENTER_PRIV 0x0800, s_code_y_clear, m_cont_y_clear
+    ENTER_PRIV MSTATUS_MPP_S, s_code_y_clear, m_cont_y_clear
 s_code_y_clear:
     YAMASK t2, t0
     ecall
@@ -387,7 +387,7 @@ m_cont_y_clear:
     csrc CSR_SENVCFG, t1
     beqz has_h, 1f
     csrc CSR_HENVCFG, t1
-1:  ENTER_PRIV 0x0800, s_code_disabled, m_cont_a
+1:  ENTER_PRIV MSTATUS_MPP_S, s_code_disabled, m_cont_a
 s_code_disabled:
     YAMASK t2, t0                        /* in S-mode: illegal */
     ecall
@@ -396,7 +396,7 @@ m_cont_a:
     /* enable S-mode CHERI and retry */
     li   t1, ENVCFG_Y
     csrs CSR_MENVCFG, t1
-    ENTER_PRIV 0x0800, s_code_enabled, m_cont_b
+    ENTER_PRIV MSTATUS_MPP_S, s_code_enabled, m_cont_b
 s_code_enabled:
     YAMASK t2, t0                        /* in S-mode: works */
     ecall
@@ -503,7 +503,7 @@ m_cont_u2:
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     NEXT_TEST "without Zyhybrid S-mode and U-mode CHERI are always enabled"
-    ENTER_PRIV 0x0800, s_code_purecap, m_cont_purecap_s
+    ENTER_PRIV MSTATUS_MPP_S, s_code_purecap, m_cont_purecap_s
 s_code_purecap:
     YAMASK t2, t0
     ecall

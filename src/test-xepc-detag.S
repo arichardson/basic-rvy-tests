@@ -167,7 +167,7 @@ _start:
     EXPECT_TAG a4, 1
     RESUME_AFTER_FAULT ialign32_unsealed_recovered
     csrw CSR_MEPC, a4
-    li   t0, 0x1800
+    li   t0, MSTATUS_MPP_M
     csrs CSR_MSTATUS, t0
     mret
 ialign32_unsealed_recovered:
@@ -196,7 +196,7 @@ ialign32_unsealed_recovered:
     YSEALE a0, a0
     RESUME_AFTER_FAULT ialign32_recovered
     csrw CSR_MEPC, a0
-    li   t0, 0x1800                /* mstatus.MPP = M, so mret returns to M-mode */
+    li   t0, MSTATUS_MPP_M       /* mstatus.MPP = M, so mret returns to M-mode */
     csrs CSR_MSTATUS, t0
     mret
 ialign32_recovered:
