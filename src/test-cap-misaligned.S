@@ -21,6 +21,48 @@
     SY   s7, YLEN_BYTES(\base_reg)
 .endm
 
+/*
+ * Check that all five misaligned capability operations at \addr_reg fault
+ * with the expected cause, report a1 in mtval, and leave rd and buf untouched.
+ */
+.macro CHECK_MISALIGNED_SUITE prefix, addr_reg, buf_reg
+    NEXT_TEST "\prefix\()misaligned ly raises a load fault"
+    POISON_REG t1
+    LY   t1, 0(\addr_reg)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "\prefix\()misaligned sy raises a store fault"
+    SY   t2, 0(\addr_reg)
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+    CHECK_BUF \buf_reg
+
+    NEXT_TEST "\prefix\()misaligned lr.y raises a load access fault"
+    POISON_REG t1
+    LR_Y t1, \addr_reg
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "\prefix\()misaligned sc.y raises a store fault"
+    POISON_REG t1
+    SC_Y t1, \addr_reg, t2
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+    CHECK_BUF \buf_reg
+
+    NEXT_TEST "\prefix\()misaligned amoswap.y raises a store fault"
+    POISON_REG t1
+    AMOSWAP_Y t1, \addr_reg, t2
+    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
+    EXPECT_TVAL a1
+    CHECK_POISON_REG t1
+    CHECK_BUF \buf_reg
+.endm
+
 .option norvc
 .section .text
 .globl _start
@@ -39,85 +81,10 @@ _start:
     li   t0, 0xdeadbeef
     YADDRW t2, s0, t0             /* t2: distinct tagged store capability */
 
-    /* Misaligned LY raises a load fault and reports the address in mtval */
-    NEXT_TEST "misaligned ly raises a load fault"
-    POISON_REG t1
-    LY   t1, 0(a1)
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-
-    /* Misaligned SY raises a store fault and reports the address in mtval */
-    NEXT_TEST "misaligned sy raises a store fault"
-    SY   t2, 0(a1)
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-    CHECK_BUF a0
-
-    /* Misaligned LR.Y raises a load access fault */
-    NEXT_TEST "misaligned lr.y raises a load access fault"
-    POISON_REG t1
-    LR_Y t1, a1
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-
-    /* Misaligned SC.Y raises a store/AMO access fault */
-    NEXT_TEST "misaligned sc.y raises a store fault"
-    POISON_REG t1
-    SC_Y t1, a1, t2
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-    CHECK_BUF a0
-
-    /* Misaligned AMOSWAP.Y also raises a store/AMO access fault */
-    NEXT_TEST "misaligned amoswap.y raises a store fault"
-    POISON_REG t1
-    AMOSWAP_Y t1, a1, t2
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-    CHECK_BUF a0
+    CHECK_MISALIGNED_SUITE "", a1, a0
 
     YMODESWY
-
-    /* Misaligned capability accesses in capability mode */
-    NEXT_TEST "capability-mode misaligned ly raises a load fault"
-    POISON_REG t1
-    LY   t1, 0(a6)
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "capability-mode misaligned sy raises a store fault"
-    SY   t2, 0(a6)
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-    CHECK_BUF a3
-
-    NEXT_TEST "capability-mode misaligned lr.y raises a load access fault"
-    POISON_REG t1
-    LR_Y t1, a6
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_LOAD
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "capability-mode misaligned sc.y raises a store fault"
-    POISON_REG t1
-    SC_Y t1, a6, t2
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
-
-    NEXT_TEST "capability-mode misaligned amoswap.y raises a store fault"
-    POISON_REG t1
-    AMOSWAP_Y t1, a6, t2
-    EXPECT_TRAP CAUSE_CAP_MISALIGNED_STORE
-    EXPECT_TVAL a1
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    CHECK_MISALIGNED_SUITE "capability-mode ", a6, a3
 
     TEST_PASS
 fail:
