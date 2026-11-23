@@ -166,6 +166,7 @@ if rvy_test_cc_found
   # in by active test() targets are built.
   rvy_depend_files = files('link.ld', 'testmacros.h', 'exceptions.h',
                            'console.h', 'rvy-insns.h', 'target-info.h')
+  rvy_common_ldflags = ['-mno-relax', '-nostdlib', '-static', '-fuse-ld=lld']
   rvy_elf_targets = {}
   foreach rvy_cheri_ver : rvy_enabled_cheri_versions
     rvy_ver_elfs = []
@@ -179,7 +180,6 @@ if rvy_test_cc_found
         continue
       endif
       foreach xlen : xlens
-        march = xlen == 32 ? 'rv32g' : 'rv64g'
         profile = ('@0@_@1@_@2@'.format(t['name'], xlen, rvy_cheri_ver)).underscorify()
         elf_name = ('@0@_@1@'.format(t['name'], xlen)).underscorify() + '.elf'
         elf_tgt = custom_target(
@@ -188,9 +188,9 @@ if rvy_test_cc_found
           output: elf_name,
           build_subdir: rvy_cheri_ver, # requires Meson >= 1.10.0
           command: [rvy_test_cc, '--target=riscv' + xlen.to_string(),
-                    '-march=' + march, '-mno-relax'] + rvy_cflags_cheri +
-                   ['-nostdlib', '-static', '-fuse-ld=lld',
-                    '-Wl,-T,' + (rvy_src_dir / 'link.ld'),
+                    '-march=rv@0@g'.format(xlen)] + rvy_common_ldflags +
+                   rvy_cflags_cheri +
+                   ['-Wl,-T,' + (rvy_src_dir / 'link.ld'),
                     '@INPUT@', '-o', '@OUTPUT@'],
           depend_files: rvy_depend_files,
           build_by_default: not used_as_qemu_submodule,
@@ -206,45 +206,21 @@ if rvy_test_cc_found
   # profile each implies.
   rvy_qemu_targets = ['riscv64y', 'riscv32y',
                       'riscv64cheristd', 'riscv32cheristd']
+  rvy_qemu_entries = []
   rvy_emulators_to_test = []
+  rvy_standalone_expect_emulators = false
   if used_as_qemu_submodule
     # Included from QEMU's build: the target name says the profile exactly.
     # riscv{64,32}y defaults to 0.9.10 and also runs 0.9.9 via rvy_spec=0.9.9.
     foreach target_base : rvy_qemu_targets
       if (target_base + '-softmmu') in target_dirs
         rvy_emulator = emulators['qemu-system-' + target_base]
-        xlen = target_base.contains('riscv32') ? 32 : 64
-        if target_base.contains('cheristd')
-          rvy_emulators_to_test += [{
-            'label': target_base,
-            'path': rvy_emulator.full_path(),
-            'depends': [rvy_emulator],
-            'xlen': xlen,
-            'cheri_version': '0.9.3',
-            'harness': 'qemu',
-          }]
-        else
-          rvy_emulators_to_test += [
-            {
-              'label': target_base,
-              'path': rvy_emulator.full_path(),
-              'depends': [rvy_emulator],
-              'xlen': xlen,
-              'cheri_version': '0.9.10',
-              'harness': 'qemu',
-              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.10'],
-            },
-            {
-              'label': target_base + '-0.9.9',
-              'path': rvy_emulator.full_path(),
-              'depends': [rvy_emulator],
-              'xlen': xlen,
-              'cheri_version': '0.9.9',
-              'harness': 'qemu',
-              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.9'],
-            },
-          ]
-        endif
+        rvy_qemu_entries += [{
+          'path': rvy_emulator.full_path(),
+          'depends': [rvy_emulator],
+          'xlen': target_base.contains('riscv32') ? 32 : 64,
+          'is_rvy': not target_base.contains('cheristd'),
+        }]
       endif
     endforeach
   else
@@ -266,6 +242,7 @@ if rvy_test_cc_found
       message('no emulator given: building test ELFs only; pass -Dqemu=..., ' +
               '-Dsail_0910=..., -Dsail_099=..., or -Dsail_093=... to also register test targets')
     else
+      rvy_standalone_expect_emulators = true
       qemu_inputs = qemu_opts
       if qemu_inputs.length() == 0 and infer_paths
         rvy_sdk_bin = fs.expanduser('~/cheri/output/sdk/bin')
@@ -311,159 +288,143 @@ if rvy_test_cc_found
         cpu_help = run_command(qemu_bin, '-cpu', 'help', check: false)
         dev_out = dev_help.stdout() + dev_help.stderr()
         cpu_out = cpu_help.stdout()
-        xlen = cpu_out.contains('rv32') ? 32 : 64
-        if dev_out.contains('rvy_spec')
-          rvy_emulators_to_test += [
-            {
-              'label': 'riscv@0@y'.format(xlen),
-              'path': qemu_bin,
-              'depends': [],
-              'xlen': xlen,
-              'cheri_version': '0.9.10',
-              'harness': 'qemu',
-              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.10'],
-            },
-            {
-              'label': 'riscv@0@y-0.9.9'.format(xlen),
-              'path': qemu_bin,
-              'depends': [],
-              'xlen': xlen,
-              'cheri_version': '0.9.9',
-              'harness': 'qemu',
-              'qemu_args': ['-global', 'riscv-cpu.rvy_spec=0.9.9'],
-            },
-          ]
-        elif dev_out.contains('cheri_pte') or dev_out.contains('Zyhybrid')
-          rvy_emulators_to_test += [{
-            'label': 'riscv@0@cheristd'.format(xlen),
-            'path': qemu_bin,
-            'depends': [],
-            'xlen': xlen,
-            'cheri_version': '0.9.3',
-            'harness': 'qemu',
-          }]
-        else
+        is_rvy = dev_out.contains('rvy_spec')
+        if not is_rvy and not (dev_out.contains('cheri_pte') or dev_out.contains('Zyhybrid'))
           error('@0@ does not support RVY (rvy_spec) or CHERI 0.9.3'.format(qemu_bin))
+        endif
+        rvy_qemu_entries += [{
+          'path': qemu_bin,
+          'depends': [],
+          'xlen': cpu_out.contains('rv32') ? 32 : 64,
+          'is_rvy': is_rvy,
+        }]
+      endforeach
+    endif
+  endif
+
+  foreach q : rvy_qemu_entries
+    xlen = q['xlen']
+    if q['is_rvy']
+      foreach spec : [
+        {'suffix': '', 'ver': '0.9.10'},
+        {'suffix': '-0.9.9', 'ver': '0.9.9'},
+      ]
+        rvy_emulators_to_test += [{
+          'label': 'riscv@0@y@1@'.format(xlen, spec['suffix']),
+          'path': q['path'],
+          'depends': q['depends'],
+          'xlen': xlen,
+          'cheri_version': spec['ver'],
+          'harness': 'qemu',
+          'qemu_args': ['-global', 'riscv-cpu.rvy_spec=' + spec['ver']],
+        }]
+      endforeach
+    else
+      rvy_emulators_to_test += [{
+        'label': 'riscv@0@cheristd'.format(xlen),
+        'path': q['path'],
+        'depends': q['depends'],
+        'xlen': xlen,
+        'cheri_version': '0.9.3',
+        'harness': 'qemu',
+      }]
+    endif
+  endforeach
+
+  if rvy_standalone_expect_emulators
+    rvy_sail_bin_names = ['sail_riscv_sim', 'riscv_sim_rv64d', 'riscv_sim_rv32d',
+                          'cheri_riscv_sim_RV64', 'cheri_riscv_sim_RV32']
+    foreach sail_opt : [
+      {'opt': 'sail_0910', 'label': 'sail-0.9.10', 'cheri_version': '0.9.10'},
+      {'opt': 'sail_099', 'label': 'sail-0.9.9', 'cheri_version': '0.9.9'},
+      {'opt': 'sail_093', 'label': 'sail-0.9.3', 'cheri_version': '0.9.3'},
+    ]
+      sail_bins = []
+      foreach sail_entry : get_option(sail_opt['opt'])
+        sail_path = fs.expanduser(sail_entry)
+        if fs.is_file(sail_path)
+          sail_bins += [sail_path]
+        elif fs.is_dir(sail_path)
+          sail_found = 0
+          foreach bin_name : rvy_sail_bin_names
+            cand = ''
+            foreach subpath : [bin_name, 'c_emulator' / bin_name, 'bin' / bin_name]
+              if cand == '' and fs.exists(sail_path / subpath)
+                cand = sail_path / subpath
+              endif
+            endforeach
+            if cand != ''
+              sail_found += 1
+              sail_bins += [cand]
+              if bin_name == 'sail_riscv_sim'
+                break
+              endif
+            endif
+          endforeach
+          if sail_found == 0
+            error('-D@0@=@1@ contains no Sail simulator binaries'
+                  .format(sail_opt['opt'], sail_entry))
+          endif
+        else
+          error('-D@0@: @1@ not found'.format(sail_opt['opt'], sail_entry))
         endif
       endforeach
 
-      rvy_sail_bin_names = ['sail_riscv_sim', 'riscv_sim_rv64d', 'riscv_sim_rv32d',
-                            'cheri_riscv_sim_RV64', 'cheri_riscv_sim_RV32']
-      foreach sail_opt : [
-        {'opt': 'sail_0910', 'label': 'sail-0.9.10', 'cheri_version': '0.9.10'},
-        {'opt': 'sail_099', 'label': 'sail-0.9.9', 'cheri_version': '0.9.9'},
-        {'opt': 'sail_093', 'label': 'sail-0.9.3', 'cheri_version': '0.9.3'},
-      ]
-        sail_bins = []
-        foreach sail_entry : get_option(sail_opt['opt'])
-          sail_path = fs.expanduser(sail_entry)
-          if fs.is_file(sail_path)
-            sail_bins += [sail_path]
-          elif fs.is_dir(sail_path)
-            sail_found = 0
-            foreach bin_name : rvy_sail_bin_names
-              cand = ''
-              foreach subpath : [bin_name, 'c_emulator' / bin_name, 'bin' / bin_name]
-                if cand == '' and fs.exists(sail_path / subpath)
-                  cand = sail_path / subpath
-                endif
-              endforeach
-              if cand != ''
-                sail_found += 1
-                sail_bins += [cand]
-                if bin_name == 'sail_riscv_sim'
-                  break
-                endif
+      foreach sail_bin : sail_bins
+        arch_probe = run_command(sail_bin, '-a', check: false)
+        arch_str = arch_probe.stdout().strip()
+        if arch_probe.returncode() == 0 and (arch_str == 'RV32' or arch_str == 'RV64')
+          sail_profiles = [{'xlen': arch_str == 'RV32' ? 32 : 64, 'sail_args': []}]
+        else
+          cfg_probe = run_command(sail_bin, '--print-default-config', check: false)
+          if cfg_probe.returncode() == 0
+            sail_bin_dir = fs.parent(sail_bin)
+            rv32_cfg = ''
+            foreach cfg_rel : ['../share/sail_riscv/config/rv32d.json',
+                               '../config/rv32d.json',
+                               '../../config/rv32d.json',
+                               'config/rv32d.json']
+              if rv32_cfg == '' and fs.exists(sail_bin_dir / cfg_rel)
+                rv32_cfg = sail_bin_dir / cfg_rel
               endif
             endforeach
-            if sail_found == 0
-              error('-D@0@=@1@ contains no Sail simulator binaries'
-                    .format(sail_opt['opt'], sail_entry))
+            if rv32_cfg == ''
+              error('could not find rv32d.json relative to ' + sail_bin)
             endif
+            sail_profiles = [
+              {'xlen': 64, 'sail_args': []},
+              {'xlen': 32, 'sail_args': ['--config', rv32_cfg]},
+            ]
           else
-            error('-D@0@: @1@ not found'.format(sail_opt['opt'], sail_entry))
+            sail_name = fs.name(sail_bin)
+            xlen = (sail_name.contains('riscv32') or sail_name.contains('rv32') or
+                    sail_name.contains('RV32')) ? 32 : 64
+            sail_profiles = [{'xlen': xlen, 'sail_args': []}]
           endif
-        endforeach
-
-        foreach sail_bin : sail_bins
-          arch_probe = run_command(sail_bin, '-a', check: false)
-          arch_str = arch_probe.stdout().strip()
-          if arch_probe.returncode() == 0 and (arch_str == 'RV32' or arch_str == 'RV64')
-            xlen = arch_str == 'RV32' ? 32 : 64
-            rvy_emulators_to_test += [{
-              'label': '@0@-rv@1@'.format(sail_opt['label'], xlen),
-              'path': sail_bin,
-              'depends': [],
-              'xlen': xlen,
-              'cheri_version': sail_opt['cheri_version'],
-              'harness': 'sail',
-              'svyrg_traps_conservatively': true,
-            }]
-          else
-            cfg_probe = run_command(sail_bin, '--print-default-config', check: false)
-            if cfg_probe.returncode() == 0
-              sail_bin_dir = fs.parent(sail_bin)
-              rv32_cfg = ''
-              foreach cfg_rel : ['../share/sail_riscv/config/rv32d.json',
-                                 '../config/rv32d.json',
-                                 '../../config/rv32d.json',
-                                 'config/rv32d.json']
-                if rv32_cfg == '' and fs.exists(sail_bin_dir / cfg_rel)
-                  rv32_cfg = sail_bin_dir / cfg_rel
-                endif
-              endforeach
-              if rv32_cfg == ''
-                error('could not find rv32d.json relative to ' + sail_bin)
-              endif
-              rvy_emulators_to_test += [
-                {
-                  'label': '@0@-rv64'.format(sail_opt['label']),
-                  'path': sail_bin,
-                  'depends': [],
-                  'xlen': 64,
-                  'cheri_version': sail_opt['cheri_version'],
-                  'harness': 'sail',
-                  'svyrg_traps_conservatively': true,
-                },
-                {
-                  'label': '@0@-rv32'.format(sail_opt['label']),
-                  'path': sail_bin,
-                  'depends': [],
-                  'xlen': 32,
-                  'cheri_version': sail_opt['cheri_version'],
-                  'harness': 'sail',
-                  'sail_args': ['--config', rv32_cfg],
-                  'svyrg_traps_conservatively': true,
-                },
-              ]
-            else
-              sail_name = fs.name(sail_bin)
-              xlen = (sail_name.contains('riscv32') or sail_name.contains('rv32') or
-                      sail_name.contains('RV32')) ? 32 : 64
-              rvy_emulators_to_test += [{
-                'label': '@0@-rv@1@'.format(sail_opt['label'], xlen),
-                'path': sail_bin,
-                'depends': [],
-                'xlen': xlen,
-                'cheri_version': sail_opt['cheri_version'],
-                'harness': 'sail',
-                'svyrg_traps_conservatively': true,
-              }]
-            endif
-          endif
+        endif
+        foreach sp : sail_profiles
+          rvy_emulators_to_test += [{
+            'label': '@0@-rv@1@'.format(sail_opt['label'], sp['xlen']),
+            'path': sail_bin,
+            'depends': [],
+            'xlen': sp['xlen'],
+            'cheri_version': sail_opt['cheri_version'],
+            'harness': 'sail',
+            'sail_args': sp['sail_args'],
+            'svyrg_traps_conservatively': true,
+          }]
         endforeach
       endforeach
+    endforeach
 
-      if rvy_emulators_to_test.length() == 0
-        error('no emulators found under ~/cheri/output/sdk/bin; pass -Dqemu=..., ' +
-              '-Dsail_0910=..., -Dsail_099=..., or -Dsail_093=... explicitly')
-      endif
+    if rvy_emulators_to_test.length() == 0
+      error('no emulators found under ~/cheri/output/sdk/bin; pass -Dqemu=..., ' +
+            '-Dsail_0910=..., -Dsail_099=..., or -Dsail_093=... explicitly')
     endif
   endif
 
   rvy_target_info_elfs = {}
   foreach emulator : rvy_emulators_to_test
-    march = emulator['xlen'] == 32 ? 'rv32g' : 'rv64g'
     machines = emulator['harness'] == 'sail' ? ['sail'] : rvy_machines
     foreach machine : machines
       info_slug = (emulator['harness'] == 'sail' ? emulator['label'] :
@@ -487,9 +448,9 @@ if rvy_test_cc_found
             input: target_info_c,
             output: 'target_info_' + info_slug + '.elf',
             command: [rvy_test_cc, '--target=riscv' + emulator['xlen'].to_string(),
-                      '-march=' + march, '-mno-relax', '-std=c11',
-                      '-I' + rvy_src_dir, '-ffreestanding', '-nostdlib',
-                      '-static', '-fuse-ld=lld',
+                      '-march=rv@0@g'.format(emulator['xlen'])] +
+                     rvy_common_ldflags +
+                     ['-std=c11', '-I' + rvy_src_dir, '-ffreestanding',
                       '-Wl,-T,' + (rvy_src_dir / 'target-info.ld'),
                       '@INPUT@', '-o', '@OUTPUT@'],
             depend_files: files('target-info.h', 'target-info.ld'),
