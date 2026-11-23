@@ -11,7 +11,10 @@
  *     EXPECT_TVAL reg                      ... with this fault address in mtval
  *     EXPECT_EPC_TAG tag                   ... with a PCC of this tag
  *     EXPECT_TAG reg, tag                  capability in reg carries tag
+ *     EXPECT_LEN reg, len                  capability in reg has length len
+ *     EXPECT_PERMS reg, mask, val[, tag]   (YPERMR(reg) & mask) == val and tag
  *     EXPECT_EQ r1, r2                     r1 == r2
+ *     EXPECT_EQ_IMM reg, imm               reg == imm
  *     EXPECT_NE r1, r2                     r1 != r2
  *     EXPECT_ZERO reg                      reg == 0
  *     EXPECT_NONZERO reg                   reg != 0
@@ -54,11 +57,13 @@
 
 /* Standard RISC-V causes. */
 #define CAUSE_MISALIGNED_FETCH     0
+#define CAUSE_FETCH_ACCESS_FAULT   1
 #define CAUSE_ILLEGAL_INSN         2
 #define CAUSE_LOAD_ACCESS_FAULT    5
 #define CAUSE_STORE_ACCESS_FAULT   7
 #define CAUSE_U_ECALL              8
 #define CAUSE_S_ECALL              9
+#define CAUSE_FETCH_PAGE_FAULT    12
 #define CAUSE_LOAD_PAGE_FAULT     13
 #define CAUSE_STORE_PAGE_FAULT    15
 
@@ -244,24 +249,33 @@ __rvy_used_resume_after_fault = 1
     j    fail
 .endm
 
-.macro EXPECT_NO_TRAP
+/* Define EXPECT_<name> (non-fatal) and ASSERT_<name> (fatal) from _CHECK_<name>. */
+#define DEFINE_CHECK_0(name) \
+.macro EXPECT_##name; _CHECK_##name EXPECT_FAIL; .endm; \
+.macro ASSERT_##name; _CHECK_##name ASSERT_FAIL; .endm
+
+#define DEFINE_CHECK_1(name, a) \
+.macro EXPECT_##name a; _CHECK_##name EXPECT_FAIL, \a; .endm; \
+.macro ASSERT_##name a; _CHECK_##name ASSERT_FAIL, \a; .endm
+
+#define DEFINE_CHECK_2(name, a, b) \
+.macro EXPECT_##name a, b; _CHECK_##name EXPECT_FAIL, \a, \b; .endm; \
+.macro ASSERT_##name a, b; _CHECK_##name ASSERT_FAIL, \a, \b; .endm
+
+.macro _CHECK_NO_TRAP on_fail
     beqz trap_count, .Lexpect_ok_\@
-    EXPECT_FAIL
+    \on_fail
 .Lexpect_ok_\@:
     CLEAR_TRAPS
 .endm
-
-.macro ASSERT_NO_TRAP
-    bnez trap_count, fail
-    CLEAR_TRAPS
-.endm
+DEFINE_CHECK_0(NO_TRAP)
 
 /*
  * Exactly one trap since the last expectation, reporting \cause. \tval2 is
  * only checked in 0.9.3 builds, where the capability cause and access type
  * live there rather than in mcause.
  */
-.macro EXPECT_TRAP cause, tval2=0
+.macro _CHECK_TRAP on_fail, cause, tval2=0
     li   t5, 1
     bne  t5, trap_count, .Lexpect_fail_\@
     li   t5, \cause
@@ -272,21 +286,15 @@ __rvy_used_resume_after_fault = 1
 #endif
     j    .Lexpect_ok_\@
 .Lexpect_fail_\@:
-    EXPECT_FAIL
+    \on_fail
 .Lexpect_ok_\@:
     CLEAR_TRAPS
 .endm
-
+.macro EXPECT_TRAP cause, tval2=0
+    _CHECK_TRAP EXPECT_FAIL, \cause, \tval2
+.endm
 .macro ASSERT_TRAP cause, tval2=0
-    li   t5, 1
-    bne  t5, trap_count, fail
-    li   t5, \cause
-    bne  t5, trap_cause, fail
-#ifdef CHERI_093
-    li   t5, \tval2
-    bne  t5, trap_tval, fail
-#endif
-    CLEAR_TRAPS
+    _CHECK_TRAP ASSERT_FAIL, \cause, \tval2
 .endm
 
 /*
@@ -296,7 +304,7 @@ __rvy_used_resume_after_fault = 1
  * and an illegal instruction means it never executed at all, so this is an
  * allow-list of the two access faults rather than a list of what to reject.
  */
-.macro EXPECT_ONLY_MEMORY_FAULT
+.macro _CHECK_ONLY_MEMORY_FAULT on_fail
     beqz trap_count, .Lexpect_ok_\@
     li   t5, 1
     bne  t5, trap_count, .Lexpect_fail_\@
@@ -305,23 +313,11 @@ __rvy_used_resume_after_fault = 1
     li   t5, CAUSE_STORE_ACCESS_FAULT
     beq  t5, trap_cause, .Lexpect_ok_\@
 .Lexpect_fail_\@:
-    EXPECT_FAIL
+    \on_fail
 .Lexpect_ok_\@:
     CLEAR_TRAPS
 .endm
-
-.macro ASSERT_ONLY_MEMORY_FAULT
-    beqz trap_count, .Lexpect_ok_\@
-    li   t5, 1
-    bne  t5, trap_count, fail
-    li   t5, CAUSE_LOAD_ACCESS_FAULT
-    beq  t5, trap_cause, .Lexpect_ok_\@
-    li   t5, CAUSE_STORE_ACCESS_FAULT
-    beq  t5, trap_cause, .Lexpect_ok_\@
-    j    fail
-.Lexpect_ok_\@:
-    CLEAR_TRAPS
-.endm
+DEFINE_CHECK_0(ONLY_MEMORY_FAULT)
 
 /*
  * Whether misa.C can be cleared at all is implementation-defined (WARL): the
@@ -357,129 +353,163 @@ __rvy_used_resume_after_fault = 1
 .Lpmp_ok_\@:
 .endm
 
-/* The trap was reported against the address in \reg. */
-.macro EXPECT_EPC reg
-    sub  t5, trap_epc, \reg
-    beqz t5, .Lexpect_ok_\@
-    EXPECT_FAIL
-.Lexpect_ok_\@:
-.endm
-
-.macro ASSERT_EPC reg
-    sub  t5, trap_epc, \reg
-    bnez t5, fail
+/* Activate page-based translation with root table \pt and satp mode \mode. */
+.macro ENABLE_PAGING pt, mode
+    lla   t5, \pt
+    srli  t5, t5, 12
+    li    t6, \mode
+    or    t5, t5, t6
+    csrw  CSR_SATP, t5
+    sfence.vma
 .endm
 
 /*
- * ... with this fault address in mtval (on 0.9.3 QEMU only populates mtval2
- * for CAUSE_CHERI_ANY, while standard RISC-V exceptions still write mtval).
+ * Enter privilege mode \mpp (MSTATUS_MPP_S for S-mode, 0 for U-mode) at
+ * \target, optionally recording \cont in m_continue for an ecall return to
+ * M-mode. Preserves the caller's CHERI execution mode via PCC when misa.Y is
+ * set, and writes a plain address when misa.Y is clear.
  */
-.macro EXPECT_TVAL reg
-#ifdef CHERI_093
-    li   t5, CAUSE_CHERI_ANY
-    beq  t5, trap_cause, .Lexpect_ok_\@
+.macro ENTER_PRIV mpp, target, cont=
+    li     t5, MSTATUS_MPP_MASK
+    csrc   CSR_MSTATUS, t5
+    .if (\mpp) != 0
+    li     t5, \mpp
+    csrs   CSR_MSTATUS, t5
+    .endif
+    lla    t5, \target
+#ifndef CHERI_093
+    csrr   t6, CSR_MISA
+    slli   t6, t6, (XLEN - 1 - 24)
+    bgez   t6, .Lenter_priv_mepc_\@
 #endif
-    csrr t5, CSR_MTVAL
-    sub  t5, t5, \reg
-    beqz t5, .Lexpect_ok_\@
-    EXPECT_FAIL
-.Lexpect_ok_\@:
+    auipc  t6, 0
+    YADDRW t5, t6, t5
+.Lenter_priv_mepc_\@:
+    csrw   CSR_MEPC, t5
+    .ifnb \cont
+    lla    m_continue, \cont
+    .endif
+    mret
 .endm
 
-.macro ASSERT_TVAL reg
+/* The trap was reported against the address in \reg. */
+.macro _CHECK_EPC on_fail, reg
+    sub  t5, trap_epc, \reg
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_1(EPC, reg)
+
+/*
+ * ... with this fault address in mtval. On RVY the handler already saved
+ * mtval into trap_tval (so this also works in S-mode and after ecall); on
+ * 0.9.3 trap_tval holds mtval2 instead, and QEMU only populates mtval for
+ * standard RISC-V exceptions, not CAUSE_CHERI_ANY.
+ */
+.macro _CHECK_TVAL on_fail, reg
 #ifdef CHERI_093
     li   t5, CAUSE_CHERI_ANY
     beq  t5, trap_cause, .Lexpect_ok_\@
-#endif
     csrr t5, CSR_MTVAL
     sub  t5, t5, \reg
-    bnez t5, fail
+#else
+    sub  t5, trap_tval, \reg
+#endif
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
 .Lexpect_ok_\@:
 .endm
+DEFINE_CHECK_1(TVAL, reg)
 
 /* ... and the capability left in mepc had this tag (TRAP_HANDLER_PCC only). */
-.macro EXPECT_EPC_TAG tag
+.macro _CHECK_EPC_TAG on_fail, tag
     li   t5, \tag
     beq  t5, trap_epc_tag, .Lexpect_ok_\@
-    EXPECT_FAIL
+    \on_fail
 .Lexpect_ok_\@:
 .endm
-
-.macro ASSERT_EPC_TAG tag
-    li   t5, \tag
-    bne  t5, trap_epc_tag, fail
-.endm
+DEFINE_CHECK_1(EPC_TAG, tag)
 
 /* The capability in \reg carries \tag. */
-.macro EXPECT_TAG reg, tag
+.macro _CHECK_TAG on_fail, reg, tag
     YTAGR t5, \reg
     li   t6, \tag
     beq  t6, t5, .Lexpect_ok_\@
-    EXPECT_FAIL
+    \on_fail
 .Lexpect_ok_\@:
 .endm
-
-.macro ASSERT_TAG reg, tag
-    YTAGR t5, \reg
-    li   t6, \tag
-    bne  t6, t5, fail
-.endm
+DEFINE_CHECK_2(TAG, reg, tag)
 
 /* Register value comparisons (safe in capability mode for any register pair). */
-.macro EXPECT_EQ r1, r2
+.macro _CHECK_EQ on_fail, r1, r2
     sub  t5, \r1, \r2
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(EQ, r1, r2)
+
+.macro _CHECK_NE on_fail, r1, r2
+    sub  t5, \r1, \r2
+    bnez t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(NE, r1, r2)
+
+.macro _CHECK_ZERO on_fail, reg
+    beqz \reg, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_1(ZERO, reg)
+
+.macro _CHECK_NONZERO on_fail, reg
+    bnez \reg, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_1(NONZERO, reg)
+
+.macro _CHECK_CAP_EQ on_fail, c1, c2
+    YEQ  t5, \c1, \c2
+    bnez t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(CAP_EQ, c1, c2)
+
+.macro _CHECK_EQ_IMM on_fail, reg, imm
+    li   t6, \imm
+    sub  t5, \reg, t6
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(EQ_IMM, reg, imm)
+
+.macro _CHECK_LEN on_fail, reg, len
+    YLENR t5, \reg
+    li   t6, \len
+    sub  t5, t5, t6
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(LEN, reg, len)
+
+/* The capability in \reg carries \tag and has (\mask & YPERMR(\reg)) == \val. */
+.macro EXPECT_PERMS reg, mask, val, tag=1
+    EXPECT_TAG \reg, \tag
+    YPERMR t5, \reg
+    li   t6, \mask
+    and  t5, t5, t6
+    li   t6, \val
+    sub  t5, t5, t6
     beqz t5, .Lexpect_ok_\@
     EXPECT_FAIL
 .Lexpect_ok_\@:
-.endm
-
-.macro ASSERT_EQ r1, r2
-    sub  t5, \r1, \r2
-    bnez t5, fail
-.endm
-
-.macro EXPECT_NE r1, r2
-    sub  t5, \r1, \r2
-    bnez t5, .Lexpect_ok_\@
-    EXPECT_FAIL
-.Lexpect_ok_\@:
-.endm
-
-.macro ASSERT_NE r1, r2
-    sub  t5, \r1, \r2
-    beqz t5, fail
-.endm
-
-.macro EXPECT_ZERO reg
-    beqz \reg, .Lexpect_ok_\@
-    EXPECT_FAIL
-.Lexpect_ok_\@:
-.endm
-
-.macro ASSERT_ZERO reg
-    bnez \reg, fail
-.endm
-
-.macro EXPECT_NONZERO reg
-    bnez \reg, .Lexpect_ok_\@
-    EXPECT_FAIL
-.Lexpect_ok_\@:
-.endm
-
-.macro ASSERT_NONZERO reg
-    beqz \reg, fail
-.endm
-
-.macro EXPECT_CAP_EQ c1, c2
-    YEQ  t5, \c1, \c2
-    bnez t5, .Lexpect_ok_\@
-    EXPECT_FAIL
-.Lexpect_ok_\@:
-.endm
-
-.macro ASSERT_CAP_EQ c1, c2
-    YEQ  t5, \c1, \c2
-    beqz t5, fail
 .endm
 
 /*
@@ -507,7 +537,7 @@ __rvy_used_resume_after_fault = 1
     beq  t6, t5, 7f
     li   t5, CAUSE_S_ECALL
     bne  t6, t5, 8f
-7:  li   t5, 0x1800              /* mstatus.MPP = M */
+7:  li   t5, MSTATUS_MPP_M
     csrs CSR_MSTATUS, t5
 #ifndef CHERI_093
     csrr t5, CSR_MISA

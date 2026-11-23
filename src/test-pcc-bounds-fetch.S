@@ -151,14 +151,11 @@ _start:
     NEXT_TEST "all 4 bytes in bounds so the fault moves to the next instruction"
     EXPECT_FETCH_FAULT stub_mixed, 6, 6, 1
 
-    YMODESWI
     TEST_PASS
 
 fail_inexact_bounds:
     NEXT_TEST "ybndsw could not encode the bounds this case needs"
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 /*

@@ -67,10 +67,8 @@ _start:
     LY   t3, 0(a3)
     EXPECT_TAG t3, 1             /* a3 slot also stays tagged */
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

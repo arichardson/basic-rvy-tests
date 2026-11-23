@@ -40,10 +40,7 @@ _start:
     YADDRW a0, a0, t0
     li   t1, DROP_MASK(PERM_ASR)
     DROP_PERMS a0, a0, t1
-    YPERMR t2, a0
-    li   t1, PERM_ASR            /* DROP_MASK may have been complemented */
-    and  t2, t2, t1
-    EXPECT_ZERO t2               /* ASR really is gone */
+    EXPECT_PERMS a0, PERM_ASR, 0 /* ASR really is gone */
     jalr ra, a0, 0
     EXPECT_NO_TRAP               /* the stub consumed all of its own traps */
 
@@ -52,11 +49,8 @@ _start:
     csrr t0, CSR_MTVEC
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 /*

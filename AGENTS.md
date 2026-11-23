@@ -19,7 +19,8 @@ change makes it wrong, the comment is part of the change.
    versions have the behaviour, `'min_version': '<ver>'` naming the spec
    version that introduced it (with a comment explaining the behaviour change),
    or `'cheri_versions': ['0.9.9']` when a test is specific to one version.
-   **A test not in that list never runs**, and nothing will tell you so.
+   **A test not in that list never runs** (`python3 src/check-suite.py` checks
+   this).
 3. Place exactly one `TRAP_HANDLER` or `TRAP_HANDLER_PCC` in the file.
 4. End with `TEST_PASS`, and a `fail:` label reaching `TEST_FAIL`.
 
@@ -114,10 +115,11 @@ worked example.
 
 ## Verify before committing
 
-Run the full suite on all four QEMU targets and, for anything a 0.9.3 build
-covers, the Sail model:
+Run the hygiene checks and the full suite on all four QEMU targets and the
+available Sail models (0.9.3 and 0.9.9+):
 
 ```sh
+python3 src/check-suite.py
 ./src/run-rvy-tests.sh /path/to/qemu/build
 ./src/run-rvy-tests.sh /path/to/sail_riscv_sim
 ```

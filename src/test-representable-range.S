@@ -34,32 +34,18 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#if __riscv_xlen == 64
 #define REP_E0_LEN   64
-#define REP_E0_BELOW 0x1000
-#define REP_E0_ABOVE 0x3000
-#define REP_E0_SPAN  0x4000
-#define REP_E1_LEN   0x2000
-#define REP_E1_BELOW 0x2000
-#define REP_E1_ABOVE 0x6000
-#define REP_E1_SPAN  0x8000
-#else
-#define REP_E0_LEN   64
-#define REP_E0_BELOW 0x100
-#define REP_E0_ABOVE 0x300
-#define REP_E0_SPAN  0x400
-#define REP_E1_LEN   0x200
-#define REP_E1_BELOW 0x200
-#define REP_E1_ABOVE 0x600
-#define REP_E1_SPAN  0x800
-#endif
+#define REP_E0_ABOVE (3 * REP_E0_BELOW)
+#define REP_E0_SPAN  (4 * REP_E0_BELOW)
+#define REP_E1_LEN   (2 * REP_E0_BELOW)
+#define REP_E1_BELOW (2 * REP_E0_BELOW)
+#define REP_E1_ABOVE (6 * REP_E0_BELOW)
+#define REP_E1_SPAN  (8 * REP_E0_BELOW)
 
 .macro EXPECT_BOUNDS reg, base_reg, len
     YBASER t3, \reg
     EXPECT_EQ t3, \base_reg
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
+    EXPECT_LEN \reg, \len
 .endm
 
 .option norvc
@@ -298,10 +284,8 @@ _start:
     EXPECT_TAG a6, 0             /* auipc -0x10000 < rep_base */
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 .balign 64

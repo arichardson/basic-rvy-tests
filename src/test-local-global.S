@@ -62,16 +62,6 @@
 #define META_G_SHIFT 24
 #endif
 
-/* YPERMR of \reg has the bits in \mask set to \val, and \reg has tag \tag. */
-.macro EXPECT_PERMS reg, mask, val, tag=1
-    EXPECT_TAG \reg, \tag
-    YPERMR t3, \reg
-    li   t4, \mask
-    and  t3, t3, t4
-    li   t4, \val
-    EXPECT_EQ t4, t3
-.endm
-
 .option norvc
 .section .text
 .globl _start
@@ -121,8 +111,7 @@ _start:
     SY   global_cap, 0(auth)
     LY   a3, 0(auth)
     EXPECT_NO_TRAP
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
 
     NEXT_TEST "a global authority without LG clears G and LG on RVY (EL only on 0.9.3)"
     li   t1, DROP_MASK(PERM_LG)
@@ -149,8 +138,7 @@ _start:
     DROP_PERMS a4, auth, t1
     LY   a3, 0(a4)
     EXPECT_PERMS a3, PERM_G|PERM_LG, PERM_G|PERM_LG
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
 
     NEXT_TEST "an authority without LM clears W and LM (and SL on RVY) from the loaded capability"
     li   t1, DROP_MASK(PERM_LM)
@@ -205,8 +193,7 @@ _start:
     DROP_PERMS a4, auth, t1
     LY   a3, 0(a4)
     EXPECT_PERMS a3, PERM_G|PERM_LG, PERM_G|PERM_LG
-    YEQ  t3, a3, a5
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, a5
 
     NEXT_TEST "an authority without LM leaves W, LM, and SL of a sealed capability alone"
     li   t1, DROP_MASK(PERM_LM)
@@ -287,8 +274,7 @@ _start:
     SY   global_cap, 32(a4)
     LY   a3, 32(auth)
     EXPECT_TAG a3, 1
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
 
     /* A local sentry, made by clearing G before sealing so 0.9.3 can too. */
     auipc a6, 0
@@ -306,15 +292,13 @@ _start:
     SY   a6, 16(auth)
     LY   a3, 16(auth)
     EXPECT_TAG a3, 1
-    YEQ  t3, a3, a6
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, a6
 
     NEXT_TEST "control: a sealed global capability stored without SL keeps its tag"
     SY   a5, 16(a4)
     LY   a3, 16(auth)
     EXPECT_TAG a3, 1
-    YEQ  t3, a3, a5
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, a5
 
     NEXT_TEST "an untagged local capability stored without SL is stored unchanged"
     SY   local_cap, 48(auth)
@@ -324,8 +308,7 @@ _start:
     SY   a3, 16(a4)
     EXPECT_NO_TRAP
     LY   a0, 16(auth)
-    YEQ  t3, a0, a3
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a0, a3
 
     NEXT_TEST "an authority without C stores a global capability untagged"
     li   t1, DROP_MASK(PERM_C)
@@ -346,8 +329,7 @@ _start:
     EXPECT_TAG a3, 0
     YBLD a5, global_cap, a3
     EXPECT_TAG a5, 1
-    YEQ  t3, a5, local_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a5, local_cap
     /* Clear the tag of the stored global_cap in memory and try to rebuild under local_cap. */
     LX   t1, 32(auth)
     SX   t1, 32(auth)
@@ -401,14 +383,12 @@ _start:
     EXPECT_ZERO t2
     LY   a3, 0(auth)
     EXPECT_TAG a3, 1
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
 
     NEXT_TEST "amoswap.y through an authority without SL stores a local capability untagged"
     AMOSWAP_Y a3, a4, local_cap
     EXPECT_NO_TRAP
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
     LY   a3, 0(auth)
     EXPECT_TAG a3, 0
 
@@ -417,8 +397,7 @@ _start:
     EXPECT_NO_TRAP
     LY   a3, 0(auth)
     EXPECT_TAG a3, 1
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
 
     j    zylg_enabled_done
 skip_zylg_enabled:
@@ -458,14 +437,12 @@ zylg_enabled_done:
     NEXT_TEST "without Zylg: ypermc ignores requests to clear G, LG, or SL"
     EXPECT_PERMS local_cap, PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_W, \
                             PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_W
-    YEQ  t3, local_cap, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ local_cap, global_cap
     li   t1, DROP_MASK(PERM_G | PERM_LG | PERM_SL)
     DROP_PERMS a3, auth, t1
     EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_R|PERM_W|PERM_C, \
                      PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_R|PERM_W|PERM_C
-    YEQ  t3, a3, auth
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, auth
     li   t1, DROP_MASK(~0)
     DROP_PERMS a3, auth, t1      /* clear every clearable permission */
     EXPECT_PERMS a3, PERM_R|PERM_W|PERM_C|PERM_LM|PERM_X|PERM_ASR|PERM_G|PERM_LG|PERM_SL, \
@@ -478,8 +455,7 @@ zylg_enabled_done:
     EXPECT_TAG a3, 0
 #else
     EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_SL, PERM_G|PERM_LG|PERM_SL
-    YEQ  t3, a3, a5
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, a5
 #endif
 
     NEXT_TEST "without Zylg: dropping C, R, or W leaves G, LG, and SL hardwired to 1"
@@ -509,8 +485,7 @@ zylg_enabled_done:
     EXPECT_NO_TRAP
     EXPECT_PERMS a3, PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_W, \
                      PERM_G|PERM_LG|PERM_SL|PERM_LM|PERM_W
-    YEQ  t3, a3, global_cap
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a3, global_cap
 
     NEXT_TEST "without Zylg: setting the reserved G bit or Zylg AP encodings fails integrity checks"
     YHIR t1, auth
@@ -560,10 +535,8 @@ skip_zylg_disabled:
     SKIPPABLE_BLOCK_SKIPPED "Zylg is enabled"
 zylg_disabled_done:
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

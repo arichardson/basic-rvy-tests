@@ -27,11 +27,6 @@
 #include "exceptions.h"
 
 #define root  s0                 /* ddc */
-#if __riscv_xlen == 64
-#define REP_BASE_OFFSET -4096
-#else
-#define REP_BASE_OFFSET -256
-#endif
 #define bufp  s1                 /* address of buf */
 
 /* \reg is tagged iff \tag, with base \base_reg + \off and length \len. */
@@ -40,9 +35,7 @@
     YBASER t3, \reg
     addi t4, \base_reg, \off
     EXPECT_EQ t4, t3
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
+    EXPECT_LEN \reg, \len
 .endm
 
 /* The address of \reg is \base_reg + \off. */
@@ -102,7 +95,7 @@ _start:
     li   t0, 16
     YADDRW sp, root, bufp
     YBNDSW sp, sp, t0            /* sp = [buf, buf + 16), E = 0 */
-    li   t0, REP_BASE_OFFSET
+    li   t0, -REP_E0_BELOW
     YADD sp, sp, t0              /* at the bottom of E = 0 representable range */
     EXPECT_TAG sp, 1
     C_YADDI16SP -16              /* steps below representable base */
@@ -134,12 +127,10 @@ _start:
     NEXT_TEST "c.ymv copies a full capability in capability mode"
     C_YMV a0, sp
     EXPECT_NO_TRAP
-    YEQ  t3, a0, sp
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a0, sp
     YSEALE a1, sp
     C_YMV a0, a1
-    YEQ  t3, a0, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a0, a1
 
     NEXT_TEST "integer-mode c.mv and both modes' c.add clear the capability tag"
     C_YMV a0, sp
@@ -170,8 +161,7 @@ _start:
     YMV  a2, x0
     C_LYSP a2, YLEN_BYTES
     EXPECT_NO_TRAP
-    YEQ  t3, a2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a2, a1
 
     NEXT_TEST "c.lysp uses the scaled offset: sp + 2 * YLEN_BYTES holds no capability"
     C_LYSP a2, (2 * YLEN_BYTES)
@@ -237,15 +227,13 @@ _start:
     EXPECT_NO_TRAP
     C_LY a2, 0, a0
     EXPECT_NO_TRAP
-    YEQ  t3, a2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a2, a1
     YMV  a2, x0
     C_SY a1, YLEN_BYTES, a0
     EXPECT_NO_TRAP
     C_LY a2, YLEN_BYTES, a0
     EXPECT_NO_TRAP
-    YEQ  t3, a2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a2, a1
 
     NEXT_TEST "c.ly and c.sy outside cs1's bounds take capability bounds faults"
     C_LY a2, (2 * YLEN_BYTES), a0
@@ -277,10 +265,8 @@ _start:
     C_LY a2, 0, a3
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

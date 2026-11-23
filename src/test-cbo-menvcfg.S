@@ -13,7 +13,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CBOM_LEN        64
 #define MENVCFG_CBO_ALL 0xf0         /* CBIE (3 << 4) | CBCFE (1 << 6) | CBZE (1 << 7) */
 
 .option norvc
@@ -41,16 +40,7 @@ _start:
     li   t1, MENVCFG_CBO_ALL
     csrc CSR_MENVCFG, t1
 
-    li   t1, 0x1800
-    csrc CSR_MSTATUS, t1
-    li   t1, 0x0800
-    csrs CSR_MSTATUS, t1
-    auipc t2, 0
-    lla   t1, s_cbo_disabled
-    YADDRW t2, t2, t1
-    csrw CSR_MEPC, t2
-    lla   m_continue, s_cbo_disabled_done
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_cbo_disabled, s_cbo_disabled_done
 
 s_cbo_disabled:
     NEXT_TEST "S-mode cbo.zero faults with illegal instruction when menvcfg.CBZE is clear"
@@ -79,16 +69,7 @@ s_cbo_disabled_done:
     and  t2, t2, t1
     EXPECT_EQ t2, t1
 
-    li   t1, 0x1800
-    csrc CSR_MSTATUS, t1
-    li   t1, 0x0800
-    csrs CSR_MSTATUS, t1
-    auipc t2, 0
-    lla   t1, s_cbo_enabled
-    YADDRW t2, t2, t1
-    csrw CSR_MEPC, t2
-    lla   m_continue, s_cbo_enabled_done
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_cbo_enabled, s_cbo_enabled_done
 
 s_cbo_enabled:
     NEXT_TEST "S-mode cbo.zero succeeds once menvcfg.CBZE is set"
@@ -109,7 +90,6 @@ s_cbo_enabled:
     ecall
 
 s_cbo_enabled_done:
-    YMODESWI
     TEST_PASS
 fail:
     YMODESWI

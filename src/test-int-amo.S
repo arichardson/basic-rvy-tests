@@ -22,11 +22,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-.macro CHECK reg, val
-    li   t3, \val
-    EXPECT_EQ t3, \reg
-.endm
-
 .option norvc
 .section .text
 .globl _start
@@ -43,9 +38,9 @@ _start:
     li   t1, 3
     amoadd.w t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 5
+    EXPECT_EQ_IMM t2, 5
     lw   t0, 0(a0)
-    CHECK t0, 8
+    EXPECT_EQ_IMM t0, 8
 
     NEXT_TEST "integer mode: amoadd.d returns the old value and stores the sum"
     li   t0, 0x100000000
@@ -53,9 +48,9 @@ _start:
     li   t1, 1
     amoadd.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0x100000000
+    EXPECT_EQ_IMM t2, 0x100000000
     ld   t0, 0(a0)
-    CHECK t0, 0x100000001
+    EXPECT_EQ_IMM t0, 0x100000001
 
     NEXT_TEST "integer mode: amoswap.d"
     li   t0, 0x1111
@@ -63,9 +58,9 @@ _start:
     li   t1, 0x2222
     amoswap.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0x1111
+    EXPECT_EQ_IMM t2, 0x1111
     ld   t0, 0(a0)
-    CHECK t0, 0x2222
+    EXPECT_EQ_IMM t0, 0x2222
 
     NEXT_TEST "integer mode: amoand.d"
     li   t0, 0xff00ff00ff00ff00
@@ -73,9 +68,9 @@ _start:
     li   t1, 0x0ff00ff00ff00ff0
     amoand.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0xff00ff00ff00ff00
+    EXPECT_EQ_IMM t2, 0xff00ff00ff00ff00
     ld   t0, 0(a0)
-    CHECK t0, 0x0f000f000f000f00
+    EXPECT_EQ_IMM t0, 0x0f000f000f000f00
 
     NEXT_TEST "integer mode: amoor.d"
     li   t0, 0xf0
@@ -83,9 +78,9 @@ _start:
     li   t1, 0x0f
     amoor.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0xf0
+    EXPECT_EQ_IMM t2, 0xf0
     ld   t0, 0(a0)
-    CHECK t0, 0xff
+    EXPECT_EQ_IMM t0, 0xff
 
     NEXT_TEST "integer mode: amoxor.d"
     li   t0, 0xff
@@ -93,9 +88,9 @@ _start:
     li   t1, 0x0f
     amoxor.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0xff
+    EXPECT_EQ_IMM t2, 0xff
     ld   t0, 0(a0)
-    CHECK t0, 0xf0
+    EXPECT_EQ_IMM t0, 0xf0
 
     /*
      * Memory holds -2 and rs2 is 1 for every min/max: signed, -2 < 1;
@@ -107,9 +102,9 @@ _start:
     li   t1, 1
     amomin.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, -2
+    EXPECT_EQ_IMM t2, -2
     ld   t0, 0(a0)
-    CHECK t0, -2
+    EXPECT_EQ_IMM t0, -2
 
     NEXT_TEST "integer mode: amomax.d is signed"
     li   t0, -2
@@ -117,9 +112,9 @@ _start:
     li   t1, 1
     amomax.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, -2
+    EXPECT_EQ_IMM t2, -2
     ld   t0, 0(a0)
-    CHECK t0, 1
+    EXPECT_EQ_IMM t0, 1
 
     NEXT_TEST "integer mode: amominu.d is unsigned"
     li   t0, -2
@@ -127,9 +122,9 @@ _start:
     li   t1, 1
     amominu.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, -2
+    EXPECT_EQ_IMM t2, -2
     ld   t0, 0(a0)
-    CHECK t0, 1
+    EXPECT_EQ_IMM t0, 1
 
     NEXT_TEST "integer mode: amomaxu.d is unsigned"
     li   t0, -2
@@ -137,9 +132,9 @@ _start:
     li   t1, 1
     amomaxu.d t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, -2
+    EXPECT_EQ_IMM t2, -2
     ld   t0, 0(a0)
-    CHECK t0, -2
+    EXPECT_EQ_IMM t0, -2
 
     /*
      * .W forms: the old word has bit 31 set, so rd must be sign-extended;
@@ -151,9 +146,9 @@ _start:
     li   t1, 1
     amoadd.w t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0xffffffff80000000
+    EXPECT_EQ_IMM t2, 0xffffffff80000000
     ld   t0, 0(a0)
-    CHECK t0, 0x1234567880000001
+    EXPECT_EQ_IMM t0, 0x1234567880000001
 
     NEXT_TEST "integer mode: amoswap.w sign-extends the old value"
     li   t0, 0x12345678fffffffe
@@ -161,9 +156,9 @@ _start:
     li   t1, 0x7fffffff
     amoswap.w t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, -2
+    EXPECT_EQ_IMM t2, -2
     ld   t0, 0(a0)
-    CHECK t0, 0x123456787fffffff
+    EXPECT_EQ_IMM t0, 0x123456787fffffff
 
     NEXT_TEST "integer mode: amomaxu.w compares 32-bit unsigned values"
     li   t0, 0x80000000
@@ -171,9 +166,9 @@ _start:
     li   t1, 0x7fffffff
     amomaxu.w t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0xffffffff80000000
+    EXPECT_EQ_IMM t2, 0xffffffff80000000
     lw   t0, 0(a0)
-    CHECK t0, 0xffffffff80000000
+    EXPECT_EQ_IMM t0, 0xffffffff80000000
 
     NEXT_TEST "integer mode: amomin.w compares 32-bit signed values"
     li   t0, 0x80000000
@@ -181,9 +176,9 @@ _start:
     li   t1, 0x7fffffff
     amomin.w t2, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 0xffffffff80000000
+    EXPECT_EQ_IMM t2, 0xffffffff80000000
     lw   t0, 0(a0)
-    CHECK t0, 0xffffffff80000000
+    EXPECT_EQ_IMM t0, 0xffffffff80000000
 
     NEXT_TEST "integer mode: lr.d then sc.d to the same address succeeds"
     li   t0, 7
@@ -192,10 +187,10 @@ _start:
     li   t1, 9
     sc.d a1, t1, (a0)
     EXPECT_NO_TRAP
-    CHECK t2, 7
-    CHECK a1, 0
+    EXPECT_EQ_IMM t2, 7
+    EXPECT_EQ_IMM a1, 0
     ld   t0, 0(a0)
-    CHECK t0, 9
+    EXPECT_EQ_IMM t0, 9
 
     /* The successful sc.d above consumed the reservation. */
     NEXT_TEST "integer mode: sc.d without a reservation fails"
@@ -204,7 +199,7 @@ _start:
     EXPECT_NO_TRAP
     EXPECT_NONZERO a1
     ld   t0, 0(a0)
-    CHECK t0, 9
+    EXPECT_EQ_IMM t0, 9
 
     NEXT_TEST "integer mode: aq/rl orderings execute"
     li   t0, 1
@@ -218,9 +213,9 @@ _start:
     lr.d.aqrl t2, (a0)
     sc.d.aqrl a1, t0, (a0)       /* mem 2 -> 1 */
     EXPECT_NO_TRAP
-    CHECK a1, 0
+    EXPECT_EQ_IMM a1, 0
     ld   t0, 0(a0)
-    CHECK t0, 1
+    EXPECT_EQ_IMM t0, 1
 
     /*
      * a2: a tagged capability for the 16-byte granule at a4, bounded to it,
@@ -243,9 +238,9 @@ _start:
     amoadd.d t2, t1, (a2)
     YMODESWI
     EXPECT_NO_TRAP
-    CHECK t2, 0x100000000
+    EXPECT_EQ_IMM t2, 0x100000000
     ld   t0, 0(a4)
-    CHECK t0, 0x100000001
+    EXPECT_EQ_IMM t0, 0x100000001
 
     /* a3: a tagged capability, stored into both granule slots below. */
     csrrs t0, CSR_DDC, x0
@@ -285,8 +280,6 @@ _start:
 
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

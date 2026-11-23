@@ -73,11 +73,8 @@ _start:
 1:
     EXPECT_TRAP TRAP_CAP_FETCH(CAP_BOUNDS)
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 /* Entered with PCC bounded to the two instructions below. */

@@ -36,8 +36,8 @@ _start:
     EXPECT_EQ a3, t0
 
     NEXT_TEST "mepc write immediately before mret returns to the new target"
-    li   t0, (3 << 11)           /* mstatus.MPP = M */
-    csrs mstatus, t0
+    li   t0, MSTATUS_MPP_M
+    csrs CSR_MSTATUS, t0
     lla   t0, mepc_target
     YADDRW a2, s0, t0
     /* Write mepc and return in the same basic block. */
@@ -46,11 +46,9 @@ _start:
     j    fail
 mepc_target:
 
-    YMODESWI
     TEST_PASS
 
 fail:
-    YMODESWI
     TEST_FAIL
 
     .balign 4

@@ -171,10 +171,8 @@ _start:
 #endif
 #endif /* !CHERI_093 */
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

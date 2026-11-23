@@ -14,17 +14,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CSR_SATP     0x180
-#define SATP_SV39    (8 << 60)
-
-/* Leaf PTE bits. */
-#define PTE_V 0x01
-#define PTE_R 0x02
-#define PTE_W 0x04
-#define PTE_X 0x08
-#define PTE_A 0x40
-#define PTE_D 0x80
-
 /* Not sign-extended from bit 38, so not a canonical Sv39 address. */
 #define NONCANON     (1 << 38)
 #define MOVE         0x40        /* address-only writes go here: in bounds */
@@ -60,11 +49,7 @@ _start:
     lla  t0, pagetable
     li   t1, (0x80000 << 10) | PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
     sd   t1, (2 * 8)(t0)
-    srli t0, t0, 12
-    li   t1, SATP_SV39
-    or   t0, t0, t1
-    csrw CSR_SATP, t0
-    sfence.vma
+    ENABLE_PAGING pagetable, SATP_SV39
 
     YMODESWY                     /* so csrw writes the whole capability */
 
@@ -124,18 +109,8 @@ _start:
      * targets without Zcheripte and on RVY.
      */
 .macro RUN_S_CAP label
-    YMODESWI
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, 0x0800              /* mstatus.MPP = S */
-    csrs CSR_MSTATUS, t0
-    lla  m_continue, .Lm_ret_\@
     YMODESWY
-    lla  t0, \label
-    auipc t1, 0
-    YADDRW t1, t1, t0
-    csrw CSR_MEPC, t1
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, \label, .Lm_ret_\@
 .Lm_ret_\@:
 .endm
 
@@ -150,7 +125,7 @@ _start:
     RUN_S_CAP s_load
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 #ifndef CHERI_093
-    EXPECT_EQ trap_tval, t2
+    EXPECT_TVAL t2
 #endif
 
     NEXT_TEST "an S-mode store to the non-canonical address page-faults"
@@ -158,7 +133,7 @@ _start:
     RUN_S_CAP s_store
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 #ifndef CHERI_093
-    EXPECT_EQ trap_tval, t2
+    EXPECT_TVAL t2
 #endif
 
     TEST_PASS

@@ -31,28 +31,96 @@
 #define has_zyhybrid s0
 #define has_h        s1
 
+/* Check that \csr resets to 0, Y is writable at bit 9, and bit 28 is ignored. */
+.macro CHECK_ENVCFG_RW csr
+    csrr t0, \csr
+    EXPECT_ZERO t0
+    li   t1, ENVCFG_Y
+    csrs \csr, t1
+    csrr t0, \csr
+    EXPECT_EQ t0, t1
+    li   t2, 1 << 28             /* pre-0.9.9 CRE position */
+    csrs \csr, t2
+    csrr t0, \csr
+    EXPECT_EQ t0, t1
+    csrc \csr, t1                /* back to the reset value */
+.endm
+
+/* Check that \csr has Y read-only 1 at bit 9 and bit 28 is not writable. */
+.macro CHECK_ENVCFG_RO1 csr
+    li   t1, ENVCFG_Y
+    csrr t0, \csr
+    EXPECT_EQ t0, t1
+    csrc \csr, t1
+    csrr t0, \csr
+    EXPECT_EQ t0, t1
+    li   t2, 1 << 28
+    csrs \csr, t2
+    csrr t0, \csr
+    EXPECT_EQ t0, t1
+.endm
+
+/* Attempt to clear misa.Y, check it stayed set, and restore capability mode. */
+.macro EXPECT_MISA_Y_CLEAR_REFUSED
+    li    t2, MISA_Y
+    csrc  CSR_MISA, t2
+    csrr  t3, CSR_MISA
+    csrs  CSR_MISA, t2
+    and   t3, t3, t2
+    EXPECT_NONZERO t3
+    YMODESWY
+.endm
+
 /*
- * Enter privilege mode \mpp (0x0800 for S-mode, 0 for U-mode) at \target and
- * return to M-mode at \cont when \target executes ecall. Uses YADDRW when
- * misa.Y is set so CSR_MEPC receives a valid capability on purecap-only harts
- * without Zyhybrid as well as an address in integer mode.
+ * Corrupt \csr_num (saving its root value in \save_creg), verify clearing
+ * misa.Y is rejected, then restore \csr_num.
  */
-.macro ENTER_PRIV mpp, target, cont
-    li     t0, 0x1800
-    csrc   CSR_MSTATUS, t0
-    .if (\mpp) != 0
-    li     t0, \mpp
-    csrs   CSR_MSTATUS, t0
-    .endif
-    lla    t0, \target
-    csrr   t1, CSR_MISA
-    slli   t1, t1, (XLEN - 1 - 24)
-    bgez   t1, 1f
-    auipc  t1, 0
-    YADDRW t0, t1, t0
-1:  csrw   CSR_MEPC, t0
-    lla    m_continue, \cont
-    mret
+.macro CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT csr_num, save_creg
+    csrrw \save_creg, \csr_num, x0
+    EXPECT_MISA_Y_CLEAR_REFUSED
+    csrrw x0, \csr_num, \save_creg
+.endm
+
+/* Re-enable misa.Y across EXPECT_* so console_fail can run if a check fails. */
+.macro EXPECT_ILLEGAL_WITH_Y_CLEAR
+    li   t4, MISA_Y
+    csrs CSR_MISA, t4
+    EXPECT_TRAP CAUSE_ILLEGAL_INSN
+    li   t4, MISA_Y
+    csrc CSR_MISA, t4
+.endm
+
+.macro EXPECT_ZERO_WITH_Y_CLEAR reg
+    li   t4, MISA_Y
+    csrs CSR_MISA, t4
+    EXPECT_ZERO \reg
+    li   t4, MISA_Y
+    csrc CSR_MISA, t4
+.endm
+
+/* Check that \csr.Y is read-only 0 while misa.Y is clear (and stays 0 when Y returns). */
+.macro CHECK_ENVCFG_RO0_Y_CLEAR csr
+    li   t1, ENVCFG_Y
+    csrs \csr, t1
+    csrr t2, \csr
+    and  t2, t2, t1
+    EXPECT_ZERO_WITH_Y_CLEAR t2
+    li   t4, MISA_Y
+    csrs CSR_MISA, t4
+    csrr t2, \csr
+    and  t2, t2, t1
+    EXPECT_ZERO t2
+    csrc \csr, t1
+    csrc CSR_MISA, t4
+.endm
+
+/* Run YAMASK in privilege mode \mpp (MSTATUS_MPP_S or 0) and return via ecall. */
+.macro RUN_YAMASK_IN_PRIV mpp
+    ENTER_PRIV \mpp, .Lyamask_priv_\@, .Lyamask_ret_\@
+.Lyamask_priv_\@:
+    YAMASK t2, t0
+    ecall
+.Lyamask_ret_\@:
 .endm
 
 .option norvc
@@ -89,40 +157,12 @@ _start:
 
     /* menvcfg, senvcfg, and henvcfg reset to 0; Y is bit 9; bit 28 is not writable. */
     NEXT_TEST "menvcfg resets to 0 and Y is bit 9 not bit 28"
-    csrr t0, CSR_MENVCFG
-    EXPECT_ZERO t0
-    li   t1, ENVCFG_Y
-    csrs CSR_MENVCFG, t1
-    csrr t0, CSR_MENVCFG
-    EXPECT_EQ t0, t1
-    li   t2, 1 << 28             /* pre-0.9.9 CRE position */
-    csrs CSR_MENVCFG, t2
-    csrr t0, CSR_MENVCFG
-    EXPECT_EQ t0, t1
-    csrc CSR_MENVCFG, t1         /* back to the reset value */
+    CHECK_ENVCFG_RW CSR_MENVCFG
 
     NEXT_TEST "senvcfg and henvcfg reset to 0 and Y is bit 9 not bit 28"
-    csrr t0, CSR_SENVCFG
-    EXPECT_ZERO t0
-    li   t1, ENVCFG_Y
-    csrs CSR_SENVCFG, t1
-    csrr t0, CSR_SENVCFG
-    EXPECT_EQ t0, t1
-    li   t2, 1 << 28
-    csrs CSR_SENVCFG, t2
-    csrr t0, CSR_SENVCFG
-    EXPECT_EQ t0, t1
-    csrc CSR_SENVCFG, t1
+    CHECK_ENVCFG_RW CSR_SENVCFG
     beqz has_h, 1f
-    csrr t0, CSR_HENVCFG
-    EXPECT_ZERO t0
-    csrs CSR_HENVCFG, t1
-    csrr t0, CSR_HENVCFG
-    EXPECT_EQ t0, t1
-    csrs CSR_HENVCFG, t2
-    csrr t0, CSR_HENVCFG
-    EXPECT_EQ t0, t1
-    csrc CSR_HENVCFG, t1
+    CHECK_ENVCFG_RW CSR_HENVCFG
 1:
 
     /*
@@ -135,22 +175,6 @@ _start:
      */
     NEXT_TEST "clearing misa.Y is refused unless every xtvec/xepc is root"
     YMODESWY                             /* enter cap mode */
-
-    /*
-     * Corrupt \csr_num (saving its root value in \save_creg), verify
-     * clearing misa.Y is rejected, then restore \csr_num.
-     */
-.macro CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT csr_num, save_creg
-    csrrw \save_creg, \csr_num, x0
-    li    t2, MISA_Y
-    csrc  CSR_MISA, t2
-    csrr  t3, CSR_MISA
-    csrs  CSR_MISA, t2
-    and   t3, t3, t2
-    EXPECT_NONZERO t3
-    YMODESWY
-    csrrw x0, \csr_num, \save_creg
-.endm
 
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_DDC, s2
     CHECK_MISA_Y_BLOCKED_WITHOUT_ROOT CSR_MTVEC, s2
@@ -172,36 +196,18 @@ _start:
     li    t0, PERM_W
     YPERMC t1, s2, t0
     csrrw x0, CSR_DDC, t1
-    li    t2, MISA_Y
-    csrc  CSR_MISA, t2
-    csrr  t3, CSR_MISA
-    csrs  CSR_MISA, t2
-    and   t3, t3, t2
-    EXPECT_NONZERO t3
-    YMODESWY
+    EXPECT_MISA_Y_CLEAR_REFUSED
 
     li    t0, (1 << 6)           /* single SDP bit */
     YPERMC t1, s2, t0
     csrrw x0, CSR_DDC, t1
-    li    t2, MISA_Y
-    csrc  CSR_MISA, t2
-    csrr  t3, CSR_MISA
-    csrs  CSR_MISA, t2
-    and   t3, t3, t2
-    EXPECT_NONZERO t3
-    YMODESWY
+    EXPECT_MISA_Y_CLEAR_REFUSED
     csrrw x0, CSR_DDC, s2
 
     csrrs s2, CSR_MEPC, x0
     YSEALE t1, s2                /* root bounds and perms, but sealed (CT=1) */
     csrrw x0, CSR_MEPC, t1
-    li    t2, MISA_Y
-    csrc  CSR_MISA, t2
-    csrr  t3, CSR_MISA
-    csrs  CSR_MISA, t2
-    and   t3, t3, t2
-    EXPECT_NONZERO t3
-    YMODESWY
+    EXPECT_MISA_Y_CLEAR_REFUSED
     csrrw x0, CSR_MEPC, s2
 
     /*
@@ -241,25 +247,8 @@ _start:
     /*
      * With Y=0 the extension is gone, so its instructions and every CSR it
      * adds must read as illegal rather than as some stale value. The CSRs are
-     * checked one at a time so a failure names the one at fault. Re-enable
-     * misa.Y across EXPECT_* so console_fail can run if a check fails.
+     * checked one at a time so a failure names the one at fault.
      */
-.macro EXPECT_ILLEGAL_WITH_Y_CLEAR
-    li   t4, MISA_Y
-    csrs CSR_MISA, t4
-    EXPECT_TRAP CAUSE_ILLEGAL_INSN
-    li   t4, MISA_Y
-    csrc CSR_MISA, t4
-.endm
-
-.macro EXPECT_ZERO_WITH_Y_CLEAR reg
-    li   t4, MISA_Y
-    csrs CSR_MISA, t4
-    EXPECT_ZERO \reg
-    li   t4, MISA_Y
-    csrc CSR_MISA, t4
-.endm
-
     NEXT_TEST "with Y clear an RVY instruction is illegal"
     YAMASK t2, t0
     EXPECT_ILLEGAL_WITH_Y_CLEAR
@@ -292,43 +281,12 @@ _start:
      * back as 0 while misa.Y is 0.
      */
     NEXT_TEST "with Y clear menvcfg.Y is read-only 0"
-    li   t1, ENVCFG_Y
-    csrs CSR_MENVCFG, t1
-    csrr t2, CSR_MENVCFG
-    and  t2, t2, t1
-    EXPECT_ZERO_WITH_Y_CLEAR t2
-    li   t4, MISA_Y
-    csrs CSR_MISA, t4
-    csrr t2, CSR_MENVCFG
-    and  t2, t2, t1
-    EXPECT_ZERO t2
-    csrc CSR_MENVCFG, t1
-    csrc CSR_MISA, t4
+    CHECK_ENVCFG_RO0_Y_CLEAR CSR_MENVCFG
 
     NEXT_TEST "with Y clear senvcfg.Y and henvcfg.Y are read-only 0"
-    li   t1, ENVCFG_Y
-    csrs CSR_SENVCFG, t1
-    csrr t2, CSR_SENVCFG
-    and  t2, t2, t1
-    EXPECT_ZERO_WITH_Y_CLEAR t2
-    li   t4, MISA_Y
-    csrs CSR_MISA, t4
-    csrr t2, CSR_SENVCFG
-    and  t2, t2, t1
-    EXPECT_ZERO t2
-    csrc CSR_SENVCFG, t1
-    csrc CSR_MISA, t4
+    CHECK_ENVCFG_RO0_Y_CLEAR CSR_SENVCFG
     beqz has_h, 1f
-    csrs CSR_HENVCFG, t1
-    csrr t2, CSR_HENVCFG
-    and  t2, t2, t1
-    EXPECT_ZERO_WITH_Y_CLEAR t2
-    csrs CSR_MISA, t4
-    csrr t2, CSR_HENVCFG
-    and  t2, t2, t1
-    EXPECT_ZERO t2
-    csrc CSR_HENVCFG, t1
-    csrc CSR_MISA, t4
+    CHECK_ENVCFG_RO0_Y_CLEAR CSR_HENVCFG
 1:
 
     NEXT_TEST "clearing misa.Y makes menvcfg.Y, senvcfg.Y, and henvcfg.Y read as 0"
@@ -354,11 +312,7 @@ _start:
 
     /* Even if menvcfg.Y was set before clearing misa.Y, S-mode has CHERI disabled. */
     NEXT_TEST "with Y clear S-mode CHERI is disabled even after setting menvcfg.Y"
-    ENTER_PRIV 0x0800, s_code_y_clear, m_cont_y_clear
-s_code_y_clear:
-    YAMASK t2, t0
-    ecall
-m_cont_y_clear:
+    RUN_YAMASK_IN_PRIV MSTATUS_MPP_S
     EXPECT_ILLEGAL_WITH_Y_CLEAR
 
     /* misa.Y can be set again and RVY instructions work. */
@@ -387,20 +341,12 @@ m_cont_y_clear:
     csrc CSR_SENVCFG, t1
     beqz has_h, 1f
     csrc CSR_HENVCFG, t1
-1:  ENTER_PRIV 0x0800, s_code_disabled, m_cont_a
-s_code_disabled:
-    YAMASK t2, t0                        /* in S-mode: illegal */
-    ecall
-m_cont_a:
+1:  RUN_YAMASK_IN_PRIV MSTATUS_MPP_S     /* in S-mode: illegal */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
     /* enable S-mode CHERI and retry */
     li   t1, ENVCFG_Y
     csrs CSR_MENVCFG, t1
-    ENTER_PRIV 0x0800, s_code_enabled, m_cont_b
-s_code_enabled:
-    YAMASK t2, t0                        /* in S-mode: works */
-    ecall
-m_cont_b:
+    RUN_YAMASK_IN_PRIV MSTATUS_MPP_S     /* in S-mode: works */
     EXPECT_NO_TRAP
 
     /* U-mode CHERI enable requires both menvcfg.Y and senvcfg.Y. */
@@ -408,31 +354,19 @@ m_cont_b:
     li   t1, ENVCFG_Y
     csrs CSR_MENVCFG, t1
     csrc CSR_SENVCFG, t1
-    ENTER_PRIV 0, u_code_s0, m_cont_u0
-u_code_s0:
-    YAMASK t2, t0                        /* menvcfg.Y=1, senvcfg.Y=0: illegal */
-    ecall
-m_cont_u0:
+    RUN_YAMASK_IN_PRIV 0                 /* menvcfg.Y=1, senvcfg.Y=0: illegal */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     li   t1, ENVCFG_Y
     csrc CSR_MENVCFG, t1
     csrs CSR_SENVCFG, t1
-    ENTER_PRIV 0, u_code_m0, m_cont_u1
-u_code_m0:
-    YAMASK t2, t0                        /* menvcfg.Y=0, senvcfg.Y=1: illegal */
-    ecall
-m_cont_u1:
+    RUN_YAMASK_IN_PRIV 0                 /* menvcfg.Y=0, senvcfg.Y=1: illegal */
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     li   t1, ENVCFG_Y
     csrs CSR_MENVCFG, t1
     csrs CSR_SENVCFG, t1
-    ENTER_PRIV 0, u_code_enabled, m_cont_u2
-u_code_enabled:
-    YAMASK t2, t0                        /* menvcfg.Y=1, senvcfg.Y=1: works */
-    ecall
-m_cont_u2:
+    RUN_YAMASK_IN_PRIV 0                 /* menvcfg.Y=1, senvcfg.Y=1: works */
     EXPECT_NO_TRAP
 
     j    .Ldone_zyhybrid
@@ -457,37 +391,12 @@ m_cont_u2:
     EXPECT_NONZERO t2
 
     NEXT_TEST "without Zyhybrid menvcfg.Y is read-only 1 and bit 28 is not writable"
-    li   t1, ENVCFG_Y
-    csrr t0, CSR_MENVCFG
-    EXPECT_EQ t0, t1
-    csrc CSR_MENVCFG, t1
-    csrr t0, CSR_MENVCFG
-    EXPECT_EQ t0, t1
-    li   t2, 1 << 28
-    csrs CSR_MENVCFG, t2
-    csrr t0, CSR_MENVCFG
-    EXPECT_EQ t0, t1
+    CHECK_ENVCFG_RO1 CSR_MENVCFG
 
     NEXT_TEST "without Zyhybrid senvcfg.Y and henvcfg.Y are read-only 1 and bit 28 is not writable"
-    li   t1, ENVCFG_Y
-    csrr t0, CSR_SENVCFG
-    EXPECT_EQ t0, t1
-    csrc CSR_SENVCFG, t1
-    csrr t0, CSR_SENVCFG
-    EXPECT_EQ t0, t1
-    li   t2, 1 << 28
-    csrs CSR_SENVCFG, t2
-    csrr t0, CSR_SENVCFG
-    EXPECT_EQ t0, t1
+    CHECK_ENVCFG_RO1 CSR_SENVCFG
     beqz has_h, 1f
-    csrr t0, CSR_HENVCFG
-    EXPECT_EQ t0, t1
-    csrc CSR_HENVCFG, t1
-    csrr t0, CSR_HENVCFG
-    EXPECT_EQ t0, t1
-    csrs CSR_HENVCFG, t2
-    csrr t0, CSR_HENVCFG
-    EXPECT_EQ t0, t1
+    CHECK_ENVCFG_RO1 CSR_HENVCFG
 1:
 
     NEXT_TEST "without Zyhybrid ddc and mode-switch instructions are illegal"
@@ -503,17 +412,9 @@ m_cont_u2:
     EXPECT_TRAP CAUSE_ILLEGAL_INSN
 
     NEXT_TEST "without Zyhybrid S-mode and U-mode CHERI are always enabled"
-    ENTER_PRIV 0x0800, s_code_purecap, m_cont_purecap_s
-s_code_purecap:
-    YAMASK t2, t0
-    ecall
-m_cont_purecap_s:
+    RUN_YAMASK_IN_PRIV MSTATUS_MPP_S
     EXPECT_NO_TRAP
-    ENTER_PRIV 0, u_code_purecap, m_cont_purecap_u
-u_code_purecap:
-    YAMASK t2, t0
-    ecall
-m_cont_purecap_u:
+    RUN_YAMASK_IN_PRIV 0
     EXPECT_NO_TRAP
 
     j    .Ldone_no_zyhybrid

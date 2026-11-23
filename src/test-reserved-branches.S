@@ -46,11 +46,8 @@ _start:
     NEXT_TEST "the canonical operand orders keep working"
     LEGAL_ORDER_BRANCHES
     EXPECT_NO_TRAP
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

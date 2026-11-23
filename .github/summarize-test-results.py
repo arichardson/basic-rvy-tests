@@ -4,6 +4,7 @@
 
 import argparse
 import collections
+import dataclasses
 import io
 import json
 import os
@@ -27,6 +28,43 @@ CATEGORY_ORDER = (
     "QEMU 0.9.9",
     "QEMU 0.9.3",
 )
+SUMMARY_HEADERS = (
+    "Target",
+    "Suites",
+    "Subtests",
+    "Passed",
+    "XFail",
+    "Skipped",
+    "Failed",
+    "Time",
+)
+STATE_ICONS = {"pass": "✅", "warn": "⚠️", "fail": "❌"}
+STATE_LABELS = {"pass": "PASS", "warn": "WARN", "fail": "FAIL"}
+
+
+@dataclasses.dataclass(frozen=True)
+class SummaryRow:
+    target: str
+    state: str
+    suites: str
+    subtests: str
+    passed: str
+    xfail: str
+    skipped: str
+    failed: str
+    duration: str
+
+    def columns(self, label: str) -> tuple[str, ...]:
+        return (
+            label,
+            self.suites,
+            self.subtests,
+            self.passed,
+            self.xfail,
+            self.skipped,
+            self.failed,
+            self.duration,
+        )
 
 
 def parse_entry(raw: dict) -> dict:
@@ -260,12 +298,16 @@ def summarize_test_failure_header(test_name: str, test_entries: list[dict]) -> s
 def find_test_source(
     test_name: str, test_entries: list[dict]
 ) -> tuple[str | None, int | None]:
-    candidates = [
-        f"src/{test_name}.S",
-        f"src/{test_name.removesuffix('-no-zyhybrid')}.S",
-        f"src/{test_name.removesuffix('-no-target-info')}.S",
-    ]
-    src_path = next((Path(c) for c in candidates if Path(c).is_file()), None)
+    src_path = None
+    stem = test_name
+    while stem:
+        candidate = Path(f"src/{stem}.S")
+        if candidate.is_file():
+            src_path = candidate
+            break
+        if "-" not in stem:
+            break
+        stem = stem.rsplit("-", 1)[0]
     if src_path is None:
         return None, None
 
@@ -298,22 +340,30 @@ def gha_escape_property(s: str) -> str:
     return gha_escape_data(s).replace(":", "%3A").replace(",", "%2C")
 
 
-def build_test_annotations(
+def group_failures_by_test(
     failures: list[dict],
-) -> list[tuple[str | None, int | None, str, str]]:
+) -> list[tuple[str, list[dict], list[tuple[dict, list[str]]]]]:
     entries_by_test: dict[str, list[dict]] = collections.defaultdict(list)
     for f in sorted(failures, key=lambda x: x["test"]):
         entries_by_test[f["test"]].append(f)
 
-    subgroups_by_test: dict[str, list[tuple[dict, list[str]]]] = collections.defaultdict(
-        list
+    subgroups_by_test: dict[str, list[tuple[dict, list[str]]]] = (
+        collections.defaultdict(list)
     )
     for f, targets in group_failures(failures):
         subgroups_by_test[f["test"]].append((f, targets))
 
+    return [
+        (test_name, entries_by_test[test_name], subgroups)
+        for test_name, subgroups in subgroups_by_test.items()
+    ]
+
+
+def build_test_annotations(
+    failures: list[dict],
+) -> list[tuple[str | None, int | None, str, str]]:
     annotations: list[tuple[str | None, int | None, str, str]] = []
-    for test_name, subgroups in subgroups_by_test.items():
-        test_entries = entries_by_test[test_name]
+    for test_name, test_entries, subgroups in group_failures_by_test(failures):
         file_prop, line_prop = find_test_source(test_name, test_entries)
         title = summarize_test_failure_header(test_name, test_entries)
         if len(subgroups) == 1:
@@ -358,18 +408,7 @@ def blob_url_for_source(file_prop: str | None, line_prop: int | None) -> str | N
 def print_markdown_test_failures(
     out: io.TextIOBase, failures: list[dict], icon: str
 ) -> None:
-    entries_by_test: dict[str, list[dict]] = collections.defaultdict(list)
-    for f in sorted(failures, key=lambda x: x["test"]):
-        entries_by_test[f["test"]].append(f)
-
-    subgroups_by_test: dict[str, list[tuple[dict, list[str]]]] = collections.defaultdict(
-        list
-    )
-    for f, targets in group_failures(failures):
-        subgroups_by_test[f["test"]].append((f, targets))
-
-    for test_name, subgroups in subgroups_by_test.items():
-        test_entries = entries_by_test[test_name]
+    for test_name, test_entries, subgroups in group_failures_by_test(failures):
         header = summarize_test_failure_header(test_name, test_entries)
         _, summary_rest = header.split(": ", 1)
         file_prop, line_prop = find_test_source(test_name, test_entries)
@@ -424,11 +463,54 @@ def print_console_failures(
                 print(line)
 
 
+def build_summary_rows(
+    base_entries: list[dict],
+    by_target: dict[str, list[dict]],
+    base_by_target: dict[str, list[dict]],
+    base_by_test: dict[str, dict[str, dict]],
+    targets: list[str],
+) -> list[SummaryRow]:
+    rows = []
+    for t in targets:
+        items = by_target[t]
+        b_items = base_by_target.get(t) if base_entries else None
+        suites_ok = sum(1 for i in items if i["ok"])
+        b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
+        b_len = len(b_items) if b_items is not None else None
+        new_fails = sum(
+            1 for i in items if is_new_failure(i, base_by_test.get(i["test"], {}).get(t))
+        )
+        if suites_ok == len(items):
+            state = "pass"
+        elif new_fails == 0:
+            state = "warn"
+        else:
+            state = "fail"
+
+        def sum_col(key: str, show_zero: bool = False) -> str:
+            base_sum = sum(i[key] for i in b_items) if b_items is not None else None
+            return fmt_delta(sum(i[key] for i in items), base_sum, show_zero=show_zero)
+
+        rows.append(
+            SummaryRow(
+                target=t,
+                state=state,
+                suites=f"{fmt_delta(suites_ok, b_suites_ok)}/{fmt_delta(len(items), b_len)}",
+                subtests=sum_col("total"),
+                passed=sum_col("passed"),
+                xfail=sum_col("xfail"),
+                skipped=sum_col("skipped"),
+                failed=sum_col("failed", show_zero=True),
+                duration=f"{sum(i['duration'] for i in items):.1f}s",
+            )
+        )
+    return rows
+
+
 def render_markdown(
-    entries: list[dict],
+    summary_rows: list[SummaryRow],
     base_entries: list[dict],
     missing_baseline: bool,
-    by_target: dict[str, list[dict]],
     by_test: dict[str, dict[str, dict]],
     base_by_target: dict[str, list[dict]],
     base_by_test: dict[str, dict[str, dict]],
@@ -445,33 +527,11 @@ def render_markdown(
             "> No baseline `testlog.json` artifact found on `main`; "
             "showing results without baseline comparison.\n\n"
         )
-    out.write("| Target | Suites | Subtests | Passed | XFail | Skipped | Failed | Time |\n")
+    out.write("| " + " | ".join(SUMMARY_HEADERS) + " |\n")
     out.write("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
-    for t in targets:
-        items = by_target[t]
-        b_items = base_by_target.get(t) if base_entries else None
-        suites_ok = sum(1 for i in items if i["ok"])
-        b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
-        b_len = len(b_items) if b_items is not None else None
-        new_fails = sum(
-            1 for i in items if is_new_failure(i, base_by_test.get(i["test"], {}).get(t))
-        )
-        if suites_ok == len(items):
-            icon = "✅"
-        elif new_fails == 0:
-            icon = "⚠️"
-        else:
-            icon = "❌"
-        out.write(
-            f"| {icon} `{t}` "
-            f"| {fmt_delta(suites_ok, b_suites_ok)}/{fmt_delta(len(items), b_len)} "
-            f"| {fmt_delta(sum(i['total'] for i in items), sum(i['total'] for i in b_items) if b_items is not None else None)} "
-            f"| {fmt_delta(sum(i['passed'] for i in items), sum(i['passed'] for i in b_items) if b_items is not None else None)} "
-            f"| {fmt_delta(sum(i['xfail'] for i in items), sum(i['xfail'] for i in b_items) if b_items is not None else None)} "
-            f"| {fmt_delta(sum(i['skipped'] for i in items), sum(i['skipped'] for i in b_items) if b_items is not None else None)} "
-            f"| {fmt_delta(sum(i['failed'] for i in items), sum(i['failed'] for i in b_items) if b_items is not None else None, show_zero=True)} "
-            f"| {sum(i['duration'] for i in items):.1f}s |\n"
-        )
+    for row in summary_rows:
+        cols = row.columns(f"{STATE_ICONS[row.state]} `{row.target}`")
+        out.write("| " + " | ".join(cols) + " |\n")
 
     if new_failures:
         heading = "New Failures (relative to `main`)" if base_entries else "Failures"
@@ -501,69 +561,25 @@ def render_markdown(
 
 
 def print_console_summary(
+    summary_rows: list[SummaryRow],
     base_entries: list[dict],
-    by_target: dict[str, list[dict]],
-    base_by_target: dict[str, list[dict]],
-    base_by_test: dict[str, dict[str, dict]],
-    targets: list[str],
     new_failures: list[dict],
     known_failures: list[dict],
 ) -> None:
-    rows = []
-    for t in targets:
-        items = by_target[t]
-        b_items = base_by_target.get(t) if base_entries else None
-        suites_ok = sum(1 for i in items if i["ok"])
-        b_suites_ok = sum(1 for i in b_items if i["ok"]) if b_items is not None else None
-        b_len = len(b_items) if b_items is not None else None
-        new_fails = sum(
-            1 for i in items if is_new_failure(i, base_by_test.get(i["test"], {}).get(t))
-        )
-        if suites_ok == len(items):
-            status = "PASS"
-        elif new_fails == 0:
-            status = "WARN"
-        else:
-            status = "FAIL"
-        rows.append(
-            (
-                f"{status} {t}",
-                f"{fmt_delta(suites_ok, b_suites_ok)}/{fmt_delta(len(items), b_len)}",
-                fmt_delta(
-                    sum(i["total"] for i in items),
-                    sum(i["total"] for i in b_items) if b_items is not None else None,
-                ),
-                fmt_delta(
-                    sum(i["passed"] for i in items),
-                    sum(i["passed"] for i in b_items) if b_items is not None else None,
-                ),
-                fmt_delta(
-                    sum(i["xfail"] for i in items),
-                    sum(i["xfail"] for i in b_items) if b_items is not None else None,
-                ),
-                fmt_delta(
-                    sum(i["skipped"] for i in items),
-                    sum(i["skipped"] for i in b_items) if b_items is not None else None,
-                ),
-                fmt_delta(
-                    sum(i["failed"] for i in items),
-                    sum(i["failed"] for i in b_items) if b_items is not None else None,
-                    show_zero=True,
-                ),
-                f"{sum(i['duration'] for i in items):.1f}s",
-            )
-        )
-
-    headers = ("Target", "Suites", "Subtests", "Passed", "XFail", "Skipped", "Failed", "Time")
+    rows = [
+        row.columns(f"{STATE_LABELS[row.state]} {row.target}") for row in summary_rows
+    ]
     widths = [
-        max(len(headers[i]), *(len(r[i]) for r in rows)) if rows else len(headers[i])
-        for i in range(len(headers))
+        max(len(SUMMARY_HEADERS[i]), *(len(r[i]) for r in rows))
+        if rows
+        else len(SUMMARY_HEADERS[i])
+        for i in range(len(SUMMARY_HEADERS))
     ]
     fmt_row = lambda r: (
         f"{r[0]:<{widths[0]}}  "
-        + "  ".join(f"{r[i]:>{widths[i]}}" for i in range(1, len(headers)))
+        + "  ".join(f"{r[i]:>{widths[i]}}" for i in range(1, len(SUMMARY_HEADERS)))
     )
-    print(fmt_row(headers))
+    print(fmt_row(SUMMARY_HEADERS))
     print("  ".join("-" * w for w in widths))
     for r in rows:
         print(fmt_row(r))
@@ -628,11 +644,13 @@ def main() -> None:
         if not e["ok"] and not is_new_failure(e, base_by_test.get(e["test"], {}).get(e["target"]))
     ]
 
+    summary_rows = build_summary_rows(
+        base_entries, by_target, base_by_target, base_by_test, targets
+    )
     md = render_markdown(
-        entries,
+        summary_rows,
         base_entries,
         missing_baseline,
-        by_target,
         by_test,
         base_by_target,
         base_by_test,
@@ -648,11 +666,8 @@ def main() -> None:
             with Path(step_summary).open("a", encoding="utf-8") as f:
                 f.write(md)
         print_console_summary(
+            summary_rows,
             base_entries,
-            by_target,
-            base_by_target,
-            base_by_test,
-            targets,
             new_failures,
             known_failures,
         )

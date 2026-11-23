@@ -19,18 +19,16 @@
 #define XBYTES     (__riscv_xlen / 8)
 #define YLEN_BYTES (2 * XBYTES)
 #if __riscv_xlen == 64
-#define LOAD_X     ld
-#define STORE_X    sd
+#define LX         ld
+#define SX         sd
 #define WORD_X     .dword
 #define PTR_SHIFT  3
 #else
-#define LOAD_X     lw
-#define STORE_X    sw
+#define LX         lw
+#define SX         sw
 #define WORD_X     .word
 #define PTR_SHIFT  2
 #endif
-#define LX         LOAD_X
-#define SX         STORE_X
 
 /* The CHERI execution mode a capability carries, as read by YMODER and
  * written by YMODEW. These are also the rs2 values YMODESWY/YMODESWI use. */
@@ -52,12 +50,14 @@
 #define CSR_PMPCFG0 0x3A0
 #define CSR_PMPADDR0 0x3B0
 #define CSR_PMPADDR1 0x3B1
+#define CSR_SSTATUS 0x100
 #define CSR_STVEC   0x105
 #define CSR_SENVCFG 0x10A
 #define CSR_SSCRATCH 0x140
 #define CSR_SEPC    0x141
 #define CSR_SCAUSE  0x142
 #define CSR_STVAL   0x143
+#define CSR_SATP    0x180
 #define CSR_HENVCFG 0x60A
 #define CSR_VSTVEC  0x205
 #define CSR_VSSCRATCH 0x240
@@ -79,6 +79,36 @@
 #define CSR_MSECCFG 0x747
 
 #define MSECCFG_CRE (1 << 3)
+
+/* mstatus / sstatus bits. */
+#define MSTATUS_MPP_MASK   (3 << 11)
+#define MSTATUS_MPP_S      (1 << 11)
+#define MSTATUS_MPP_M      (3 << 11)
+#define MSTATUS_FS_INITIAL (1 << 13)
+#define MSTATUS_MPRV       (1 << 17)
+#define SSTATUS_SPP        (1 << 8)
+#define SSTATUS_SUM        (1 << 18)
+
+/* Page-table entry and satp bits. */
+#define PTE_V 0x01
+#define PTE_R 0x02
+#define PTE_W 0x04
+#define PTE_X 0x08
+#define PTE_U 0x10
+#define PTE_A 0x40
+#define PTE_D 0x80
+#if __riscv_xlen == 64
+#define SATP_SV39    (8 << 60)
+#define SSTATUS_YRGE (1 << 59)
+#define SSTATUS_SYRG (1 << 60)
+#define SSTATUS_UYRG (1 << 61)
+#define PTE_YR_BIT   (1 << 55)
+#define PTE_YRG_BIT  (1 << 56)
+#define PTE_YW_BIT   (1 << 57)
+#define PTE_YD_BIT   (1 << 58)
+#else
+#define SATP_SV32    (1 << 31)
+#endif
 
 /* pmpcfg entry bits. */
 #define PMP_R       (1 << 0)
@@ -111,6 +141,20 @@
 #define ENVCFG_Y    (1 << 9)
 #endif
 #define MENVCFG_CRE ENVCFG_Y
+
+/* Cache-block size assumed by the Zicbom/Zicboz tests. */
+#define CBOM_LEN 64
+
+/* Capability format constants shared across representability and metadata tests. */
+#if __riscv_xlen == 64
+#define REP_E0_BELOW           0x1000
+#define PESBT_RESERVED0_BIT    (1 << 28)
+#define EBT_MALFORMED_E_GT_MAX 0x000000000001c007
+#else
+#define REP_E0_BELOW           0x100
+#define PESBT_RESERVED0_BIT    (1 << 21)
+#define EBT_MALFORMED_E_GT_MAX 0x00040c03
+#endif
 
 /* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */
 #define PERM_W      (1 << 0)
@@ -441,49 +485,36 @@
 .endm
 
 /*
- * 16-bit compressed instructions (Zca). Each macro pairs the 16-bit
- * instruction with a c.nop so a 4-byte trap-return PC step lands on the next
- * instruction boundary while keeping the rest of the file in .option norvc
- * mode.
+ * 16-bit compressed instructions (Zca). RVC_PADDED pairs a 16-bit instruction
+ * with a c.nop so a 4-byte trap-return PC step lands on the next instruction
+ * boundary while keeping the rest of the file in .option norvc mode.
  */
-.macro INSN16 enc
+.macro RVC_PADDED insn:vararg
     .option push
     .option rvc
-    .2byte \enc
+    \insn
     c.nop
     .option pop
+.endm
+
+.macro INSN16 enc
+    RVC_PADDED .2byte \enc
 .endm
 
 .macro C_YADDI16SP imm
-    .option push
-    .option rvc
-    c.addi16sp sp, \imm
-    c.nop
-    .option pop
+    RVC_PADDED c.addi16sp sp, \imm
 .endm
 
 .macro C_YADDI4SPN cd, uimm
-    .option push
-    .option rvc
-    c.addi4spn \cd, sp, \uimm
-    c.nop
-    .option pop
+    RVC_PADDED c.addi4spn \cd, sp, \uimm
 .endm
 
 .macro C_YMV cd, cs2
-    .option push
-    .option rvc
-    c.mv \cd, \cs2
-    c.nop
-    .option pop
+    RVC_PADDED c.mv \cd, \cs2
 .endm
 
 .macro C_ADD rd, rs2
-    .option push
-    .option rvc
-    c.add \rd, \rs2
-    c.nop
-    .option pop
+    RVC_PADDED c.add \rd, \rs2
 .endm
 
 #if __riscv_xlen == 64
@@ -500,35 +531,19 @@
 #endif
 
 .macro C_LYSP cd, off
-    .option push
-    .option rvc
-    .insn ci 2, C_LYSP_FUNCT3, \cd, ((C_LYSP_IMM(\off) ^ 0x20) - 0x20)
-    c.nop
-    .option pop
+    RVC_PADDED .insn ci 2, C_LYSP_FUNCT3, \cd, ((C_LYSP_IMM(\off) ^ 0x20) - 0x20)
 .endm
 
 .macro C_SYSP cs2, off
-    .option push
-    .option rvc
-    .insn css 2, C_SYSP_FUNCT3, \cs2, C_LYSP_IMM(\off)
-    c.nop
-    .option pop
+    RVC_PADDED .insn css 2, C_SYSP_FUNCT3, \cs2, C_LYSP_IMM(\off)
 .endm
 
 .macro C_LY cd, off, cs1
-    .option push
-    .option rvc
-    .insn cl 0, C_LYSP_FUNCT3, \cd, C_LY_IMM(\off)(\cs1)
-    c.nop
-    .option pop
+    RVC_PADDED .insn cl 0, C_LYSP_FUNCT3, \cd, C_LY_IMM(\off)(\cs1)
 .endm
 
 .macro C_SY cs2, off, cs1
-    .option push
-    .option rvc
-    .insn cs 0, C_SYSP_FUNCT3, \cs2, C_LY_IMM(\off)(\cs1)
-    c.nop
-    .option pop
+    RVC_PADDED .insn cs 0, C_SYSP_FUNCT3, \cs2, C_LY_IMM(\off)(\cs1)
 .endm
 
 

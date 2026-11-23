@@ -54,19 +54,41 @@
 #define svyrg_conservative s7
 #pragma GCC poison s7
 
-/* Leaf PTE bits: V|R|A|D = 0xC3, +W = 0xC7, +X = 0xCF, U = 0x10 */
-#define PTE_LEAF_RWAD  0xC7
-#define PTE_LEAF_RWXAD 0xCF
-#define PTE_U_BIT      0x10
-#define PTE_YR_BIT  (1 << 55)
-#define PTE_YRG_BIT (1 << 56)
-#define PTE_YW_BIT  (1 << 57)
-#define PTE_YD_BIT  (1 << 58)
+#define PTE_LEAF_RWAD  (PTE_V | PTE_R | PTE_W | PTE_A | PTE_D)
+#define PTE_LEAF_RWXAD (PTE_LEAF_RWAD | PTE_X)
 
-#define SSTATUS_SUM  (1 << 18)
-#define SSTATUS_YRGE (1 << 59)
-#define SSTATUS_SYRG (1 << 60)
-#define SSTATUS_UYRG (1 << 61)
+/* Root table indices for the 1 GiB gigapage aliases of PA 0x80000000. */
+#define IDX_CODE         2       /* VA 0x0_80000000: code and data (yd=1) */
+#define IDX_RVY0         3       /* VA 0x0_C0000000: rvy = 0 */
+#define IDX_YR_YRG_YW_YD 4       /* VA 0x1_00000000: yr|yrg|yw|yd */
+#define IDX_USER_YR      5       /* VA 0x1_40000000: U-page, yr|yw|yd (yrg=0) */
+#define IDX_YRG_YW       6       /* VA 0x1_80000000: yrg|yw (yd=0) */
+#define IDX_YR_ONLY      7       /* VA 0x1_C0000000: yr only */
+#define IDX_YW_YD        8       /* VA 0x2_00000000: yw|yd (yr=0, yrg=0) */
+#define IDX_NONLEAF_RVY  9       /* VA 0x2_40000000: non-leaf PTE with rvy!=0 */
+
+#define ALIAS_OFF(idx) (((idx) - IDX_CODE) << 30)
+
+.macro SET_LEAF_PTE idx, bits
+    li   t2, \bits
+    or   t2, t2, t1
+    sd   t2, (\idx * 8)(t0)
+.endm
+
+.macro SET_ALIAS reg, idx
+    li   t0, ALIAS_OFF(\idx)
+    add  \reg, a0, t0
+.endm
+
+/* Run \insn in M-mode with MPRV=1 and MPP=S, then clear MPRV before checking. */
+.macro RUN_MPRV_S insn:vararg
+    li   t0, MSTATUS_MPP_MASK
+    csrc CSR_MSTATUS, t0
+    li   t0, MSTATUS_MPRV | MSTATUS_MPP_S
+    csrs CSR_MSTATUS, t0
+    \insn
+    csrc CSR_MSTATUS, t0
+.endm
 
 .macro CHECK_BUF load_alias, store_alias=a0
     LY   t0, 0(\load_alias)
@@ -98,81 +120,39 @@ _start:
      * Build the Sv39 root table: gigapage leaves, all mapping
      * PA 0x80000000 (PPN 0x80000 -> PTE PPN field 0x80000 << 10).
      */
-    lla   t0, pagetable
+    lla  t0, pagetable
     li   t1, 0x80000 << 10
     /*
-     * index 2, VA 0x0_80000000 (code + data): X, rvy = yd (pte.y). This is
-     * the page the test itself runs from and it is used before YRGE is set,
-     * so it must not carry any of the bits that Svyrg allocates: while YRGE
-     * is clear they are reserved and using the page would fault.
+     * IDX_CODE (code + data) runs before YRGE is set, so it must carry only
+     * yd (pte.y); the other Svyrg bits are reserved while YRGE is clear.
      */
-    li   t2, PTE_YD_BIT | PTE_LEAF_RWXAD
-    or   t2, t2, t1
-    sd   t2, 16(t0)
-    /* index 3, VA 0x0_C0000000: rvy = 0 */
-    ori  t2, t1, PTE_LEAF_RWAD
-    sd   t2, 24(t0)
-    /* index 4, VA 0x1_00000000: rvy = yr|yrg|yw|yd */
-    li   t2, PTE_YR_BIT | PTE_YRG_BIT | PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD
-    or   t2, t2, t1
-    sd   t2, 32(t0)
-    /* index 5, VA 0x1_40000000: U-page, rvy = yr|yw|yd (yrg=0) */
-    li   t2, PTE_YR_BIT | PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD | PTE_U_BIT
-    or   t2, t2, t1
-    sd   t2, 40(t0)
-    /* index 6, VA 0x1_80000000: rvy = yrg|yw (yd=0) */
-    li   t2, PTE_YRG_BIT | PTE_YW_BIT | PTE_LEAF_RWAD
-    or   t2, t2, t1
-    sd   t2, 48(t0)
-    /* index 7, VA 0x1_C0000000: rvy = yr only, so loads and stores both fault */
-    li   t2, PTE_YR_BIT | PTE_LEAF_RWAD
-    or   t2, t2, t1
-    sd   t2, 56(t0)
-    /* index 8, VA 0x2_00000000: rvy = yw|yd (yr=0, yrg=0: mismatch strips tag) */
-    li   t2, PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD
-    or   t2, t2, t1
-    sd   t2, 64(t0)
-    /* index 9, VA 0x2_40000000: non-leaf PTE (R=W=X=0, V=1) with rvy!=0 (reserved) */
+    SET_LEAF_PTE IDX_CODE,         PTE_YD_BIT | PTE_LEAF_RWXAD
+    SET_LEAF_PTE IDX_RVY0,         PTE_LEAF_RWAD
+    SET_LEAF_PTE IDX_YR_YRG_YW_YD, PTE_YR_BIT | PTE_YRG_BIT | PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD
+    SET_LEAF_PTE IDX_USER_YR,      PTE_YR_BIT | PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD | PTE_U
+    SET_LEAF_PTE IDX_YRG_YW,       PTE_YRG_BIT | PTE_YW_BIT | PTE_LEAF_RWAD
+    SET_LEAF_PTE IDX_YR_ONLY,      PTE_YR_BIT | PTE_LEAF_RWAD
+    SET_LEAF_PTE IDX_YW_YD,        PTE_YW_BIT | PTE_YD_BIT | PTE_LEAF_RWAD
+    /* Non-leaf PTE (R=W=X=0, V=1) with rvy!=0 (reserved). */
     srli t3, t0, 12
     slli t3, t3, 10
-    li   t2, PTE_YD_BIT | 0x01
+    li   t2, PTE_YD_BIT | PTE_V
     or   t2, t2, t3
-    sd   t2, 72(t0)
+    sd   t2, (IDX_NONLEAF_RVY * 8)(t0)
 
-    /* satp = Sv39 | PPN(pagetable) */
-    lla   t0, pagetable
-    srli t0, t0, 12
-    li   t1, 8 << 60
-    or   t0, t0, t1
-    csrw 0x180, t0               /* satp */
-    sfence.vma
-
-    /* Enter S-mode */
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, 0x0800
-    csrs CSR_MSTATUS, t0
-    lla   t0, s_entry
-    csrw CSR_MEPC, t0
-    mret
+    ENABLE_PAGING pagetable, SATP_SV39
+    ENTER_PRIV MSTATUS_MPP_S, s_entry
 
 s_entry:
     /* VA aliases of the test buffer for each mapping */
-    lla   a0, buf                 /* index 2: normal */
-    li   t0, 0x40000000
-    add  a1, a0, t0              /* index 3: rvy = 0 */
-    li   t0, 0x80000000
-    add  a2, a0, t0              /* index 4: yr|yrg|yw|yd */
-    li   t0, 0xC0000000
-    add  a3, a0, t0              /* index 5: U-page, yr|yw|yd */
-    li   t0, 0x100000000
-    add  a4, a0, t0              /* index 6: yrg|yw (yd=0) */
-    li   t0, 0x140000000
-    add  a5, a0, t0              /* index 7: yr only */
-    li   t0, 0x180000000
-    add  a6, a0, t0              /* index 8: yw|yd (yr=0, yrg=0) */
-    li   t0, 0x1C0000000
-    add  a7, a0, t0              /* index 9: non-leaf PTE with rvy!=0 (reserved) */
+    lla  a0, buf                 /* IDX_CODE: normal */
+    SET_ALIAS a1, IDX_RVY0
+    SET_ALIAS a2, IDX_YR_YRG_YW_YD
+    SET_ALIAS a3, IDX_USER_YR
+    SET_ALIAS a4, IDX_YRG_YW
+    SET_ALIAS a5, IDX_YR_ONLY
+    SET_ALIAS a6, IDX_YW_YD
+    SET_ALIAS a7, IDX_NONLEAF_RVY
 
     /* Normal page: capability store + load round-trips the tag */
     NEXT_TEST "a normal page round-trips a capability tag"
@@ -246,8 +226,8 @@ s_entry:
     /* Enable Svyrg; the bit must read back as set */
     NEXT_TEST "sstatus.YRGE reads back as set"
     li   t0, SSTATUS_YRGE
-    csrs 0x100, t0               /* sstatus */
-    csrr t1, 0x100
+    csrs CSR_SSTATUS, t0
+    csrr t1, CSR_SSTATUS
     and  t1, t1, t0
     EXPECT_NONZERO t1
     /*
@@ -374,7 +354,7 @@ s_entry:
 
     NEXT_TEST "yr=1/yrg=1 allows a tagged load once SYRG=1 matches"
     li   t0, SSTATUS_SYRG
-    csrs 0x100, t0               /* SYRG = 1: generations match */
+    csrs CSR_SSTATUS, t0         /* SYRG = 1: generations match */
     LY   t1, 0(a2)               /* normal */
     EXPECT_NO_TRAP
     EXPECT_TAG t1, 1
@@ -423,7 +403,7 @@ s_entry:
 
     NEXT_TEST "yr=1/yrg=0 on a U-page faults a tagged ly once UYRG=1 mismatches"
     li   t0, SSTATUS_UYRG
-    csrs 0x100, t0                       /* UYRG = 1: mismatch */
+    csrs CSR_SSTATUS, t0         /* UYRG = 1: mismatch */
     POISON_REG t1
     LY   t1, 0(a3)  /* cause 35 */
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
@@ -544,56 +524,31 @@ m_done:
      */
     NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg ly checks"
     POISON_REG t1
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
-    csrs CSR_MSTATUS, t0
-    LY   t1, 0(a5)
-    csrc CSR_MSTATUS, t0
+    RUN_MPRV_S LY t1, 0(a5)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
 
     NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg lr.y checks"
     POISON_REG t1
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
-    csrs CSR_MSTATUS, t0
-    LR_Y t1, a5
-    csrc CSR_MSTATUS, t0
+    RUN_MPRV_S LR_Y t1, a5
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
 
     NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg sy checks"
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
-    csrs CSR_MSTATUS, t0
-    SY   s1, 0(a5)
-    csrc CSR_MSTATUS, t0
+    RUN_MPRV_S SY s1, 0(a5)
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
     CHECK_BUF a0
 
     NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg tagged amoswap.y checks"
     POISON_REG t1
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
-    csrs CSR_MSTATUS, t0
-    AMOSWAP_Y t1, a5, s1
-    csrc CSR_MSTATUS, t0
+    RUN_MPRV_S AMOSWAP_Y t1, a5, s1
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
     CHECK_POISON_REG t1
     CHECK_BUF a0
 
     NEXT_TEST "M-mode with MPRV=1 and MPP=S enforces Svyrg untagged amoswap.y checks"
     POISON_REG t1
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, (1 << 17) | 0x0800  /* MPRV=1, MPP=S */
-    csrs CSR_MSTATUS, t0
-    AMOSWAP_Y t1, a5, x0
-    csrc CSR_MSTATUS, t0
+    RUN_MPRV_S AMOSWAP_Y t1, a5, x0
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
     CHECK_BUF a0
@@ -604,7 +559,7 @@ fail:
      * Everything above runs in S-mode with paging on, where the finisher
      * device is not mapped, so get back to M-mode before reporting.
      */
-    li   t0, (1 << 17)
+    li   t0, MSTATUS_MPRV
     lla   m_continue, m_fail
     ecall
 m_fail:

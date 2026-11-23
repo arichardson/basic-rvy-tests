@@ -57,7 +57,7 @@ _start:
     LOAD_TARGET_FLAG x0_tag_fault, TARGET_INFO_OFF_CAP_MODE_X0_TAG_FAULT
 
     /* Enable the FPU (mstatus.FS = Initial) so fld/fsd do not trap. */
-    li   t0, 1 << 13
+    li   t0, MSTATUS_FS_INITIAL
     csrs CSR_MSTATUS, t0
 
     /*
@@ -168,11 +168,8 @@ _start:
     CBO_INVAL x0
     EXPECT_X0_STORE_TRAP
 
-    YMODESWI                     /* back to int mode */
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

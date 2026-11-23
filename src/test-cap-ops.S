@@ -15,12 +15,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-.macro EXPECT_LEN reg, len
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
-.endm
-
 .option norvc
 .section .text
 .globl _start
@@ -103,11 +97,8 @@ _start:
     EXPECT_NONZERO t3
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

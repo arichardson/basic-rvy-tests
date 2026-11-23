@@ -80,44 +80,28 @@ _start:
     SY   a3, 0(a3)
     LY   t1, 0(s2)
     EXPECT_NO_TRAP
-    EXPECT_TAG t1, 1
-    YPERMR t3, t1
-    andi t4, t3, (PERM_W | PERM_LM)
-    EXPECT_ZERO t4
+    EXPECT_PERMS t1, PERM_W | PERM_LM, 0
 
     NEXT_TEST "capability-mode lr.y without PERM_LM strips W and LM from an unsealed capability"
     SY   a3, 0(a3)
     LR_Y t2, s2
     EXPECT_NO_TRAP
-    EXPECT_TAG t2, 1
-    YPERMR t3, t2
-    andi t4, t3, (PERM_W | PERM_LM)
-    EXPECT_ZERO t4
+    EXPECT_PERMS t2, PERM_W | PERM_LM, 0
 
     NEXT_TEST "capability-mode ly without PERM_LM preserves W and LM on a sealed sentry"
     SY   s1, 0(a3)
     LY   t1, 0(s2)
     EXPECT_NO_TRAP
-    EXPECT_TAG t1, 1
-    YPERMR t3, t1
-    andi t4, t3, (PERM_W | PERM_LM)
-    li   t0, (PERM_W | PERM_LM)
-    EXPECT_EQ t4, t0
+    EXPECT_PERMS t1, PERM_W | PERM_LM, PERM_W | PERM_LM
 
     NEXT_TEST "capability-mode lr.y without PERM_LM preserves W and LM on a sealed sentry"
     SY   s1, 0(a3)
     LR_Y t2, s2
     EXPECT_NO_TRAP
-    EXPECT_TAG t2, 1
-    YPERMR t3, t2
-    andi t4, t3, (PERM_W | PERM_LM)
-    li   t0, (PERM_W | PERM_LM)
-    EXPECT_EQ t4, t0
+    EXPECT_PERMS t2, PERM_W | PERM_LM, PERM_W | PERM_LM
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

@@ -63,13 +63,9 @@ _start:
     EXPECT_EQ t3, t1
     li   t2, DROP_MASK(PERM_X)
     DROP_PERMS a2, a2, t2
-    EXPECT_TAG a2, 1
+    EXPECT_PERMS a2, PERM_X | PERM_ASR, 0
     YMODER t3, a2
     EXPECT_ZERO t3               /* forced back to CHERI_MODE_CAP (0) */
-    YPERMR t3, a2
-    li   t4, PERM_X | PERM_ASR
-    and  t3, t3, t4
-    EXPECT_ZERO t3
     EXPECT_NO_TRAP
 
     /*
@@ -90,22 +86,12 @@ _start:
     YMODEW a2, a2, t1
     li   t2, DROP_MASK(PERM_C)
     DROP_PERMS a3, a2, t2
-    EXPECT_TAG a3, 1
-    YPERMR t3, a3
 #if __riscv_xlen == 64
-    li   t4, PERM_C | PERM_LM
-    and  t4, t3, t4
-    EXPECT_ZERO t4
-    li   t4, PERM_R | PERM_W | PERM_X | PERM_ASR
-    and  t3, t3, t4
-    EXPECT_EQ t4, t3
+    EXPECT_PERMS a3, PERM_C | PERM_LM | PERM_R | PERM_W | PERM_X | PERM_ASR, \
+                     PERM_R | PERM_W | PERM_X | PERM_ASR
 #else
-    li   t4, PERM_C | PERM_LM | PERM_ASR
-    and  t4, t3, t4
-    EXPECT_ZERO t4
-    li   t4, PERM_R | PERM_W | PERM_X
-    and  t3, t3, t4
-    EXPECT_EQ t4, t3
+    EXPECT_PERMS a3, PERM_C | PERM_LM | PERM_R | PERM_W | PERM_X | PERM_ASR, \
+                     PERM_R | PERM_W | PERM_X
 #endif
     YMODER t3, a3
     EXPECT_EQ t3, t1             /* PERM_X kept, so CHERI_MODE_INT survives */
@@ -114,15 +100,8 @@ _start:
     NEXT_TEST "dropping PERM_R clears PERM_LM and legalizes PERM_C"
     li   t2, DROP_MASK(PERM_R | PERM_X)
     DROP_PERMS a3, a0, t2
-    EXPECT_TAG a3, 1
-    YPERMR t3, a3
 #if __riscv_xlen == 64
-    li   t4, PERM_R | PERM_LM
-    and  t4, t3, t4
-    EXPECT_ZERO t4
-    li   t4, PERM_C | PERM_W
-    and  t3, t3, t4
-    EXPECT_EQ t4, t3
+    EXPECT_PERMS a3, PERM_R | PERM_LM | PERM_C | PERM_W, PERM_C | PERM_W
     EXPECT_NO_TRAP
 
     NEXT_TEST "loading a C+W capability without PERM_LM clears PERM_W and legalizes PERM_C to 0"
@@ -130,26 +109,16 @@ _start:
     li   t2, DROP_MASK(PERM_LM)
     DROP_PERMS a4, a0, t2        /* authority without LM */
     LY   a5, 0(a4)
-    EXPECT_TAG a5, 1
-    YPERMR t3, a5
-    li   t4, PERM_C | PERM_W | PERM_R | PERM_X | PERM_LM | PERM_ASR
-    and  t3, t3, t4
-    EXPECT_ZERO t3               /* W cleared by missing LM -> C legalized to 0 */
+    /* W cleared by missing LM -> C legalized to 0 */
+    EXPECT_PERMS a5, PERM_C | PERM_W | PERM_R | PERM_X | PERM_LM | PERM_ASR, 0
     EXPECT_NO_TRAP
 #else
-    li   t4, PERM_R | PERM_C | PERM_LM
-    and  t4, t3, t4
-    EXPECT_ZERO t4
-    li   t4, PERM_W
-    and  t3, t3, t4
-    EXPECT_EQ t4, t3
+    EXPECT_PERMS a3, PERM_R | PERM_C | PERM_LM | PERM_W, PERM_W
     EXPECT_NO_TRAP
 #endif
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

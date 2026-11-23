@@ -219,11 +219,8 @@ _start:
     EXPECT_EPC expected_epc
     EXPECT_EPC_TAG 0
 
-    YMODESWI
     TEST_PASS
 fail:
-    /* Leave capability mode first so the finisher store cannot fault. */
-    YMODESWI
     TEST_FAIL
 
 /* Jumped to only if a fault was not raised; reaching it fails the test. */

@@ -157,7 +157,6 @@ _start:
 
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 /* Reached only if a fetch that must fault did not; running it fails. */

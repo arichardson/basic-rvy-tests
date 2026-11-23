@@ -10,7 +10,7 @@
  *     sentry capability always clears its tag (while preserving CT=1), even
  *     when the low bits select direct or vectored mode.
  *   - Writing an unsealed capability at its lower representability boundary
- *     rep_base = (victim + 1) - REP_BELOW (whose low two bits are 0b01,
+ *     rep_base = (victim + 1) - REP_E0_BELOW (whose low two bits are 0b01,
  *     selecting vectored mode) detags the capability when aligning BASE down
  *     to rep_base & ~3 crosses below rep_base.
  */
@@ -18,12 +18,6 @@
 #define TEST_NAME "xtvec-detag"
 #include "testmacros.h"
 #include "exceptions.h"
-
-#if __riscv_xlen == 64
-#define REP_BELOW 0x1000
-#else
-#define REP_BELOW 0x100
-#endif
 
 .option norvc
 .section .text
@@ -87,8 +81,8 @@ _start:
     addi t1, s1, 1               /* base = victim + 1 */
     YADDRW a2, s0, t1
     li   t0, 256
-    YBNDSW a2, a2, t0            /* E=0; rep_base = (victim + 1) - REP_BELOW */
-    li   t2, REP_BELOW
+    YBNDSW a2, a2, t0            /* E=0; rep_base = (victim + 1) - REP_E0_BELOW */
+    li   t2, REP_E0_BELOW
     sub  t1, t1, t2              /* cursor = rep_base (low bits 0b01: vectored) */
     YADDRW a2, a2, t1
     EXPECT_TAG a2, 1             /* tagged before CSR write */
@@ -116,7 +110,7 @@ _start:
     YADDRW a2, s0, t1
     li   t0, 256
     YBNDSW a2, a2, t0
-    li   t2, REP_BELOW
+    li   t2, REP_E0_BELOW
     sub  t1, t1, t2
     YADDRW a2, a2, t1
     EXPECT_TAG a2, 1

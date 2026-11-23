@@ -18,12 +18,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-.macro EXPECT_LEN reg, len
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
-.endm
-
 /* Bound a copy of the authorizing capability and check the decoded length. */
 .macro EXPECT_YBNDSWI_LEN len
     NEXT_TEST "ybndswi encodes a length of \len exactly"
@@ -161,10 +155,8 @@ _start:
     EXPECT_LEN a1, 16
     EXPECT_NO_TRAP
 
-    YMODESWI
     TEST_PASS
 fail:
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER

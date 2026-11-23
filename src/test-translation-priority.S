@@ -82,25 +82,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-/* Leaf PTE permission and status bits. */
-#define PTE_V 0x01
-#define PTE_R 0x02
-#define PTE_W 0x04
-#define PTE_X 0x08
-#define PTE_U 0x10
-#define PTE_A 0x40
-#define PTE_D 0x80
-
-#define PTE_YR_BIT  (1 << 55)
-#define PTE_YRG_BIT (1 << 56)
-#define PTE_YW_BIT  (1 << 57)
-#define PTE_YD_BIT  (1 << 58)
-
-#define SSTATUS_SUM  (1 << 18)
-#define SSTATUS_YRGE (1 << 59)
-#define SSTATUS_SYRG (1 << 60)
-#define SSTATUS_UYRG (1 << 61)
-
 /*
  * yrg=1 matches sstatus.SYRG and sstatus.UYRG below, so loads are normal;
  * yw|yd allow capability stores. Every page except the CHERI-faulting ones
@@ -257,22 +238,8 @@ _start:
     SET_PTE IDX_YRG, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YR_BIT \
                      | PTE_YW_BIT | PTE_YD_BIT
 
-    /* satp = Sv39 | PPN(pagetable) */
-    lla   t0, pagetable
-    srli t0, t0, 12
-    li   t1, 8 << 60
-    or   t0, t0, t1
-    csrw 0x180, t0               /* satp */
-    sfence.vma
-
-    /* Enter S-mode */
-    li   t0, 0x1800
-    csrc CSR_MSTATUS, t0
-    li   t0, 0x0800
-    csrs CSR_MSTATUS, t0
-    lla   t0, s_entry
-    csrw CSR_MEPC, t0
-    mret
+    ENABLE_PAGING pagetable, SATP_SV39
+    ENTER_PRIV MSTATUS_MPP_S, s_entry
 
 s_entry:
     YMODESWY                     /* capability mode: these all take a capability */
@@ -466,13 +433,13 @@ s_entry:
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
     CHECK_BUF
     li   t0, SSTATUS_SUM
-    csrs sstatus, t0
+    csrs CSR_SSTATUS, t0
     NEXT_TEST "control: with sstatus.SUM set, the user page with yw=0 faults at step 7 for sy"
     SY   t2, 0(a3)
     EXPECT_TRAP CAUSE_CHERI_STORE_PAGE
     CHECK_BUF
     li   t0, SSTATUS_SUM
-    csrc sstatus, t0
+    csrc CSR_SSTATUS, t0
 
     NEXT_TEST "a user page fault at step 6 outranks the store capability page fault at step 7 for amoswap.y"
     POISON_REG t1
@@ -481,7 +448,7 @@ s_entry:
     CHECK_POISON_REG t1
     CHECK_BUF
     li   t0, SSTATUS_SUM
-    csrs sstatus, t0
+    csrs CSR_SSTATUS, t0
     NEXT_TEST "control: with sstatus.SUM set, the user page with yw=0 faults at step 7 for amoswap.y"
     POISON_REG t1
     AMOSWAP_Y t1, a3, t2
@@ -489,7 +456,7 @@ s_entry:
     CHECK_POISON_REG t1
     CHECK_BUF
     li   t0, SSTATUS_SUM
-    csrc sstatus, t0
+    csrc CSR_SSTATUS, t0
 
     NEXT_TEST "a user page fault at step 6 outranks the load capability fault for ly"
     POISON_REG t1
@@ -497,14 +464,14 @@ s_entry:
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
     CHECK_POISON_REG t1
     li   t0, SSTATUS_SUM
-    csrs sstatus, t0
+    csrs CSR_SSTATUS, t0
     NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault for ly"
     POISON_REG t1
     LY   t1, 0(a4)
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
     li   t0, SSTATUS_SUM
-    csrc sstatus, t0
+    csrc CSR_SSTATUS, t0
 
     NEXT_TEST "a user page fault at step 6 outranks the load capability fault for lr.y"
     POISON_REG t1
@@ -512,14 +479,14 @@ s_entry:
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
     CHECK_POISON_REG t1
     li   t0, SSTATUS_SUM
-    csrs sstatus, t0
+    csrs CSR_SSTATUS, t0
     NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault for lr.y"
     POISON_REG t1
     LR_Y t1, a4
     EXPECT_TRAP CAUSE_CHERI_LOAD_CAP
     CHECK_POISON_REG t1
     li   t0, SSTATUS_SUM
-    csrc sstatus, t0
+    csrc CSR_SSTATUS, t0
 
     NEXT_TEST "a user page fault at step 6 outranks the load capability fault for amoswap.y"
     POISON_REG t1
@@ -528,7 +495,7 @@ s_entry:
     CHECK_POISON_REG t1
     CHECK_BUF
     li   t0, SSTATUS_SUM
-    csrs sstatus, t0
+    csrs CSR_SSTATUS, t0
     NEXT_TEST "control: with sstatus.SUM set, the user mismatching page raises a load capability fault for amoswap.y"
     POISON_REG t1
     AMOSWAP_Y t1, a4, t2
@@ -536,7 +503,7 @@ s_entry:
     CHECK_POISON_REG t1
     CHECK_BUF
     li   t0, SSTATUS_SUM
-    csrc sstatus, t0
+    csrc CSR_SSTATUS, t0
 
     /* ---- Walk Step 7: capability store check (pte.yw=0, tag=1 -> 36) --- */
 

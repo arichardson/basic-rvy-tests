@@ -56,21 +56,17 @@ _start:
     csrrs t1, CSR_MSCRATCH, x0
     csrrs t2, CSR_SSCRATCH, x0
     EXPECT_NO_TRAP
-    YEQ   t3, t1, a0
-    EXPECT_NONZERO t3
-    YEQ   t3, t2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a1
 
     NEXT_TEST "capability-mode csrrw with cd == cs1 atomically swaps register and CSR"
     csrrw x0, CSR_MSCRATCH, a0
     YMV   t1, a1
     csrrw t1, CSR_MSCRATCH, t1
     EXPECT_NO_TRAP
-    YEQ   t2, t1, a0             /* t1 received the old CSR value (a0) */
-    EXPECT_NONZERO t2
+    EXPECT_CAP_EQ t1, a0             /* t1 received the old CSR value (a0) */
     csrrs t3, CSR_MSCRATCH, x0
-    YEQ   t2, t3, a1             /* CSR received the old t1 value (a1) */
-    EXPECT_NONZERO t2
+    EXPECT_CAP_EQ t3, a1             /* CSR received the old t1 value (a1) */
 
     NEXT_TEST "capability-mode csrrw round-trips full capabilities through utidc, stidc, and mtidc"
     csrrw x0, CSR_UTIDC, a0
@@ -80,12 +76,9 @@ _start:
     csrrs t2, CSR_STIDC, x0
     csrrs t3, CSR_MTIDC, x0
     EXPECT_NO_TRAP
-    YEQ   t4, t1, a0
-    EXPECT_NONZERO t4
-    YEQ   t4, t2, a1
-    EXPECT_NONZERO t4
-    YEQ   t4, t3, a0
-    EXPECT_NONZERO t4
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a1
+    EXPECT_CAP_EQ t3, a0
 
     NEXT_TEST "capability-mode csrrs, csrrc, csrrsi, and csrrci with zero operand do not write"
     csrrw x0, CSR_MSCRATCH, a1   /* place sealed sentry a1 in mscratch */
@@ -94,14 +87,10 @@ _start:
     csrrsi t3, CSR_MSCRATCH, 0
     csrrci t4, CSR_MSCRATCH, 0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a1
-    EXPECT_NONZERO t0
-    YEQ   t0, t2, a1
-    EXPECT_NONZERO t0
-    YEQ   t0, t3, a1
-    EXPECT_NONZERO t0
-    YEQ   t0, t4, a1
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a1
+    EXPECT_CAP_EQ t2, a1
+    EXPECT_CAP_EQ t3, a1
+    EXPECT_CAP_EQ t4, a1
 
     NEXT_TEST "capability-mode csrrs and csrrc with rs1 != x0 update the CSR cursor and keep bounds"
     csrrw x0, CSR_MSCRATCH, a0   /* [buf, buf + 64) at cursor buf (64-byte aligned) */
@@ -111,15 +100,12 @@ _start:
     csrrc t3, CSR_MSCRATCH, t2   /* t3 = buf | 0x18; mscratch.addr = buf | 0x10 */
     csrrs t4, CSR_MSCRATCH, x0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
     EXPECT_TAG t3, 1
     addi  t0, s1, 0x18
     EXPECT_EQ t3, t0
     EXPECT_TAG t4, 1
-    YLENR t0, t4
-    li    t2, 64
-    EXPECT_EQ t2, t0
+    EXPECT_LEN t4, 64
     addi  t0, s1, 0x10
     EXPECT_EQ t4, t0
 
@@ -129,15 +115,13 @@ _start:
     csrrs t1, CSR_MSCRATCH, t0
     csrrs t2, CSR_MSCRATCH, x0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a1             /* returned the old tagged sentry */
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a1             /* returned the old tagged sentry */
     EXPECT_TAG t2, 0             /* CSR was detagged by the XLEN cursor write */
     csrrw x0, CSR_MSCRATCH, a1
     li    t0, 4
     csrrc t1, CSR_MSCRATCH, t0
     csrrs t2, CSR_MSCRATCH, x0
-    YEQ   t0, t1, a1
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a1
     EXPECT_TAG t2, 0
 
     NEXT_TEST "capability-mode csrrsi and csrrci with uimm != 0 update the CSR cursor and keep bounds"
@@ -146,15 +130,12 @@ _start:
     csrrci t2, CSR_SSCRATCH, 0x04
     csrrs t3, CSR_SSCRATCH, x0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
     EXPECT_TAG t2, 1
     addi  t0, s1, 0x1c
     EXPECT_EQ t2, t0
     EXPECT_TAG t3, 1
-    YLENR t0, t3
-    li    t4, 64
-    EXPECT_EQ t4, t0
+    EXPECT_LEN t3, 64
     addi  t0, s1, 0x18
     EXPECT_EQ t3, t0
 
@@ -163,8 +144,7 @@ _start:
     csrrwi t1, CSR_MSCRATCH, 27  /* mscratch.addr = 27, tag and root bounds kept */
     csrrs t2, CSR_MSCRATCH, x0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, s0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, s0
     EXPECT_TAG t2, 1
     li    t0, 27
     EXPECT_EQ t2, t0
@@ -172,8 +152,7 @@ _start:
     csrrw x0, CSR_MSCRATCH, a1
     csrrwi t1, CSR_MSCRATCH, 0
     csrrs t2, CSR_MSCRATCH, x0
-    YEQ   t0, t1, a1
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a1
     EXPECT_TAG t2, 0
     EXPECT_ZERO t2
 
@@ -211,14 +190,10 @@ _start:
     csrrsi t3, CSR_DDC, 0
     csrrci t4, CSR_DDC, 0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t2, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t3, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t4, a0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a0
+    EXPECT_CAP_EQ t3, a0
+    EXPECT_CAP_EQ t4, a0
 
     NEXT_TEST "integer-mode reads of utidc, stidc, and mtidc return YLEN on RVY and XLEN on 0.9.3"
     csrrs t1, CSR_UTIDC, x0
@@ -233,12 +208,9 @@ _start:
     EXPECT_TAG t2, 0
     EXPECT_TAG t3, 0
 #else
-    YEQ   t0, t1, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t2, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t3, a0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a0
+    EXPECT_CAP_EQ t3, a0
 #endif
 
     NEXT_TEST "integer-mode csrrw, csrrs, and csrrc update the CSR cursor while preserving tag and bounds"
@@ -255,9 +227,7 @@ _start:
     csrrs t1, CSR_MSCRATCH, x0
     YMODESWI
     EXPECT_TAG t1, 1             /* tag in CSR was preserved across integer-mode writes */
-    YLENR t0, t1
-    li    t2, 64
-    EXPECT_EQ t0, t2
+    EXPECT_LEN t1, 64
     addi  t0, s1, 0x10
     EXPECT_EQ t1, t0
 
@@ -293,16 +263,7 @@ _start:
     csrrw x0, CSR_MSCRATCH, a0
     csrrw x0, CSR_MTIDC, a0
 
-    li    t0, 0x1800             /* mstatus.MPP = S */
-    csrc  CSR_MSTATUS, t0
-    li    t0, 0x0800
-    csrs  CSR_MSTATUS, t0
-    auipc t1, 0
-    lla    t0, s_mode_csr_tests
-    YADDRW t1, t1, t0
-    csrrw x0, CSR_MEPC, t1
-    lla    m_continue, s_mode_done
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_mode_csr_tests, s_mode_done
 
 s_mode_csr_tests:
     NEXT_TEST "S-mode with ASR can read and write sscratch, stidc, utidc, and ddc"
@@ -314,14 +275,10 @@ s_mode_csr_tests:
     csrrs t3, CSR_UTIDC, x0
     csrrs t4, CSR_DDC, x0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t2, a1
-    EXPECT_NONZERO t0
-    YEQ   t0, t3, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t4, s0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a1
+    EXPECT_CAP_EQ t3, a0
+    EXPECT_CAP_EQ t4, s0
 
     NEXT_TEST "S-mode reading mscratch faults with illegal instruction even with ASR"
     csrrs t1, CSR_MSCRATCH, x0
@@ -354,10 +311,8 @@ s_mode_done:
     csrrs t1, CSR_MSCRATCH, x0
     csrrs t2, CSR_MTIDC, x0
     EXPECT_NO_TRAP
-    YEQ   t0, t1, a0
-    EXPECT_NONZERO t0
-    YEQ   t0, t2, a0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a0
 
     /*
      * Delegating CHERI exceptions via medeleg (or medelegh on RV32 RVY, where
@@ -386,21 +341,12 @@ s_mode_done:
     YADDRW t1, t1, t0
     csrw  CSR_STVEC, t1
 
-    li    t0, 0x1800
-    csrc  CSR_MSTATUS, t0
-    li    t0, 0x0800
-    csrs  CSR_MSTATUS, t0
-    auipc t1, 0
-    lla   t0, s_deleg_entry
-    YADDRW t1, t1, t0
-    csrw  CSR_MEPC, t1
-    lla   m_continue, s_deleg_done
     li    a3, 0
     li    a4, 0
     li    a5, 0
     YMV   a6, x0
     YMV   a7, x0
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_deleg_entry, s_deleg_done
 
 s_deleg_entry:
     LY    t1, 0(a1)              /* sealed capability load fault delegated to S-mode */
@@ -431,12 +377,8 @@ s_deleg_done:
     csrw  CSR_MEDELEGH, x0
 #endif
 
-    YMODESWI
-    csrrw x0, CSR_DDC, s0
     TEST_PASS
 fail:
-    YMODESWI
-    csrrw x0, CSR_DDC, s0
     TEST_FAIL
 
 /*
@@ -450,14 +392,10 @@ tidc_no_asr_stub:
     csrrsi t3, CSR_MTIDC, 0
     csrrci t4, CSR_UTIDC, 0
     EXPECT_NO_TRAP
-    YEQ    t0, t1, a0
-    EXPECT_NONZERO t0
-    YEQ    t0, t2, a0
-    EXPECT_NONZERO t0
-    YEQ    t0, t3, a0
-    EXPECT_NONZERO t0
-    YEQ    t0, t4, a0
-    EXPECT_NONZERO t0
+    EXPECT_CAP_EQ t1, a0
+    EXPECT_CAP_EQ t2, a0
+    EXPECT_CAP_EQ t3, a0
+    EXPECT_CAP_EQ t4, a0
 
     /* Any write to utidc, stidc, or mtidc without ASR must fault. */
     NEXT_TEST "writing utidc without ASR faults with TRAP_ASR_DENIED"

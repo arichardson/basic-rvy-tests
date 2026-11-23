@@ -6,7 +6,7 @@ SECTIONS
     .rodata : { *(.rodata*) }
     /*
      * One pointer per NEXT_TEST, in source order, so the TAP stream can name
-     * each case. See NEXT_TEST in testmacros.h.
+     * each case. See NEXT_TEST in exceptions.h.
      */
     .tapnames : {
         __tapnames_start = .;

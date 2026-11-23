@@ -17,19 +17,9 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define MSTATUS_FS_INITIAL (1 << 13)
-
 #define root  s0                 /* ddc */
 #define bufp  s1                 /* address of buf */
 #define cap   s2                 /* [buf, buf + 16), RW capability */
-
-.macro C_FP insn:vararg
-    .option push
-    .option rvc
-    \insn
-    c.nop
-    .option pop
-.endm
 
 .option norvc
 .section .text
@@ -159,20 +149,20 @@ _start:
     flw  fa1, 0(a0)
     fmv.x.w t2, fa1
     EXPECT_EQ t1, t2
-    C_FP c.fsd fa2, 8(a0)
-    C_FP c.fld fa3, 8(a0)
-    C_FP c.fsdsp fa3, 16(sp)
-    C_FP c.fldsp fa4, 16(sp)
+    RVC_PADDED c.fsd fa2, 8(a0)
+    RVC_PADDED c.fld fa3, 8(a0)
+    RVC_PADDED c.fsdsp fa3, 16(sp)
+    RVC_PADDED c.fldsp fa4, 16(sp)
     lw   t3, 16(a0)
     li   t0, 0x11223344
     EXPECT_EQ t0, t3
 #if __riscv_xlen == 32
-    C_FP c.fsw fa0, 4(a0)
-    C_FP c.flw fa1, 4(a0)
+    RVC_PADDED c.fsw fa0, 4(a0)
+    RVC_PADDED c.flw fa1, 4(a0)
     fmv.x.w t2, fa1
     EXPECT_EQ t1, t2
-    C_FP c.fswsp fa0, 24(sp)
-    C_FP c.flwsp fa1, 24(sp)
+    RVC_PADDED c.fswsp fa0, 24(sp)
+    RVC_PADDED c.flwsp fa1, 24(sp)
     fmv.x.w t2, fa1
     EXPECT_EQ t1, t2
 #endif
@@ -186,7 +176,7 @@ _start:
     LY   a2, 0(a0)
     EXPECT_TAG a2, 0
     SY   cap, 0(a0)
-    C_FP c.fsd fa2, 0(a0)
+    RVC_PADDED c.fsd fa2, 0(a0)
     LY   a2, 0(a0)
     EXPECT_TAG a2, 0
     EXPECT_NO_TRAP
@@ -203,9 +193,9 @@ _start:
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
     fsw  fa0, 8(a0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
-    C_FP c.fld fa3, 8(a0)
+    RVC_PADDED c.fld fa3, 8(a0)
     EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
-    C_FP c.fsd fa2, 8(a0)
+    RVC_PADDED c.fsd fa2, 8(a0)
     EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
     flw  fa1, 0(a0)              /* control: [buf, buf + 4) is within ddc */
     EXPECT_NO_TRAP
@@ -218,15 +208,9 @@ _start:
     EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
     flw  fa1, 0(a0)
     EXPECT_NO_TRAP
-    YMODESWY
-    csrw CSR_DDC, root
-    YMODESWI
 
     TEST_PASS
 fail:
-    YMODESWY
-    csrw CSR_DDC, root
-    YMODESWI
     TEST_FAIL
 
 TRAP_HANDLER
