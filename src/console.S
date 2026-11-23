@@ -52,8 +52,9 @@
 .globl \name
 \name:
     WRAP_INT_RA t0
-1:  auipc  t0, %pcrel_hi(.L\name\()_sentry)
-    LY     t0, %pcrel_lo(1b)(t0)
+.Lconsole_entry_\@:
+    auipc  t0, %pcrel_hi(.L\name\()_sentry)
+    LY     t0, %pcrel_lo(.Lconsole_entry_\@)(t0)
     jr     t0
     .pushsection .data.console_sentries, "aw", @progbits
     /* Replaced in-place with a sentry by console_init; must be YLEN-aligned. */
@@ -279,7 +280,7 @@ CONSOLE_ENTRY console_skip
     YADDRW t1, t0, t1
     LOAD_X t2, 0(t1)
     li   t3, TAP_MAX_SKIPS
-    bge  t2, t3, 1f              /* no room: say so rather than lose it */
+    bge  t2, t3, .Ltap_skip_overflow /* no room: say so rather than lose it */
 
     slli t3, t2, PTR_SHIFT       /* slot = count * 3 pointers */
     slli t4, t2, PTR_SHIFT + 1
@@ -294,7 +295,8 @@ CONSOLE_ENTRY console_skip
     STORE_X t2, 0(t1)
     ret
 
-1:  lla   t1, tap_skip_overflow
+.Ltap_skip_overflow:
+    lla   t1, tap_skip_overflow
     YADDRW t1, t0, t1
     li   t2, 1
     STORE_X t2, 0(t1)
@@ -311,7 +313,7 @@ CONSOLE_ENTRY console_xfail
     YADDRW t1, t0, t1
     LOAD_X t2, 0(t1)
     li   t3, TAP_MAX_XFAILS
-    bge  t2, t3, 1b              /* no room: say so rather than lose it */
+    bge  t2, t3, .Ltap_skip_overflow /* no room: say so rather than lose it */
 
     slli t3, t2, PTR_SHIFT + 1   /* slot = count * 2 pointers */
     lla   t4, tap_xfails
@@ -385,6 +387,16 @@ CONSOLE_ENTRY console_tap
     lla    t0, tap_fail_first
     YADDRW t0, t6, t0
     LOAD_X a7, 0(t0)             /* a7 = first failing case (0 if all passed) */
+
+    lla    t0, tap_skip_overflow
+    YADDRW t0, t6, t0
+    LOAD_X t1, 0(t0)
+    beqz   t1, 19f
+    lla    a0, .Ltap_overflow
+    jal    ra, .Lconsole_puts_impl
+    bnez   a7, 19f
+    li     a7, 1
+19:
 
     beqz   a3, 18f
     bnez   a7, 17f
@@ -521,6 +533,7 @@ CONSOLE_ENTRY console_tap
 .Ltap_dash:  .asciz " - "
 .Ltap_skip:  .asciz " # SKIP "
 .Ltap_todo:  .asciz " # TODO "
+.Ltap_overflow: .asciz "Bail out! TAP skip/xfail table overflow\n"
 .Ltap_nl:    .asciz "\n"
 
 .section .text

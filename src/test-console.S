@@ -337,6 +337,54 @@ _start:
     EXPECT_EQ a3, a5
     EXPECT_EQ a4, a5
 
+    /*
+     * Overflowing tap_skips or tap_xfails sets tap_skip_overflow, and
+     * console_tap reports a non-zero exit code rather than dropping entries.
+     */
+    NEXT_TEST "console_tap reports non-zero when tap_skips or tap_xfails overflows"
+    CLEAR_SINK
+    li    s1, TAP_MAX_SKIPS + 1
+1:  lla   a0, msg_abc
+    li    a1, 1
+    li    a2, 1
+    call  console_skip
+    addi  s1, s1, -1
+    bnez  s1, 1b
+    lla   t0, tap_skip_overflow
+    LOAD_X t1, 0(t0)
+    EXPECT_NONZERO t1
+    li    a0, 0
+    li    a1, 0
+    li    a2, 0
+    call  console_tap
+    EXPECT_NONZERO a0
+    EXPECT_EMITTED '\n'
+    lla   t0, tap_skip_count
+    STORE_X x0, 0(t0)
+    lla   t0, tap_skip_overflow
+    STORE_X x0, 0(t0)
+
+    CLEAR_SINK
+    li    s1, TAP_MAX_XFAILS + 1
+2:  lla   a0, msg_abc
+    li    a1, 1
+    call  console_xfail
+    addi  s1, s1, -1
+    bnez  s1, 2b
+    lla   t0, tap_skip_overflow
+    LOAD_X t1, 0(t0)
+    EXPECT_NONZERO t1
+    li    a0, 0
+    li    a1, 0
+    li    a2, 0
+    call  console_tap
+    EXPECT_NONZERO a0
+    EXPECT_EMITTED '\n'
+    lla   t0, tap_xfail_count
+    STORE_X x0, 0(t0)
+    lla   t0, tap_skip_overflow
+    STORE_X x0, 0(t0)
+
     RESTORE_CONSOLE
 
     /*
