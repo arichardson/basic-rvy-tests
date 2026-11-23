@@ -485,49 +485,36 @@
 .endm
 
 /*
- * 16-bit compressed instructions (Zca). Each macro pairs the 16-bit
- * instruction with a c.nop so a 4-byte trap-return PC step lands on the next
- * instruction boundary while keeping the rest of the file in .option norvc
- * mode.
+ * 16-bit compressed instructions (Zca). RVC_PADDED pairs a 16-bit instruction
+ * with a c.nop so a 4-byte trap-return PC step lands on the next instruction
+ * boundary while keeping the rest of the file in .option norvc mode.
  */
-.macro INSN16 enc
+.macro RVC_PADDED insn:vararg
     .option push
     .option rvc
-    .2byte \enc
+    \insn
     c.nop
     .option pop
+.endm
+
+.macro INSN16 enc
+    RVC_PADDED .2byte \enc
 .endm
 
 .macro C_YADDI16SP imm
-    .option push
-    .option rvc
-    c.addi16sp sp, \imm
-    c.nop
-    .option pop
+    RVC_PADDED c.addi16sp sp, \imm
 .endm
 
 .macro C_YADDI4SPN cd, uimm
-    .option push
-    .option rvc
-    c.addi4spn \cd, sp, \uimm
-    c.nop
-    .option pop
+    RVC_PADDED c.addi4spn \cd, sp, \uimm
 .endm
 
 .macro C_YMV cd, cs2
-    .option push
-    .option rvc
-    c.mv \cd, \cs2
-    c.nop
-    .option pop
+    RVC_PADDED c.mv \cd, \cs2
 .endm
 
 .macro C_ADD rd, rs2
-    .option push
-    .option rvc
-    c.add \rd, \rs2
-    c.nop
-    .option pop
+    RVC_PADDED c.add \rd, \rs2
 .endm
 
 #if __riscv_xlen == 64
@@ -544,35 +531,19 @@
 #endif
 
 .macro C_LYSP cd, off
-    .option push
-    .option rvc
-    .insn ci 2, C_LYSP_FUNCT3, \cd, ((C_LYSP_IMM(\off) ^ 0x20) - 0x20)
-    c.nop
-    .option pop
+    RVC_PADDED .insn ci 2, C_LYSP_FUNCT3, \cd, ((C_LYSP_IMM(\off) ^ 0x20) - 0x20)
 .endm
 
 .macro C_SYSP cs2, off
-    .option push
-    .option rvc
-    .insn css 2, C_SYSP_FUNCT3, \cs2, C_LYSP_IMM(\off)
-    c.nop
-    .option pop
+    RVC_PADDED .insn css 2, C_SYSP_FUNCT3, \cs2, C_LYSP_IMM(\off)
 .endm
 
 .macro C_LY cd, off, cs1
-    .option push
-    .option rvc
-    .insn cl 0, C_LYSP_FUNCT3, \cd, C_LY_IMM(\off)(\cs1)
-    c.nop
-    .option pop
+    RVC_PADDED .insn cl 0, C_LYSP_FUNCT3, \cd, C_LY_IMM(\off)(\cs1)
 .endm
 
 .macro C_SY cs2, off, cs1
-    .option push
-    .option rvc
-    .insn cs 0, C_SYSP_FUNCT3, \cs2, C_LY_IMM(\off)(\cs1)
-    c.nop
-    .option pop
+    RVC_PADDED .insn cs 0, C_SYSP_FUNCT3, \cs2, C_LY_IMM(\off)(\cs1)
 .endm
 
 
