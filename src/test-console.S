@@ -39,7 +39,7 @@
 .macro REDIRECT_CONSOLE
     lla    t0, console_target
     lla    t1, sink
-    STORE_X t1, 0(t0)
+    SX t1, 0(t0)
     lla    t0, console_putc_fn
     LY     s0, 0(t0)             /* remembered for RESTORE_CONSOLE */
     lla    t1, console_putc_htif
@@ -50,7 +50,7 @@
 .macro RESTORE_CONSOLE
     lla    t0, console_target
     lla    t1, tohost
-    STORE_X t1, 0(t0)
+    SX t1, 0(t0)
     lla    t0, console_putc_fn
     SY     s0, 0(t0)
 .endm
@@ -84,7 +84,7 @@ _start:
      */
     NEXT_TEST "console_target defaults to the address the harness reads"
     lla   t0, console_target
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     lla   t2, tohost
     EXPECT_EQ t1, t2
 
@@ -118,7 +118,7 @@ _start:
      */
     NEXT_TEST "console_init selected console_putc_fn to match target_info"
     lla   t0, target_info
-    LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
+    LX t1, TARGET_INFO_OFF_UART_ADDR(t0)
     lbu  t2, TARGET_INFO_OFF_HAS_HTIF(t0)
     bnez t1, 1f
     EXPECT_NONZERO t2
@@ -164,7 +164,7 @@ _start:
      */
     NEXT_TEST "console_init leaves target_info zeroed when TARGET_INFO_ADDR traps"
     lla   t0, target_info
-    LOAD_X a6, TARGET_INFO_OFF_UART_ADDR(t0)
+    LX a6, TARGET_INFO_OFF_UART_ADDR(t0)
     lbu  a7, TARGET_INFO_OFF_HAS_HTIF(t0)
     li   t1, TARGET_INFO_MAGIC
     sw   t1, TARGET_INFO_OFF_MAGIC(t0)
@@ -188,13 +188,13 @@ _start:
     EXPECT_ZERO t1
     lw   t1, TARGET_INFO_OFF_IMPL_ID(t0)
     EXPECT_ZERO t1
-    LOAD_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
+    LX t1, TARGET_INFO_OFF_UART_ADDR(t0)
     EXPECT_ZERO t1
     lbu  t1, TARGET_INFO_OFF_HAS_HTIF(t0)
     EXPECT_NONZERO t1
     sw   s1, TARGET_INFO_OFF_MAGIC(t0)
     sw   s2, TARGET_INFO_OFF_IMPL_ID(t0)
-    STORE_X a6, TARGET_INFO_OFF_UART_ADDR(t0)
+    SX a6, TARGET_INFO_OFF_UART_ADDR(t0)
     sb   a7, TARGET_INFO_OFF_HAS_HTIF(t0)
 
     /*
@@ -204,9 +204,9 @@ _start:
     NEXT_TEST "console_putc_uart writes the byte to target_info.uart_addr"
     CLEAR_SINK
     lla   t0, target_info
-    LOAD_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
+    LX s1, TARGET_INFO_OFF_UART_ADDR(t0)
     lla   t1, sink
-    STORE_X t1, TARGET_INFO_OFF_UART_ADDR(t0)
+    SX t1, TARGET_INFO_OFF_UART_ADDR(t0)
     lla   t0, console_putc_fn
     lla   t1, console_putc_uart
     YADDRW t1, s0, t1
@@ -214,7 +214,7 @@ _start:
     lla   a0, msg_abc
     call console_puts
     lla   t0, target_info
-    STORE_X s1, TARGET_INFO_OFF_UART_ADDR(t0)
+    SX s1, TARGET_INFO_OFF_UART_ADDR(t0)
     lla   t0, console_putc_fn
     lla   t1, console_putc_htif
     YADDRW t1, s0, t1
@@ -324,8 +324,8 @@ _start:
     li    trap_tval, 0
     YMODESWI
     lla   a1, tap_fail_first
-    LOAD_X a2, 0(a1)
-    STORE_X x0, 0(a1)
+    LX a2, 0(a1)
+    SX x0, 0(a1)
     lla   a1, tap_failed
     lbu   a3, 5(a1)
     lbu   a4, 9(a1)
@@ -351,7 +351,7 @@ _start:
     addi  s1, s1, -1
     bnez  s1, 1b
     lla   t0, tap_skip_overflow
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     EXPECT_NONZERO t1
     li    a0, 0
     li    a1, 0
@@ -360,9 +360,9 @@ _start:
     EXPECT_NONZERO a0
     EXPECT_EMITTED '\n'
     lla   t0, tap_skip_count
-    STORE_X x0, 0(t0)
+    SX x0, 0(t0)
     lla   t0, tap_skip_overflow
-    STORE_X x0, 0(t0)
+    SX x0, 0(t0)
 
     CLEAR_SINK
     li    s1, TAP_MAX_XFAILS + 1
@@ -372,7 +372,7 @@ _start:
     addi  s1, s1, -1
     bnez  s1, 2b
     lla   t0, tap_skip_overflow
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     EXPECT_NONZERO t1
     li    a0, 0
     li    a1, 0
@@ -381,9 +381,9 @@ _start:
     EXPECT_NONZERO a0
     EXPECT_EMITTED '\n'
     lla   t0, tap_xfail_count
-    STORE_X x0, 0(t0)
+    SX x0, 0(t0)
     lla   t0, tap_skip_overflow
-    STORE_X x0, 0(t0)
+    SX x0, 0(t0)
 
     RESTORE_CONSOLE
 

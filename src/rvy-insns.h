@@ -19,18 +19,16 @@
 #define XBYTES     (__riscv_xlen / 8)
 #define YLEN_BYTES (2 * XBYTES)
 #if __riscv_xlen == 64
-#define LOAD_X     ld
-#define STORE_X    sd
+#define LX         ld
+#define SX         sd
 #define WORD_X     .dword
 #define PTR_SHIFT  3
 #else
-#define LOAD_X     lw
-#define STORE_X    sw
+#define LX         lw
+#define SX         sw
 #define WORD_X     .word
 #define PTR_SHIFT  2
 #endif
-#define LX         LOAD_X
-#define SX         STORE_X
 
 /* The CHERI execution mode a capability carries, as read by YMODER and
  * written by YMODEW. These are also the rs2 values YMODESWY/YMODESWI use. */

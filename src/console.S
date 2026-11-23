@@ -93,7 +93,7 @@ console_init:
     bnez   t2, 2f
     lla    t2, .Lconsole_sentries_end
     YADDRW t2, t0, t2
-1:  LOAD_X t3, 0(t1)
+1:  LX t3, 0(t1)
     YADDRW t3, t0, t3
     YSEALE t3, t3
     SY     t3, 0(t1)
@@ -148,7 +148,7 @@ console_init:
 .Ltarget_info_done:
     lla    t1, target_info
     YADDRW t1, t0, t1
-    LOAD_X a0, TARGET_INFO_OFF_UART_ADDR(t1)
+    LX a0, TARGET_INFO_OFF_UART_ADDR(t1)
     lbu   t2, TARGET_INFO_OFF_HAS_HTIF(t1)
     lla    a3, console_putc_htif
     bnez  a0, 1f
@@ -171,7 +171,7 @@ console_init:
     li     t1, UART_ADDR
     YADDRW t2, t0, t1
     lbu    t2, UART_LSR(t2)       /* ... and find out here */
-    STORE_X t1, target_info + TARGET_INFO_OFF_UART_ADDR, t2
+    SX t1, target_info + TARGET_INFO_OFF_UART_ADDR, t2
     j      .Lprobe_done
 
 .balign 4
@@ -203,7 +203,7 @@ console_init:
  */
 .globl console_putc_htif
 console_putc_htif:
-    LOAD_X t1, console_target    /* where the writes go; &tohost in a real run */
+    LX t1, console_target    /* where the writes go; &tohost in a real run */
     YADDRW t2, t0, t1
     sw    a0, 0(t2)
     li    t1, HTIF_PUTCHAR
@@ -212,7 +212,7 @@ console_putc_htif:
 
 .globl console_putc_both
 console_putc_both:
-    LOAD_X t1, console_target
+    LX t1, console_target
     YADDRW t2, t0, t1
     sw    a0, 0(t2)
     li    t1, HTIF_PUTCHAR
@@ -220,7 +220,7 @@ console_putc_both:
     /* fall through */
 .globl console_putc_uart
 console_putc_uart:
-    LOAD_X t1, target_info + TARGET_INFO_OFF_UART_ADDR
+    LX t1, target_info + TARGET_INFO_OFF_UART_ADDR
     YADDRW t2, t0, t1
     sb    a0, UART_THR(t2)
     ret
@@ -278,7 +278,7 @@ CONSOLE_ENTRY console_skip
     auipc  t0, 0
     lla    t1, tap_skip_count
     YADDRW t1, t0, t1
-    LOAD_X t2, 0(t1)
+    LX t2, 0(t1)
     li   t3, TAP_MAX_SKIPS
     bge  t2, t3, .Ltap_skip_overflow /* no room: say so rather than lose it */
 
@@ -288,18 +288,18 @@ CONSOLE_ENTRY console_skip
     lla   t4, tap_skips
     add  t3, t3, t4
     YADDRW t3, t0, t3
-    STORE_X a1, 0(t3)
-    STORE_X a2, XBYTES(t3)
-    STORE_X a0, 2 * XBYTES(t3)
+    SX a1, 0(t3)
+    SX a2, XBYTES(t3)
+    SX a0, 2 * XBYTES(t3)
     addi t2, t2, 1
-    STORE_X t2, 0(t1)
+    SX t2, 0(t1)
     ret
 
 .Ltap_skip_overflow:
     lla   t1, tap_skip_overflow
     YADDRW t1, t0, t1
     li   t2, 1
-    STORE_X t2, 0(t1)
+    SX t2, 0(t1)
     ret
 
 /*
@@ -311,7 +311,7 @@ CONSOLE_ENTRY console_xfail
     auipc  t0, 0
     lla    t1, tap_xfail_count
     YADDRW t1, t0, t1
-    LOAD_X t2, 0(t1)
+    LX t2, 0(t1)
     li   t3, TAP_MAX_XFAILS
     bge  t2, t3, .Ltap_skip_overflow /* no room: say so rather than lose it */
 
@@ -319,10 +319,10 @@ CONSOLE_ENTRY console_xfail
     lla   t4, tap_xfails
     add  t3, t3, t4
     YADDRW t3, t0, t3
-    STORE_X a1, 0(t3)
-    STORE_X a0, XBYTES(t3)
+    SX a1, 0(t3)
+    SX a0, XBYTES(t3)
     addi t2, t2, 1
-    STORE_X t2, 0(t1)
+    SX t2, 0(t1)
     ret
 
 /*
@@ -333,10 +333,10 @@ CONSOLE_ENTRY console_xfail
 CONSOLE_ENTRY console_fail
 .Lconsole_fail_impl:
 1:  auipc  t0, %pcrel_hi(tap_fail_first)
-    LOAD_X t0, %pcrel_lo(1b)(t0)
+    LX t0, %pcrel_lo(1b)(t0)
     bnez   t0, 3f
 2:  auipc  t0, %pcrel_hi(tap_fail_first)
-    STORE_X a0, %pcrel_lo(2b)(t0)
+    SX a0, %pcrel_lo(2b)(t0)
 3:  sltiu  t0, a0, TAP_MAX_CASES
     beqz   t0, 5f
 4:  auipc  t0, %pcrel_hi(tap_failed)
@@ -380,17 +380,17 @@ CONSOLE_ENTRY console_tap
     sb     t1, 0(t0)
 16: lla    t0, tap_fail_first
     YADDRW t0, t6, t0
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     bnez   t1, 15f
-    STORE_X a1, 0(t0)
+    SX a1, 0(t0)
 15:
     lla    t0, tap_fail_first
     YADDRW t0, t6, t0
-    LOAD_X a7, 0(t0)             /* a7 = first failing case (0 if all passed) */
+    LX a7, 0(t0)             /* a7 = first failing case (0 if all passed) */
 
     lla    t0, tap_skip_overflow
     YADDRW t0, t6, t0
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     beqz   t1, 19f
     lla    a0, .Ltap_overflow
     jal    ra, .Lconsole_puts_impl
@@ -441,11 +441,11 @@ CONSOLE_ENTRY console_tap
     j    4f
 3:  lla   t0, tap_xfail_count
     YADDRW t0, t6, t0
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     lla   t2, tap_xfails
     YADDRW t2, t6, t2
 10: beqz t1, 11f
-    LOAD_X t3, 0(t2)
+    LX t3, 0(t2)
     beq  t3, a5, 5b
     YADDI t2, t2, 2 * XBYTES
     addi t1, t1, -1
@@ -461,7 +461,7 @@ CONSOLE_ENTRY console_tap
     slli t1, t1, PTR_SHIFT
     add  t0, t0, t1
     YADDRW t0, t6, t0
-    LOAD_X a3, 0(t0)             /* the name, which survives console_puts */
+    LX a3, 0(t0)             /* the name, which survives console_puts */
     YADDRW t0, t6, a3
     lbu  t1, 0(t0)
     beqz t1, 6f                  /* this case was not given one */
@@ -472,15 +472,15 @@ CONSOLE_ENTRY console_tap
     /* Was this case inside any of the blocks that could not run? */
 6:  lla   t0, tap_skip_count
     YADDRW t0, t6, t0
-    LOAD_X t1, 0(t0)             /* t1 = slots left to look at */
+    LX t1, 0(t0)             /* t1 = slots left to look at */
     lla   t2, tap_skips
     YADDRW t2, t6, t2            /* t2 = the slot being looked at */
 8:  beqz t1, 12f
-    LOAD_X t3, 0(t2)
+    LX t3, 0(t2)
     blt  a5, t3, 9f              /* before this range */
-    LOAD_X t3, XBYTES(t2)
+    LX t3, XBYTES(t2)
     blt  t3, a5, 9f              /* after it */
-    LOAD_X a3, 2 * XBYTES(t2)    /* the reason; survives console_puts */
+    LX a3, 2 * XBYTES(t2)    /* the reason; survives console_puts */
     lla   a0, .Ltap_skip
     jal  ra, .Lconsole_puts_impl
     mv   a0, a3
@@ -492,13 +492,13 @@ CONSOLE_ENTRY console_tap
     /* Was this case marked as an expected failure? */
 12: lla   t0, tap_xfail_count
     YADDRW t0, t6, t0
-    LOAD_X t1, 0(t0)
+    LX t1, 0(t0)
     lla   t2, tap_xfails
     YADDRW t2, t6, t2
 13: beqz t1, 7f
-    LOAD_X t3, 0(t2)
+    LX t3, 0(t2)
     bne  t3, a5, 14f
-    LOAD_X a3, XBYTES(t2)
+    LX a3, XBYTES(t2)
     lla   a0, .Ltap_todo
     jal  ra, .Lconsole_puts_impl
     mv   a0, a3
