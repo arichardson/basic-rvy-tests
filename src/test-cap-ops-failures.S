@@ -34,6 +34,35 @@
 #define EBT_BMSB_BIT           (1 << 9)
 #endif
 
+/* Verify that malformed bounds in \cap_reg yield 0 from base/len/top and detag ybld. */
+.macro CHECK_MALFORMED_BOUNDS cap_reg
+    YBASER t2, \cap_reg
+    EXPECT_ZERO t2
+    YLENR t2, \cap_reg
+    EXPECT_ZERO t2
+#ifndef CHERI_093
+    YTOPR t2, \cap_reg
+    EXPECT_ZERO t2
+#endif
+    YBLD a4, s0, \cap_reg
+    EXPECT_TAG a4, 0
+.endm
+
+#ifndef CHERI_093
+/* Verify RVY YPERMC zeroes AP+SDP and detags, and YSEALE detags, on malformed \cap_reg. */
+.macro CHECK_YPERMC_YSEALE_MALFORMED cap_reg
+    YPERMC a4, \cap_reg, x0
+    EXPECT_TAG a4, 0
+    YHIR t3, a4
+    li   t4, PESBT_SDP_AP_MASK
+    and  t3, t3, t4
+    EXPECT_ZERO t3
+    YSEALE a4, \cap_reg
+    EXPECT_TAG a4, 0
+    EXPECT_NO_TRAP
+.endm
+#endif
+
 .option norvc
 .section .text
 .globl _start
@@ -99,38 +128,17 @@ _start:
     NEXT_TEST "ytopr, ybaser, and ylenr return 0 and ybld detags on malformed bounds"
     li   t1, EBT_MALFORMED_E_GT_MAX
     YHIW a2, x0, t1
-    YBASER t2, a2
-    EXPECT_ZERO t2
-    YLENR t2, a2
-    EXPECT_ZERO t2
-    YBLD a4, s0, a2
-    EXPECT_TAG a4, 0
+    CHECK_MALFORMED_BOUNDS a2
 #ifndef CHERI_093
-    YTOPR t2, a2
-    EXPECT_ZERO t2
     /* Root metadata has EF=0, TE=0, BE=0 (E = CAP_MAX_E) and B=0. */
     YHIR t3, s0
     ori  t1, t3, (1 << 3)        /* E = CAP_MAX_E with B != 0 */
     YHIW a2, x0, t1
-    YBASER t2, a2
-    EXPECT_ZERO t2
-    YLENR t2, a2
-    EXPECT_ZERO t2
-    YTOPR t2, a2
-    EXPECT_ZERO t2
-    YBLD a4, s0, a2
-    EXPECT_TAG a4, 0
+    CHECK_MALFORMED_BOUNDS a2
     li   t1, EBT_BMSB_BIT | 1    /* BE = 1 (E = CAP_MAX_E - 1) with B[MW-1] = 1 */
     or   t1, t3, t1
     YHIW a2, x0, t1
-    YBASER t2, a2
-    EXPECT_ZERO t2
-    YLENR t2, a2
-    EXPECT_ZERO t2
-    YTOPR t2, a2
-    EXPECT_ZERO t2
-    YBLD a4, s0, a2
-    EXPECT_TAG a4, 0
+    CHECK_MALFORMED_BOUNDS a2
 #endif
     EXPECT_NO_TRAP
 
@@ -285,15 +293,7 @@ _start:
 
 #ifndef CHERI_093
     NEXT_TEST "ypermc zeroes ap and sdp and yseale clears tag on non-zero reserved0 metadata"
-    YPERMC a4, a3, x0
-    EXPECT_TAG a4, 0
-    YHIR t3, a4
-    li   t4, PESBT_SDP_AP_MASK
-    and  t3, t3, t4
-    EXPECT_ZERO t3
-    YSEALE a4, a3
-    EXPECT_TAG a4, 0
-    EXPECT_NO_TRAP
+    CHECK_YPERMC_YSEALE_MALFORMED a3
 #endif
 
 #if __riscv_xlen == 64
@@ -324,8 +324,7 @@ _start:
 #ifdef CHERI_093
     srli t3, t3, 6
     andi t3, t3, 0xf
-    li   t4, 0x5
-    EXPECT_EQ t4, t3
+    EXPECT_EQ_IMM t3, 0x5
     EXPECT_NO_TRAP
 #else
     YPERMR t4, x0
@@ -333,15 +332,7 @@ _start:
     EXPECT_NO_TRAP
 
     NEXT_TEST "ypermc zeroes ap and sdp and yseale clears tag on non-zero reserved1 metadata"
-    YPERMC a4, a3, x0
-    EXPECT_TAG a4, 0
-    YHIR t3, a4
-    li   t4, PESBT_SDP_AP_MASK
-    and  t3, t3, t4
-    EXPECT_ZERO t3
-    YSEALE a4, a3
-    EXPECT_TAG a4, 0
-    EXPECT_NO_TRAP
+    CHECK_YPERMC_YSEALE_MALFORMED a3
 #endif
 
     NEXT_TEST "rv64 sdp at pesbt[63:60] is valid in rvy and rejected as reserved1 in 0.9.3"
@@ -365,8 +356,7 @@ _start:
     YPERMR t3, a3
     srli t3, t3, 6
     andi t3, t3, 0xf
-    li   t4, 0xa
-    EXPECT_EQ t4, t3
+    EXPECT_EQ_IMM t3, 0xa
     YPERMC a4, a4, x0
     EXPECT_TAG a4, 1
     YSEALE a5, a4
@@ -449,15 +439,7 @@ _start:
 
 #ifndef CHERI_093
     NEXT_TEST "ypermc zeroes ap and sdp and yseale clears tag on rv32 reserved ap quadrant 0 encoding"
-    YPERMC a4, a3, x0
-    EXPECT_TAG a4, 0
-    YHIR t3, a4
-    li   t4, PESBT_SDP_AP_MASK
-    and  t3, t3, t4
-    EXPECT_ZERO t3
-    YSEALE a4, a3
-    EXPECT_TAG a4, 0
-    EXPECT_NO_TRAP
+    CHECK_YPERMC_YSEALE_MALFORMED a3
 #endif
 #endif
 
