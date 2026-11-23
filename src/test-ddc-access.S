@@ -58,6 +58,90 @@
     EXPECT_CAP_EQ t0, s7
 .endm
 
+/*
+ * Check that every Integer-Mode load, store, AMO, and CBO faults with \check
+ * when DDC is invalid (\desc), leaving rd poisoned and buf unmodified.
+ */
+.macro CHECK_DDC_FAULT_SUITE desc, check_name, check
+    NEXT_TEST "integer lw with \desc DDC faults with \check_name"
+    POISON_REG t1
+    lw    t1, 0(s1)
+    EXPECT_TRAP TRAP_CAP_LOAD(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "integer sw with \desc DDC faults with \check_name"
+    sw    x0, 0(s1)
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_BUF
+
+    NEXT_TEST "ly with \desc DDC faults with \check_name"
+    POISON_REG t1
+    LY    t1, 0(s1)
+    EXPECT_TRAP TRAP_CAP_LOAD(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "sy with \desc DDC faults with \check_name"
+    SY    t2, 0(s1)
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_BUF
+
+    NEXT_TEST "lr.w with \desc DDC faults with \check_name"
+    POISON_REG t1
+    lr.w  t1, (s1)
+    EXPECT_TRAP TRAP_CAP_LOAD(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "sc.w with \desc DDC faults with \check_name"
+    POISON_REG t1
+    sc.w  t1, t2, (s1)
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "amoswap.w with \desc DDC faults with \check_name"
+    POISON_REG t1
+    amoswap.w t1, t2, (s1)
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "lr.y with \desc DDC faults with \check_name"
+    POISON_REG t1
+    LR_Y  t1, s1
+    EXPECT_TRAP TRAP_CAP_LOAD(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+
+    NEXT_TEST "sc.y with \desc DDC faults with \check_name"
+    POISON_REG t1
+    SC_Y  t1, s1, t2
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "amoswap.y with \desc DDC faults with \check_name"
+    POISON_REG t1
+    AMOSWAP_Y t1, s1, t2
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_POISON_REG t1
+    CHECK_BUF
+
+    NEXT_TEST "cbo.zero with \desc DDC faults with \check_name"
+    CBO_ZERO s1
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    EXPECT_TVAL s1
+    CHECK_BUF
+.endm
+
 .option norvc
 .section .text
 .globl _start
@@ -321,168 +405,14 @@ _start:
      * ===================================================================== */
     YADDRW a1, x0, s1            /* untagged capability at buf */
     csrrw x0, CSR_DDC, a1
-
-    NEXT_TEST "integer lw with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    lw    t1, 0(s1)
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "integer sw with an untagged DDC faults with CAP_TAG"
-    sw    x0, 0(s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_BUF
-
-    NEXT_TEST "ly with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    LY    t1, 0(s1)
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "sy with an untagged DDC faults with CAP_TAG"
-    SY    t2, 0(s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_BUF
-
-    NEXT_TEST "lr.w with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    lr.w  t1, (s1)
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "sc.w with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    sc.w  t1, t2, (s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "amoswap.w with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    amoswap.w t1, t2, (s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "lr.y with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    LR_Y  t1, s1
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "sc.y with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    SC_Y  t1, s1, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "amoswap.y with an untagged DDC faults with CAP_TAG"
-    POISON_REG t1
-    AMOSWAP_Y t1, s1, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "cbo.zero with an untagged DDC faults with CAP_TAG"
-    CBO_ZERO s1
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL s1
-    CHECK_BUF
+    CHECK_DDC_FAULT_SUITE "an untagged", "CAP_TAG", CAP_TAG
 
     /* =====================================================================
      * Sealed sentry DDC in Integer Mode
      * ===================================================================== */
     YSEALE a2, a0
     csrrw x0, CSR_DDC, a2
-
-    NEXT_TEST "integer lw with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    lw    t1, 0(s1)
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "integer sw with a sealed DDC faults with CAP_SEAL"
-    sw    x0, 0(s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_BUF
-
-    NEXT_TEST "ly with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    LY    t1, 0(s1)
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "sy with a sealed DDC faults with CAP_SEAL"
-    SY    t2, 0(s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_BUF
-
-    NEXT_TEST "lr.w with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    lr.w  t1, (s1)
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "sc.w with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    sc.w  t1, t2, (s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "amoswap.w with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    amoswap.w t1, t2, (s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "lr.y with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    LR_Y  t1, s1
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-
-    NEXT_TEST "sc.y with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    SC_Y  t1, s1, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "amoswap.y with a sealed DDC faults with CAP_SEAL"
-    POISON_REG t1
-    AMOSWAP_Y t1, s1, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_POISON_REG t1
-    CHECK_BUF
-
-    NEXT_TEST "cbo.zero with a sealed DDC faults with CAP_SEAL"
-    CBO_ZERO s1
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL s1
-    CHECK_BUF
+    CHECK_DDC_FAULT_SUITE "a sealed", "CAP_SEAL", CAP_SEAL
 
     /* =====================================================================
      * Read-only DDC (PERM_W cleared) in Integer Mode
