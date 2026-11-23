@@ -23,6 +23,16 @@ env:
   UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1
 
 jobs:
+  checks:
+    name: Repository checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run summary script unit tests
+        run: python3 -m unittest discover -s .github -p 'test_*.py' -v
+
   build-qemu:
     name: Build QEMU
     runs-on: ubuntu-24.04
