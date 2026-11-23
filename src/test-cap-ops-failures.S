@@ -27,14 +27,10 @@
 #include "exceptions.h"
 
 #if __riscv_xlen == 64
-#define PESBT_RESERVED0_BIT    (1 << 28)
 #define PESBT_SDP_AP_MASK      ((0xf << 60) | (0xff << 44))
-#define EBT_MALFORMED_E_GT_MAX 0x000000000001c007
 #define EBT_BMSB_BIT           (1 << 13)
 #else
-#define PESBT_RESERVED0_BIT    (1 << 21)
 #define PESBT_SDP_AP_MASK      (0x7f << 25)
-#define EBT_MALFORMED_E_GT_MAX 0x00040c03
 #define EBT_BMSB_BIT           (1 << 9)
 #endif
 

@@ -16,7 +16,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CBOM_LEN 64
 #if __riscv_xlen == 64
 #define CACHELINE_CAP_OFFSETS 0, 16, 32, 48
 #else

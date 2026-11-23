@@ -13,7 +13,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CBOM_LEN        64
 #define MENVCFG_CBO_ALL 0xf0         /* CBIE (3 << 4) | CBCFE (1 << 6) | CBZE (1 << 7) */
 
 .option norvc

@@ -18,8 +18,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#define CBOM_LEN 64
-
 .option norvc
 .section .text
 .globl _start

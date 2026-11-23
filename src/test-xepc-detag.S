@@ -41,12 +41,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#if __riscv_xlen == 64
-#define REP_BELOW 0x1000
-#else
-#define REP_BELOW 0x100
-#endif
-
 /* Write \reg (tagged) to \csr, read it back, and require the given tag. */
 .macro EXPECT_XEPC_TAG csr, reg, tag, desc
     NEXT_TEST "\desc"
@@ -96,13 +90,13 @@ _start:
     EXPECT_ZERO t1
 
     /*
-     * Unsealed at the lower representable limit (rep_base = base - REP_BELOW,
+     * Unsealed at the lower representable limit (rep_base = base - REP_E0_BELOW,
      * which still has bit 0 set because base = victim + 1): the capability is
      * tagged before the CSR write, and clearing bit 0 moves the cursor 1 byte
      * below rep_base, which must clear the tag.
      */
-    li   t2, REP_BELOW
-    sub  t0, t0, t2              /* t0 = (victim + 1) - REP_BELOW = rep_base */
+    li   t2, REP_E0_BELOW
+    sub  t0, t0, t2              /* t0 = (victim + 1) - REP_E0_BELOW = rep_base */
     YADDRW a3, a1, t0
     EXPECT_TAG a3, 1             /* still representable and tagged before write */
     EXPECT_XEPC_TAG CSR_MEPC, a3, 0, "mepc clears the tag of an unsealed capability rounded below rep_base"
@@ -143,11 +137,11 @@ _start:
     EXPECT_ZERO t1
 
     /*
-     * Unsealed at rep_base = (victim + 2) - REP_BELOW (bit 1 set, bit 0
+     * Unsealed at rep_base = (victim + 2) - REP_E0_BELOW (bit 1 set, bit 0
      * clear): the CSR write keeps the tag, and reading or executing mret
      * under IALIGN=32 masks bit 1 (2 bytes below rep_base) and clears the tag.
      */
-    li   t2, REP_BELOW
+    li   t2, REP_E0_BELOW
     sub  t0, t0, t2
     YADDRW a3, a0, t0
     EXPECT_TAG a3, 1
@@ -161,7 +155,7 @@ _start:
     YADDRW a4, a4, t0
     li   t1, 8
     YBNDSW a4, a4, t1
-    li   t2, REP_BELOW
+    li   t2, REP_E0_BELOW
     sub  t0, t0, t2
     YADDRW a4, a4, t0
     EXPECT_TAG a4, 1

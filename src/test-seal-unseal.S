@@ -15,12 +15,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-#if __riscv_xlen == 64
-#define PESBT_RESERVED0_BIT (1 << 28)
-#else
-#define PESBT_RESERVED0_BIT (1 << 21)
-#endif
-
 .option norvc
 .section .text
 .globl _start

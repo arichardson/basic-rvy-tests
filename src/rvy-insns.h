@@ -142,6 +142,20 @@
 #endif
 #define MENVCFG_CRE ENVCFG_Y
 
+/* Cache-block size assumed by the Zicbom/Zicboz tests. */
+#define CBOM_LEN 64
+
+/* Capability format constants shared across representability and metadata tests. */
+#if __riscv_xlen == 64
+#define REP_E0_BELOW           0x1000
+#define PESBT_RESERVED0_BIT    (1 << 28)
+#define EBT_MALFORMED_E_GT_MAX 0x000000000001c007
+#else
+#define REP_E0_BELOW           0x100
+#define PESBT_RESERVED0_BIT    (1 << 21)
+#define EBT_MALFORMED_E_GT_MAX 0x00040c03
+#endif
+
 /* Architectural permission bits, as read by YPERMR / cleared by YPERMC. */
 #define PERM_W      (1 << 0)
 #define PERM_LM     (1 << 1)

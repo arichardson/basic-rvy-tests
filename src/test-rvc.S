@@ -27,11 +27,6 @@
 #include "exceptions.h"
 
 #define root  s0                 /* ddc */
-#if __riscv_xlen == 64
-#define REP_BASE_OFFSET -4096
-#else
-#define REP_BASE_OFFSET -256
-#endif
 #define bufp  s1                 /* address of buf */
 
 /* \reg is tagged iff \tag, with base \base_reg + \off and length \len. */
@@ -100,7 +95,7 @@ _start:
     li   t0, 16
     YADDRW sp, root, bufp
     YBNDSW sp, sp, t0            /* sp = [buf, buf + 16), E = 0 */
-    li   t0, REP_BASE_OFFSET
+    li   t0, -REP_E0_BELOW
     YADD sp, sp, t0              /* at the bottom of E = 0 representable range */
     EXPECT_TAG sp, 1
     C_YADDI16SP -16              /* steps below representable base */

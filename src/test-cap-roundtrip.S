@@ -30,7 +30,6 @@
 #define PAT_SEQ_HI              0xfedcba9876543210
 #define EBT_MALFORMED_E_MAX     0x0000000000000008
 #define EBT_MALFORMED_E_MAX_M1  0x0000000000002001
-#define EBT_MALFORMED_E_GT_MAX  0x000000000001c007
 #define EBT_WRAP_TOP            0x0000000004003fff
 #else
 #define PAT_ALT_55              0x55555555
@@ -40,7 +39,6 @@
 #define PAT_SEQ_HI              0x9abcdef0
 #define EBT_MALFORMED_E_MAX     0x00000004
 #define EBT_MALFORMED_E_MAX_M1  0x00000201
-#define EBT_MALFORMED_E_GT_MAX  0x00040c03
 #define EBT_WRAP_TOP            0x000803ff
 #endif
 
