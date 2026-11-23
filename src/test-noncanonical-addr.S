@@ -49,11 +49,7 @@ _start:
     lla  t0, pagetable
     li   t1, (0x80000 << 10) | PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
     sd   t1, (2 * 8)(t0)
-    srli t0, t0, 12
-    li   t1, SATP_SV39
-    or   t0, t0, t1
-    csrw CSR_SATP, t0
-    sfence.vma
+    ENABLE_PAGING pagetable, SATP_SV39
 
     YMODESWY                     /* so csrw writes the whole capability */
 
@@ -113,18 +109,8 @@ _start:
      * targets without Zcheripte and on RVY.
      */
 .macro RUN_S_CAP label
-    YMODESWI
-    li   t0, MSTATUS_MPP_MASK
-    csrc CSR_MSTATUS, t0
-    li   t0, MSTATUS_MPP_S
-    csrs CSR_MSTATUS, t0
-    lla  m_continue, .Lm_ret_\@
     YMODESWY
-    lla  t0, \label
-    auipc t1, 0
-    YADDRW t1, t1, t0
-    csrw CSR_MEPC, t1
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, \label, .Lm_ret_\@
 .Lm_ret_\@:
 .endm
 

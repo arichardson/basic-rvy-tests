@@ -263,16 +263,7 @@ _start:
     csrrw x0, CSR_MSCRATCH, a0
     csrrw x0, CSR_MTIDC, a0
 
-    li    t0, MSTATUS_MPP_MASK
-    csrc  CSR_MSTATUS, t0
-    li    t0, MSTATUS_MPP_S
-    csrs  CSR_MSTATUS, t0
-    auipc t1, 0
-    lla    t0, s_mode_csr_tests
-    YADDRW t1, t1, t0
-    csrrw x0, CSR_MEPC, t1
-    lla    m_continue, s_mode_done
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_mode_csr_tests, s_mode_done
 
 s_mode_csr_tests:
     NEXT_TEST "S-mode with ASR can read and write sscratch, stidc, utidc, and ddc"
@@ -350,21 +341,12 @@ s_mode_done:
     YADDRW t1, t1, t0
     csrw  CSR_STVEC, t1
 
-    li    t0, MSTATUS_MPP_MASK
-    csrc  CSR_MSTATUS, t0
-    li    t0, MSTATUS_MPP_S
-    csrs  CSR_MSTATUS, t0
-    auipc t1, 0
-    lla   t0, s_deleg_entry
-    YADDRW t1, t1, t0
-    csrw  CSR_MEPC, t1
-    lla   m_continue, s_deleg_done
     li    a3, 0
     li    a4, 0
     li    a5, 0
     YMV   a6, x0
     YMV   a7, x0
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_deleg_entry, s_deleg_done
 
 s_deleg_entry:
     LY    t1, 0(a1)              /* sealed capability load fault delegated to S-mode */

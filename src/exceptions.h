@@ -353,6 +353,45 @@ DEFINE_CHECK_0(ONLY_MEMORY_FAULT)
 .Lpmp_ok_\@:
 .endm
 
+/* Activate page-based translation with root table \pt and satp mode \mode. */
+.macro ENABLE_PAGING pt, mode
+    lla   t5, \pt
+    srli  t5, t5, 12
+    li    t6, \mode
+    or    t5, t5, t6
+    csrw  CSR_SATP, t5
+    sfence.vma
+.endm
+
+/*
+ * Enter privilege mode \mpp (MSTATUS_MPP_S for S-mode, 0 for U-mode) at
+ * \target, optionally recording \cont in m_continue for an ecall return to
+ * M-mode. Preserves the caller's CHERI execution mode via PCC when misa.Y is
+ * set, and writes a plain address when misa.Y is clear.
+ */
+.macro ENTER_PRIV mpp, target, cont=
+    li     t5, MSTATUS_MPP_MASK
+    csrc   CSR_MSTATUS, t5
+    .if (\mpp) != 0
+    li     t5, \mpp
+    csrs   CSR_MSTATUS, t5
+    .endif
+    lla    t5, \target
+#ifndef CHERI_093
+    csrr   t6, CSR_MISA
+    slli   t6, t6, (XLEN - 1 - 24)
+    bgez   t6, .Lenter_priv_mepc_\@
+#endif
+    auipc  t6, 0
+    YADDRW t5, t6, t5
+.Lenter_priv_mepc_\@:
+    csrw   CSR_MEPC, t5
+    .ifnb \cont
+    lla    m_continue, \cont
+    .endif
+    mret
+.endm
+
 /* The trap was reported against the address in \reg. */
 .macro _CHECK_EPC on_fail, reg
     sub  t5, trap_epc, \reg

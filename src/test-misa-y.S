@@ -31,30 +31,6 @@
 #define has_zyhybrid s0
 #define has_h        s1
 
-/*
- * Enter privilege mode \mpp (MSTATUS_MPP_S for S-mode, 0 for U-mode) at
- * \target and return to M-mode at \cont when \target executes ecall. Uses
- * YADDRW when misa.Y is set so CSR_MEPC receives a valid capability on
- * purecap-only harts without Zyhybrid as well as an address in integer mode.
- */
-.macro ENTER_PRIV mpp, target, cont
-    li     t0, MSTATUS_MPP_MASK
-    csrc   CSR_MSTATUS, t0
-    .if (\mpp) != 0
-    li     t0, \mpp
-    csrs   CSR_MSTATUS, t0
-    .endif
-    lla    t0, \target
-    csrr   t1, CSR_MISA
-    slli   t1, t1, (XLEN - 1 - 24)
-    bgez   t1, 1f
-    auipc  t1, 0
-    YADDRW t0, t1, t0
-1:  csrw   CSR_MEPC, t0
-    lla    m_continue, \cont
-    mret
-.endm
-
 .option norvc
 .section .text
 .globl _start

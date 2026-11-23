@@ -307,12 +307,7 @@ _start:
     SX    t2, (2 * XBYTES)(t0)   /* 0x40002000: R|W|X after unmapped 0x40001000 */
     SX    t2, (5 * XBYTES)(t0)   /* 0x40005000: R|W|X after non-exec 0x40004000 */
 
-    lla   t0, root_pt
-    srli  t0, t0, 12
-    li    t1, SATP_MODE
-    or    t0, t0, t1
-    csrw  CSR_SATP, t0
-    sfence.vma
+    ENABLE_PAGING root_pt, SATP_MODE
 
     YMODESWY
     auipc root_cap, 0
@@ -390,14 +385,7 @@ pmp_done:
 
     /* S-mode: PCC fault vs fetch page fault (cause 12) for PTE.V=0 and PTE.X=0. */
     YMODESWI
-    lla   m_continue, m_fail
-    li    t0, MSTATUS_MPP_MASK
-    csrc  CSR_MSTATUS, t0
-    li    t0, MSTATUS_MPP_S
-    csrs  CSR_MSTATUS, t0
-    lla   t0, s_entry
-    csrw  CSR_MEPC, t0
-    mret
+    ENTER_PRIV MSTATUS_MPP_S, s_entry, m_fail
 
 s_entry:
     YMODESWY

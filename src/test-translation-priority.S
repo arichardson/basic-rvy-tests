@@ -238,22 +238,8 @@ _start:
     SET_PTE IDX_YRG, PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_YR_BIT \
                      | PTE_YW_BIT | PTE_YD_BIT
 
-    /* satp = Sv39 | PPN(pagetable) */
-    lla   t0, pagetable
-    srli t0, t0, 12
-    li   t1, SATP_SV39
-    or   t0, t0, t1
-    csrw CSR_SATP, t0
-    sfence.vma
-
-    /* Enter S-mode */
-    li   t0, MSTATUS_MPP_MASK
-    csrc CSR_MSTATUS, t0
-    li   t0, MSTATUS_MPP_S
-    csrs CSR_MSTATUS, t0
-    lla   t0, s_entry
-    csrw CSR_MEPC, t0
-    mret
+    ENABLE_PAGING pagetable, SATP_SV39
+    ENTER_PRIV MSTATUS_MPP_S, s_entry
 
 s_entry:
     YMODESWY                     /* capability mode: these all take a capability */
