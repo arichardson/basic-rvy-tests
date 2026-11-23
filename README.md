@@ -123,48 +123,72 @@ number of the failing case, which is what the summary line shows.
 | --- | --- |
 | `test-insn-encodings` | Encoding and semantics of the RVY instructions |
 | `test-cap-ops` | Capability manipulation and inspection instructions |
+| `test-bounds-ops` | Capability bounds manipulation and inspection (`yamask`, `ybndsw`, `ybndsrw`, `ybaser`, `ylenr`, `ytopr`) |
+| `test-cap-add` | Capability cursor addition and shifted-addition (`yadd`, `yaddi`, `yshadd`) |
+| `test-seal-unseal` | Capability sentry sealing, unsealing, and type inspection |
+| `test-cap-perms` | Capability execution-mode and permission manipulation |
 | `test-cap-ops-failures` | Negative, malformed-metadata, and reserved-encoding capability cases |
 | `test-representable-range` | Representable range boundaries across E=0 and internal-exponent capabilities |
 | `test-ddc-access` | Integer-mode explicit memory accesses authorized through DDC |
+| `test-cap-loadstore-perms` | Capability-mode `PERM_C` tag filtering and `PERM_LM` permission filtering |
 | `test-cap-roundtrip` | Storing and loading arbitrary capability bit patterns without loss |
 | `test-bounds-causes` | The cause reported for bounds violations, per access type |
-| `test-amo-cbo-causes` | Causes for capability atomics and cache-block operations |
+| `test-amo-cbo-causes` | Causes for capability atomics and integer atomics in capability mode |
+| `test-cap-misaligned` | Misaligned capability loads, stores, and atomics |
+| `test-lr-sc-reservation` | `LR.Y` and `SC.Y` reservation behaviour |
+| `test-int-amo` | Integer atomics (`AMO*.W/.D`, `LR`/`SC`) when CHERI checks pass |
+| `test-unaligned-store-tags` | Unaligned integer stores invalidating tags of both straddled capability slots |
 | `test-loadstore-x0` | `x0` as a base register: zero in integer mode, NULL in capability mode |
 | `test-pcc-bounds-fetch` | Fetching across the end of PCC, including straddling instructions |
 | `test-cap-reset-regression` | A stored capability writes out the bits the register holds |
 | `test-asr` | Operations gated on the `ASR` permission |
 | `test-cap-csrs` | Capability CSR read/write semantics across modes and privileges |
+| `test-csr-same-block` | Same-block capability CSR write visibility before synchronous traps and exception returns |
+| `test-noncanonical-addr` | Non-canonical Sv39 addresses in capability CSRs and translation faults |
 | `test-console` | The shared console helpers, and that they emit what they are asked to |
-| `test-cbo-bounds` | CBO.ZERO/INVAL fault on any byte out of bounds, CBO.CLEAN/FLUSH only if all are |
-| `test-xepc-detag` | mepc/sepc legalization: misaligned writes, and reads/mret under IALIGN=32 |
-| `test-xtvec-detag` | mtvec/stvec legalization and same-block CSR write visibility |
+| `test-cbo-bounds` | `CBO.ZERO`/`INVAL` fault on any byte out of bounds, `CBO.CLEAN`/`FLUSH` only if all are |
+| `test-cbo-causes` | Cache-block operation tag, seal, and permission checks in capability mode |
+| `test-cbo-menvcfg` | S-mode cache-block operation gating via `menvcfg.{CBZE,CBCFE,CBIE}` |
+| `test-xepc-detag` | `mepc`/`sepc` legalization: misaligned writes, and reads/`mret` under `IALIGN=32` |
+| `test-xtvec-detag` | `mtvec`/`stvec` legalization on mode bits and misaligned addresses |
+| `test-jalr-unseal` | Capability-mode `JALR` sentry unsealing rules for `rs1.address[0]` and immediate offset |
+| `test-local-global` | Capability local/global level (`G`) and `SL`/`LG` permissions (`Zylg`) |
+| `test-rvc` | Compressed capability instructions (`Zca` in capability mode) |
+| `test-fp-loadstore` | Floating-point (`F`/`D`, `Zcf`/`Zcd`) loads and stores in both pointer modes |
+| `test-hints` | `Zca` 16-bit and base-ISA 32-bit HINT encodings in both pointer modes |
 | `test-branches` | `BEQ`/`BNE` with `rs1 <= rs2` in integer and capability modes |
+| `test-branch-misaligned` | Misaligned taken branches, `JAL`, and `JALR` under `IALIGN=32` |
 | `test-reserved-branches` | Reserved `BEQ`/`BNE` with `rs1 <= rs2` in capability mode (v0.9.9 only) |
 | `test-branch-target-faults` | Control-flow faults are taken at the target, not the branch |
 | `test-exception-priority` | Which exception wins when an instruction trips two checks |
-| `test-xepc-return` | MRET unseals a sentry epcc and installs it as PCC unchecked |
+| `test-ifetch-exception-priority` | Instruction-fetch exception priority across PCC, PMP, and paging faults |
+| `test-xepc-return` | `MRET` unseals a sentry `epcc` and installs it as PCC unchecked |
 | `test-misa-y` | Turning CHERI off through `misa.Y`, and the CSRs that go with it |
 | `test-svyrg` | `Svyrg` and the `pte.rvy` field, under Sv39 paging |
 | `test-translation-priority` | Page table walk faults, and where they rank against the capability checks |
 
-`test-branch-target-faults`, `test-exception-priority`, and `test-xepc-return`
-require `>= 0.9.6`; `test-svyrg` and `test-translation-priority` require
-`>= 0.9.7`; `test-misa-y` requires `>= 0.9.9`; and `test-reserved-branches` is
-v0.9.9 only.
+`test-branch-target-faults`, `test-exception-priority`,
+`test-ifetch-exception-priority`, and `test-xepc-return` require `>= 0.9.6`;
+`test-svyrg` and `test-translation-priority` require `>= 0.9.7`; `test-misa-y`
+requires `>= 0.9.9`; and `test-reserved-branches` is v0.9.9 only.
 
 ## Layout
 
 | File | Purpose |
 | --- | --- |
 | `src/meson.build` | Registers the build and test targets; the list of tests lives here |
-| `src/testmacros.h` | `.macro` wrapper per instruction, for both CHERI versions, plus the pass/fail reporting |
-| `src/exceptions.h` | Trap handlers and the `EXPECT_*` vocabulary for stating what should fault |
+| `src/testmacros.h` | Shared test entry helpers, pass/fail TAP reporting, and HTIF `tohost`/`fromhost` |
+| `src/exceptions.h` | Trap handlers, privilege/paging entry macros, and the `EXPECT_*` / `ASSERT_*` vocabulary |
+| `src/rvy-insns.h` | RVY and 0.9.3 instruction encodings, CSR numbers, and capability format constants |
 | `src/link.ld` | Flat layout at `0x80000000`, with HTIF given a page to itself |
-| `src/run-rvy-test.sh` | Runs one already-built ELF through one emulator invocation; called by each meson test() |
-| `src/run-rvy-tests.sh` | Fallback wrapper: drives meson for a single emulator without a build directory |
 | `src/console.S` | Console output (HTIF and the virt UART) and the exit sequence, linked into every test |
-| `src/console.h` | Constants and the calling convention for the above |
-| `src/rvy-insns.h` | The RVY instruction encodings, shared by the tests and `console.S` |
+| `src/console.h` | Constants and the calling convention for `console.S` |
+| `src/target-info.h` | Layout and magic for the per-emulator `target_info` payload loaded at `TARGET_INFO_ADDR` |
+| `src/target-info.c.in` | Template instantiated per emulator/machine to describe console sinks and implementation-defined options |
+| `src/target-info.ld` | Linker script placing each `target_info` ELF at `TARGET_INFO_ADDR` |
+| `src/run-rvy-test.sh` | Runs one already-built ELF through one emulator invocation; called by each meson `test()` |
+| `src/run-rvy-tests.sh` | Fallback wrapper: drives meson for a single emulator without a build directory |
+| `src/check-suite.py` | Verifies suite conventions (`rvy_tests` registration, `TEST_NAME`, trap handlers, hygiene) |
 | `src/probe.S` | Compiles to nothing; used to detect a usable toolchain |
 
 ## Licence

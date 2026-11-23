@@ -1,6 +1,5 @@
 # RVY (CHERI for RISC-V) bare-metal test suite: builds and runs the tests
-# under tests/rvy/*.S against the riscv64y-softmmu / riscv32y-softmmu
-# emulators using run-rvy-tests.sh.
+# under src/*.S against QEMU and Sail emulators using run-rvy-test.sh.
 #
 # This needs a bare-metal RISC-V clang (no CHERI support required; all RVY
 # instructions are emitted via .insn). -Drvy_test_cc=/path/to/clang selects

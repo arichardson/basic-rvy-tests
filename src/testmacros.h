@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-2-Clause
  *
- * Helpers for the bare-metal RVY tests. Tests run on the virt machine with
- * -bios none and report their result through the sifive_test finisher
- * device: exit code 0 on success, the failing test id (from s10) otherwise.
+ * Helpers for the bare-metal RVY tests. Tests run on QEMU (virt and spike) and
+ * Sail, and report their result as TAP through console_tap and console_exit
+ * (HTIF tohost and the virt sifive_test finisher): exit code 0 on success, the
+ * first failing test id (from test_id) otherwise.
  *
  * Exception handling lives in exceptions.h, which every test includes after
  * this header; it also poisons the raw names of the registers reserved here
