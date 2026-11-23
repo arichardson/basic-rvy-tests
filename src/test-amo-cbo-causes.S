@@ -31,6 +31,37 @@
     SY   s7, YLEN_BYTES(\base_reg)
 .endm
 
+/*
+ * Check that a faulting load-classified atomic leaves t1 poisoned and reports
+ * \check (and \tval in mtval when non-empty).
+ */
+.macro EXPECT_LOAD_FAULT check, tval=, insn:vararg
+    POISON_REG t1
+    \insn
+    EXPECT_TRAP TRAP_CAP_LOAD(\check)
+    .ifnb \tval
+    EXPECT_TVAL \tval
+    .endif
+    CHECK_POISON_REG t1
+.endm
+
+/*
+ * Check that a faulting store-classified atomic leaves t1 poisoned and reports
+ * \check; when \tval is given, also check mtval and that buf was not modified.
+ */
+.macro EXPECT_STORE_FAULT check, tval=, insn:vararg
+    POISON_REG t1
+    \insn
+    EXPECT_TRAP TRAP_CAP_STORE(\check)
+    .ifnb \tval
+    EXPECT_TVAL \tval
+    .endif
+    CHECK_POISON_REG t1
+    .ifnb \tval
+    CHECK_BUF a3
+    .endif
+.endm
+
 .option norvc
 .section .text
 .globl _start
@@ -58,150 +89,74 @@ _start:
     YADDRW t2, s0, t0            /* t2: distinct tagged store capability */
 
     YMODESWY
+    mv   t0, x0                  /* NULL capability in a non-x0 register */
 
     /* LR.Y via NULL cap: load-classified tag fault */
     NEXT_TEST "lr.y through the NULL capability is load classified"
-    POISON_REG t1
-    mv   t0, x0
-    LR_Y t1, t0
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    CHECK_POISON_REG t1
+    EXPECT_LOAD_FAULT CAP_TAG, , LR_Y t1, t0
 
     /* SC.Y via NULL cap: store-classified tag fault */
     NEXT_TEST "sc.y through the NULL capability is store classified"
-    POISON_REG t1
-    mv   t0, x0
-    SC_Y t1, t0, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    CHECK_POISON_REG t1
+    EXPECT_STORE_FAULT CAP_TAG, , SC_Y t1, t0, t2
 
     /* AMOSWAP.Y via NULL cap */
     NEXT_TEST "amoswap.y through the NULL capability is store classified"
-    POISON_REG t1
-    mv   t0, x0
-    AMOSWAP_Y t1, t0, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    CHECK_POISON_REG t1
+    EXPECT_STORE_FAULT CAP_TAG, , AMOSWAP_Y t1, t0, t2
 
     /* Integer SC.W and AMO via NULL cap: store-classified */
     NEXT_TEST "sc.w through the NULL capability is store classified"
-    POISON_REG t1
-    mv   t0, x0
-    sc.w t1, x0, (t0)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    CHECK_POISON_REG t1
+    EXPECT_STORE_FAULT CAP_TAG, , sc.w t1, x0, (t0)
 
     NEXT_TEST "an integer amo through the NULL capability is store classified"
-    POISON_REG t1
-    mv   t0, x0
-    amoswap.w t1, t2, (t0)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    CHECK_POISON_REG t1
+    EXPECT_STORE_FAULT CAP_TAG, , amoswap.w t1, t2, (t0)
 
     /*
      * LR.Y, SC.Y, and AMOSWAP.Y through an untagged capability at a non-zero
      * address must report that address in mtval (not 0) on v0.9.9.
      */
     NEXT_TEST "lr.y through an untagged capability reports the fault address in mtval"
-    POISON_REG t1
-    LR_Y t1, a2
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_TAG)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
+    EXPECT_LOAD_FAULT CAP_TAG, a0, LR_Y t1, a2
 
     NEXT_TEST "sc.y through an untagged capability reports the fault address in mtval"
-    POISON_REG t1
-    SC_Y t1, a2, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_TAG, a0, SC_Y t1, a2, t2
 
     NEXT_TEST "amoswap.y through an untagged capability reports the fault address in mtval"
-    POISON_REG t1
-    AMOSWAP_Y t1, a2, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_TAG)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_TAG, a0, AMOSWAP_Y t1, a2, t2
 
     /*
      * Sealed sentry capability (s1): LR.Y reports a load CAP_SEAL fault;
      * SC.Y, AMOSWAP.Y, and integer AMOs report a store CAP_SEAL fault.
      */
     NEXT_TEST "lr.y through a sealed sentry faults with load CAP_SEAL"
-    POISON_REG t1
-    LR_Y t1, s1
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_SEAL)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
+    EXPECT_LOAD_FAULT CAP_SEAL, a0, LR_Y t1, s1
 
     NEXT_TEST "sc.y through a sealed sentry faults with store CAP_SEAL"
-    POISON_REG t1
-    SC_Y t1, s1, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_SEAL, a0, SC_Y t1, s1, t2
 
     NEXT_TEST "amoswap.y through a sealed sentry faults with store CAP_SEAL"
-    POISON_REG t1
-    AMOSWAP_Y t1, s1, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_SEAL, a0, AMOSWAP_Y t1, s1, t2
 
     NEXT_TEST "sc.w through a sealed sentry faults with store CAP_SEAL"
-    POISON_REG t1
-    sc.w t1, t2, (s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_SEAL, a0, sc.w t1, t2, (s1)
 
     NEXT_TEST "amoswap.w through a sealed sentry faults with store CAP_SEAL"
-    POISON_REG t1
-    amoswap.w t1, t2, (s1)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_SEAL)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_SEAL, a0, amoswap.w t1, t2, (s1)
 
     /*
      * Out-of-bounds capability (s2 at buf + YLEN_BYTES): LR.Y reports load
      * CAP_BOUNDS; SC.Y, AMOSWAP.Y, and integer SC.W report store CAP_BOUNDS.
      */
     NEXT_TEST "lr.y at capability top faults with load CAP_BOUNDS"
-    POISON_REG t1
-    LR_Y t1, s2
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_BOUNDS)
-    EXPECT_TVAL s7
-    CHECK_POISON_REG t1
+    EXPECT_LOAD_FAULT CAP_BOUNDS, s7, LR_Y t1, s2
 
     NEXT_TEST "sc.y at capability top faults with store CAP_BOUNDS"
-    POISON_REG t1
-    SC_Y t1, s2, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
-    EXPECT_TVAL s7
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_BOUNDS, s7, SC_Y t1, s2, t2
 
     NEXT_TEST "amoswap.y at capability top faults with store CAP_BOUNDS"
-    POISON_REG t1
-    AMOSWAP_Y t1, s2, t2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
-    EXPECT_TVAL s7
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_BOUNDS, s7, AMOSWAP_Y t1, s2, t2
 
     NEXT_TEST "sc.w at capability top faults with store CAP_BOUNDS"
-    POISON_REG t1
-    sc.w t1, t2, (s2)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_BOUNDS)
-    EXPECT_TVAL s7
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_BOUNDS, s7, sc.w t1, t2, (s2)
 
     /*
      * Read-only capability (a4, W=0): SC.W, SC.Y, and AMOSWAP.Y must fault
@@ -211,37 +166,17 @@ _start:
      */
     NEXT_TEST "sc.w through a read-only capability faults with store CAP_PERM"
     lr.w t1, (a4)
-    POISON_REG t1
-    sc.w t1, t2, (a4)
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_PERM, a0, sc.w t1, t2, (a4)
 
     NEXT_TEST "sc.y through a read-only capability faults with store CAP_PERM"
     LR_Y t1, a4
-    POISON_REG t1
-    SC_Y t1, a4, x0
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_PERM, a0, SC_Y t1, a4, x0
 
     NEXT_TEST "amoswap.y of x0 through a read-only capability faults without side effects"
-    POISON_REG t1
-    AMOSWAP_Y t1, a4, x0
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1          /* cd (t1) must keep poison capability */
-    CHECK_BUF a3                 /* memory must keep a3 */
+    EXPECT_STORE_FAULT CAP_PERM, a0, AMOSWAP_Y t1, a4, x0
 
     NEXT_TEST "amoswap.y of an untagged capability through a read-only capability faults"
-    POISON_REG t1
-    AMOSWAP_Y t1, a4, a2
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_PERM, a0, AMOSWAP_Y t1, a4, a2
 
     NEXT_TEST "control: amoswap.y of x0 succeeds when W is granted"
     YMV  t1, x0
@@ -260,11 +195,7 @@ _start:
      */
     NEXT_TEST "lr.y through a write-only capability faults with load CAP_PERM"
     SY   a3, 0(a3)
-    POISON_REG t1
-    LR_Y t1, a7
-    EXPECT_TRAP TRAP_CAP_LOAD(CAP_PERM)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
+    EXPECT_LOAD_FAULT CAP_PERM, a0, LR_Y t1, a7
 
     NEXT_TEST "sc.w through a write-only capability succeeds after a valid lr.w"
     lr.w t1, (a3)
@@ -289,12 +220,7 @@ _start:
 
     NEXT_TEST "amoswap.y through a write-only capability faults with store/AMO CAP_PERM"
     SY   a3, 0(a3)
-    POISON_REG t1
-    AMOSWAP_Y t1, a7, x0
-    EXPECT_TRAP TRAP_CAP_STORE(CAP_PERM)
-    EXPECT_TVAL a0
-    CHECK_POISON_REG t1
-    CHECK_BUF a3
+    EXPECT_STORE_FAULT CAP_PERM, a0, AMOSWAP_Y t1, a7, x0
 
     TEST_PASS
 fail:
