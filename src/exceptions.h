@@ -371,16 +371,20 @@ __rvy_used_resume_after_fault = 1
 .endm
 
 /*
- * ... with this fault address in mtval (on 0.9.3 QEMU only populates mtval2
- * for CAUSE_CHERI_ANY, while standard RISC-V exceptions still write mtval).
+ * ... with this fault address in mtval. On RVY the handler already saved
+ * mtval into trap_tval (so this also works in S-mode and after ecall); on
+ * 0.9.3 trap_tval holds mtval2 instead, and QEMU only populates mtval for
+ * standard RISC-V exceptions, not CAUSE_CHERI_ANY.
  */
 .macro EXPECT_TVAL reg
 #ifdef CHERI_093
     li   t5, CAUSE_CHERI_ANY
     beq  t5, trap_cause, .Lexpect_ok_\@
-#endif
     csrr t5, CSR_MTVAL
     sub  t5, t5, \reg
+#else
+    sub  t5, trap_tval, \reg
+#endif
     beqz t5, .Lexpect_ok_\@
     EXPECT_FAIL
 .Lexpect_ok_\@:
@@ -390,9 +394,11 @@ __rvy_used_resume_after_fault = 1
 #ifdef CHERI_093
     li   t5, CAUSE_CHERI_ANY
     beq  t5, trap_cause, .Lexpect_ok_\@
-#endif
     csrr t5, CSR_MTVAL
     sub  t5, t5, \reg
+#else
+    sub  t5, trap_tval, \reg
+#endif
     bnez t5, fail
 .Lexpect_ok_\@:
 .endm

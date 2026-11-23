@@ -150,7 +150,7 @@ _start:
     RUN_S_CAP s_load
     EXPECT_TRAP CAUSE_LOAD_PAGE_FAULT
 #ifndef CHERI_093
-    EXPECT_EQ trap_tval, t2
+    EXPECT_TVAL t2
 #endif
 
     NEXT_TEST "an S-mode store to the non-canonical address page-faults"
@@ -158,7 +158,7 @@ _start:
     RUN_S_CAP s_store
     EXPECT_TRAP CAUSE_STORE_PAGE_FAULT
 #ifndef CHERI_093
-    EXPECT_EQ trap_tval, t2
+    EXPECT_TVAL t2
 #endif
 
     TEST_PASS
