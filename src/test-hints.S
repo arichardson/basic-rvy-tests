@@ -208,8 +208,7 @@ _start:
     .insn i 0x0f, 1, a0, a0, -1          /* fence.i with imm = 0xfff, rd = rs1 = a0 */
     EXPECT_NO_TRAP
     EXPECT_TAG a0, 1
-    YEQ  t1, a0, cap
-    EXPECT_NONZERO t1
+    EXPECT_CAP_EQ a0, cap
 
     YMODESWI
     TEST_PASS

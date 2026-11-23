@@ -134,12 +134,10 @@ _start:
     NEXT_TEST "c.ymv copies a full capability in capability mode"
     C_YMV a0, sp
     EXPECT_NO_TRAP
-    YEQ  t3, a0, sp
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a0, sp
     YSEALE a1, sp
     C_YMV a0, a1
-    YEQ  t3, a0, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a0, a1
 
     NEXT_TEST "integer-mode c.mv and both modes' c.add clear the capability tag"
     C_YMV a0, sp
@@ -170,8 +168,7 @@ _start:
     YMV  a2, x0
     C_LYSP a2, YLEN_BYTES
     EXPECT_NO_TRAP
-    YEQ  t3, a2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a2, a1
 
     NEXT_TEST "c.lysp uses the scaled offset: sp + 2 * YLEN_BYTES holds no capability"
     C_LYSP a2, (2 * YLEN_BYTES)
@@ -237,15 +234,13 @@ _start:
     EXPECT_NO_TRAP
     C_LY a2, 0, a0
     EXPECT_NO_TRAP
-    YEQ  t3, a2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a2, a1
     YMV  a2, x0
     C_SY a1, YLEN_BYTES, a0
     EXPECT_NO_TRAP
     C_LY a2, YLEN_BYTES, a0
     EXPECT_NO_TRAP
-    YEQ  t3, a2, a1
-    EXPECT_NONZERO t3
+    EXPECT_CAP_EQ a2, a1
 
     NEXT_TEST "c.ly and c.sy outside cs1's bounds take capability bounds faults"
     C_LY a2, (2 * YLEN_BYTES), a0
