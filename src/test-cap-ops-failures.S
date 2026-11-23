@@ -405,9 +405,7 @@ _start:
     EXPECT_TAG a4, 0
     YMODER t3, a4
     EXPECT_ZERO t3
-    YLENR t3, a4
-    li   t4, 16
-    EXPECT_EQ t4, t3
+    EXPECT_LEN a4, 16
     /* C (bit 45) without R or W */
     li   t2, (1 << 1) << 44
     or   t2, t1, t2

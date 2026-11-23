@@ -11,7 +11,10 @@
  *     EXPECT_TVAL reg                      ... with this fault address in mtval
  *     EXPECT_EPC_TAG tag                   ... with a PCC of this tag
  *     EXPECT_TAG reg, tag                  capability in reg carries tag
+ *     EXPECT_LEN reg, len                  capability in reg has length len
+ *     EXPECT_PERMS reg, mask, val[, tag]   (YPERMR(reg) & mask) == val and tag
  *     EXPECT_EQ r1, r2                     r1 == r2
+ *     EXPECT_EQ_IMM reg, imm               reg == imm
  *     EXPECT_NE r1, r2                     r1 != r2
  *     EXPECT_ZERO reg                      reg == 0
  *     EXPECT_NONZERO reg                   reg != 0
@@ -435,6 +438,38 @@ DEFINE_CHECK_1(NONZERO, reg)
 .Lexpect_ok_\@:
 .endm
 DEFINE_CHECK_2(CAP_EQ, c1, c2)
+
+.macro _CHECK_EQ_IMM on_fail, reg, imm
+    li   t6, \imm
+    sub  t5, \reg, t6
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(EQ_IMM, reg, imm)
+
+.macro _CHECK_LEN on_fail, reg, len
+    YLENR t5, \reg
+    li   t6, \len
+    sub  t5, t5, t6
+    beqz t5, .Lexpect_ok_\@
+    \on_fail
+.Lexpect_ok_\@:
+.endm
+DEFINE_CHECK_2(LEN, reg, len)
+
+/* The capability in \reg carries \tag and has (\mask & YPERMR(\reg)) == \val. */
+.macro EXPECT_PERMS reg, mask, val, tag=1
+    EXPECT_TAG \reg, \tag
+    YPERMR t5, \reg
+    li   t6, \mask
+    and  t5, t5, t6
+    li   t6, \val
+    sub  t5, t5, t6
+    beqz t5, .Lexpect_ok_\@
+    EXPECT_FAIL
+.Lexpect_ok_\@:
+.endm
 
 /*
  * Seed \reg with a poison capability pattern (both halves set to POISON_VAL)

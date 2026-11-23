@@ -57,9 +57,7 @@
 .macro EXPECT_BOUNDS reg, base_reg, len
     YBASER t3, \reg
     EXPECT_EQ t3, \base_reg
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
+    EXPECT_LEN \reg, \len
 .endm
 
 .option norvc

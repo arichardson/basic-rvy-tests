@@ -105,9 +105,7 @@ _start:
     addi  t0, s1, 0x18
     EXPECT_EQ t3, t0
     EXPECT_TAG t4, 1
-    YLENR t0, t4
-    li    t2, 64
-    EXPECT_EQ t2, t0
+    EXPECT_LEN t4, 64
     addi  t0, s1, 0x10
     EXPECT_EQ t4, t0
 
@@ -137,9 +135,7 @@ _start:
     addi  t0, s1, 0x1c
     EXPECT_EQ t2, t0
     EXPECT_TAG t3, 1
-    YLENR t0, t3
-    li    t4, 64
-    EXPECT_EQ t4, t0
+    EXPECT_LEN t3, 64
     addi  t0, s1, 0x18
     EXPECT_EQ t3, t0
 
@@ -231,9 +227,7 @@ _start:
     csrrs t1, CSR_MSCRATCH, x0
     YMODESWI
     EXPECT_TAG t1, 1             /* tag in CSR was preserved across integer-mode writes */
-    YLENR t0, t1
-    li    t2, 64
-    EXPECT_EQ t0, t2
+    EXPECT_LEN t1, 64
     addi  t0, s1, 0x10
     EXPECT_EQ t1, t0
 

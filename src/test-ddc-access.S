@@ -691,11 +691,8 @@ _start:
      * ===================================================================== */
     li    t0, DROP_MASK(PERM_W | PERM_LM | PERM_X | PERM_ASR)
     DROP_PERMS a6, a0, t0
-    YPERMR t1, a6
-    andi  t2, t1, PERM_C
-    EXPECT_NONZERO t2            /* PERM_C must still be granted */
-    andi  t2, t1, (PERM_W | PERM_LM)
-    EXPECT_ZERO t2               /* PERM_W and PERM_LM must be cleared */
+    /* PERM_C must still be granted; PERM_W and PERM_LM must be cleared. */
+    EXPECT_PERMS a6, PERM_C | PERM_W | PERM_LM, PERM_C
 
     NEXT_TEST "ly and lr.y through a DDC without PERM_LM strip W and LM from an unsealed capability"
     csrrw x0, CSR_DDC, a0
@@ -704,14 +701,8 @@ _start:
     LY    t1, 0(s1)
     LR_Y  t2, s1
     EXPECT_NO_TRAP
-    EXPECT_TAG t1, 1             /* tag is preserved because PERM_C is set */
-    YPERMR t3, t1
-    andi  t4, t3, (PERM_W | PERM_LM)
-    EXPECT_ZERO t4               /* W and LM were stripped on load */
-    EXPECT_TAG t2, 1
-    YPERMR t3, t2
-    andi  t4, t3, (PERM_W | PERM_LM)
-    EXPECT_ZERO t4
+    EXPECT_PERMS t1, PERM_W | PERM_LM, 0 /* tag preserved, W and LM stripped */
+    EXPECT_PERMS t2, PERM_W | PERM_LM, 0
 
     NEXT_TEST "ly through a DDC without PERM_LM preserves W and LM on a sealed sentry"
     csrrw x0, CSR_DDC, a0
@@ -720,11 +711,7 @@ _start:
     csrrw x0, CSR_DDC, a6
     LY    t1, 0(s1)
     EXPECT_NO_TRAP
-    EXPECT_TAG t1, 1
-    YPERMR t2, t1
-    andi  t3, t2, (PERM_W | PERM_LM)
-    li    t4, (PERM_W | PERM_LM)
-    EXPECT_EQ t3, t4             /* sealed sentry permissions are not stripped */
+    EXPECT_PERMS t1, PERM_W | PERM_LM, PERM_W | PERM_LM
 
     csrrw x0, CSR_DDC, s0
     TEST_PASS

@@ -40,9 +40,7 @@
     YBASER t3, \reg
     addi t4, \base_reg, \off
     EXPECT_EQ t4, t3
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
+    EXPECT_LEN \reg, \len
 .endm
 
 /* The address of \reg is \base_reg + \off. */

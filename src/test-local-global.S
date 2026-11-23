@@ -62,16 +62,6 @@
 #define META_G_SHIFT 24
 #endif
 
-/* YPERMR of \reg has the bits in \mask set to \val, and \reg has tag \tag. */
-.macro EXPECT_PERMS reg, mask, val, tag=1
-    EXPECT_TAG \reg, \tag
-    YPERMR t3, \reg
-    li   t4, \mask
-    and  t3, t3, t4
-    li   t4, \val
-    EXPECT_EQ t4, t3
-.endm
-
 .option norvc
 .section .text
 .globl _start

@@ -15,12 +15,6 @@
 #include "testmacros.h"
 #include "exceptions.h"
 
-.macro EXPECT_LEN reg, len
-    YLENR t3, \reg
-    li   t4, \len
-    EXPECT_EQ t4, t3
-.endm
-
 .option norvc
 .section .text
 .globl _start
